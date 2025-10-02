@@ -31,14 +31,14 @@ function Pets() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Pets</h1>
+      <h1 className="text-xl sm:text-2xl font-bold">Pets</h1>
       {isLoading && <p className="text-gray-600">Loading...</p>}
       {errorMessage && <p className="text-red-600">{errorMessage}</p>}
-      <ul className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {pets.map((pet) => (
-          <li key={pet.id} className="rounded border p-3 bg-white">
-            <div className="font-semibold">{pet.name}</div>
-            <div className="text-gray-600">{pet.species}</div>
+          <li key={pet.id} className="rounded border p-3 bg-white flex flex-col gap-1">
+            <div className="font-semibold text-base">{pet.name}</div>
+            <div className="text-gray-600 text-sm">{pet.species}</div>
           </li>
         ))}
       </ul>

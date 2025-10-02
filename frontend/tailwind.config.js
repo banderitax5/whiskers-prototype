@@ -6,6 +6,7 @@ export default {
   ],
   theme: {
     extend: {
+      // Custom animations and utilities
       keyframes: {
         slide: {
           '0%': { transform: 'translateX(100%)' },
@@ -22,5 +23,21 @@ export default {
       }
     },
   },
-  plugins: [],
+  plugins: [
+    function({ addUtilities }) {
+      const newUtils = {
+        '.no-scrollbar': {
+          /* Hide scrollbar for all browsers */
+          '-ms-overflow-style': 'none',
+          'scrollbar-width': 'none',
+        },
+        '.no-scrollbar::-webkit-scrollbar': {
+          display: 'none',
+          width: '0',
+          height: '0'
+        },
+      }
+      addUtilities(newUtils)
+    }
+  ],
 }
