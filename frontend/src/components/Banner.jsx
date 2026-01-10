@@ -56,7 +56,7 @@ function Banner() {
         } else {
           scroll('right')
         }
-      }, 1000)
+      }, 2000) //2.5 seconds
     }
     return () => {
       if (intervalId) clearInterval(intervalId)
@@ -117,7 +117,7 @@ function Banner() {
 			
 			<div 
 				ref={scrollRef}
-				className="flex overflow-x-auto gap-4 sm:gap-8 lg:gap-12 px-4 sm:px-8 lg:px-16 items-center min-h-[240px] sm:min-h-[360px] lg:min-h-[500px] no-scrollbar select-none"
+				className="flex overflow-x-auto gap-4 sm:gap-8 lg:gap-12 px-4 sm:px-8 lg:px-16 items-center min-h-[240px] sm:min-h-[360px] lg:min-h-[480px] no-scrollbar select-none"
 				style={{ 
 					scrollSnapType: 'x mandatory',
 					WebkitOverflowScrolling: 'touch',
@@ -140,7 +140,7 @@ function Banner() {
 						<img
 							src={brand.image}
 							alt={brand.name}
-							className="w-full h-full object-cover"
+							className="w-full h-full object-fill"
 						/>
 					</div>
 				))}

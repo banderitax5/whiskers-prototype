@@ -1,28 +1,19 @@
+// React core imports
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { createBrowserRouter, RouterProvider } from 'react-router-dom'
+
+// Global styles
 import './index.css'
-import Layout from './components/Layout.jsx'
-import Home from './pages/Home.jsx'
-import About from './pages/About.jsx'
-import Pets from './pages/Pets.jsx'
-import NotFound from './pages/NotFound.jsx'
 
-const router = createBrowserRouter([
-  {
-    path: '/',
-    element: <Layout />,
-    children: [
-      { index: true, element: <Home /> },
-      { path: 'about', element: <About /> },
-      { path: 'pets', element: <Pets /> },
-      { path: '*', element: <NotFound /> },
-    ],
-  },
-])
+// Main App component
+import App from './App.jsx'
 
+/**
+ * Application entry point and root render
+ * Creates the React root and renders the App component
+ */
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <RouterProvider router={router} />
+    <App />
   </StrictMode>,
 )
