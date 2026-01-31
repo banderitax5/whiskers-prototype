@@ -6,6 +6,7 @@ const BRANDS = [
   { id: 2, name: 'Pedigree', image: '/brands/aozi.png' },
   { id: 3, name: 'Whiskas', image: '/brands/topbreed.png' },
   { id: 4, name: 'Purina', image: '/brands/vitality.png' },
+  { id: 4, name: 'Special', image: '/brands/special.png' },
 ]
 
 function Banner() {
