@@ -8,6 +8,19 @@ export async function apiGet(path) {
   return response.json()
 }
 
+export async function apiPost(path, body) {
+  const response = await fetch(`${apiBase}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(data.error || `HTTP ${response.status}`)
+  }
+  return data
+}
+
 export async function getHealth() {
   return apiGet('/health')
 }
