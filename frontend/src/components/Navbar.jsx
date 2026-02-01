@@ -1,10 +1,11 @@
-import { Link, NavLink } from 'react-router-dom'
+import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
 import { BsCartFill, BsPersonCircle } from 'react-icons/bs'
 import LoginModal from './LoginModal'
 import SignupModal from './SignupModal'
 
 function Navbar() {
+	const navigate = useNavigate()
 	const [query, setQuery] = useState('')
 	const [isLoginOpen, setIsLoginOpen] = useState(false)
 	const [isSignupOpen, setIsSignupOpen] = useState(false)
@@ -54,6 +55,8 @@ function Navbar() {
 		localStorage.removeItem('user')
 		setUser(null)
 		setIsDropdownOpen(false)
+		setIsMobileOpen(false)
+		navigate('/')
 	}
 
   function onSearchSubmit(e) {

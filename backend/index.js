@@ -21,6 +21,22 @@ const pool = mysql.createPool({
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production'
 
+// Auth middleware – verifies JWT and attaches userId to req
+function authMiddleware(req, res, next) {
+  const authHeader = req.headers.authorization
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+  if (!token) {
+    return res.status(401).json({ error: 'Authentication required' })
+  }
+  try {
+    const payload = jwt.verify(token, JWT_SECRET)
+    req.userId = payload.userId
+    next()
+  } catch {
+    return res.status(401).json({ error: 'Invalid or expired token' })
+  }
+}
+
 const app = express()
 app.use(helmet())
 app.use(cors({ origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/] }))
@@ -49,6 +65,91 @@ app.post('/api/orders', (req, res) => {
   res.status(201).json({ id: 'placeholder-order-id', status: 'created' })
 })
 
+// Profile – GET (requires auth)
+app.get('/api/profile', authMiddleware, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT id, email, first_name, last_name, phone, address_line1, address_line2, city, province, postal_code, country FROM users WHERE id = ?',
+      [req.userId]
+    )
+    const u = rows[0]
+    if (!u) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+    res.json({
+      id: u.id,
+      email: u.email,
+      firstName: u.first_name,
+      lastName: u.last_name,
+      phone: u.phone || '',
+      addressLine1: u.address_line1 || '',
+      addressLine2: u.address_line2 || '',
+      city: u.city || '',
+      province: u.province || '',
+      postalCode: u.postal_code || '',
+      country: u.country || '',
+    })
+  } catch (err) {
+    console.error('Profile GET error:', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// Profile – PUT (requires auth)
+app.put('/api/profile', authMiddleware, async (req, res) => {
+  const { firstName, lastName, phone, addressLine1, addressLine2, city, province, postalCode, country } = req.body ?? {}
+  const fn = typeof firstName === 'string' ? firstName.trim() : null
+  const ln = typeof lastName === 'string' ? lastName.trim() : null
+  try {
+    await pool.query(
+      `UPDATE users SET 
+        first_name = COALESCE(?, first_name), 
+        last_name = COALESCE(?, last_name), 
+        phone = ?, 
+        address_line1 = ?, 
+        address_line2 = ?, 
+        city = ?, 
+        province = ?, 
+        postal_code = ?, 
+        country = ? 
+      WHERE id = ?`,
+      [
+        fn || null,
+        ln || null,
+        phone?.trim() || null,
+        addressLine1?.trim() || null,
+        addressLine2?.trim() || null,
+        city?.trim() || null,
+        province?.trim() || null,
+        postalCode?.trim() || null,
+        country?.trim() || null,
+        req.userId,
+      ]
+    )
+    const [rows] = await pool.query(
+      'SELECT id, email, first_name, last_name, phone, address_line1, address_line2, city, province, postal_code, country FROM users WHERE id = ?',
+      [req.userId]
+    )
+    const u = rows[0]
+    res.json({
+      id: u.id,
+      email: u.email,
+      firstName: u.first_name,
+      lastName: u.last_name,
+      phone: u.phone || '',
+      addressLine1: u.address_line1 || '',
+      addressLine2: u.address_line2 || '',
+      city: u.city || '',
+      province: u.province || '',
+      postalCode: u.postal_code || '',
+      country: u.country || '',
+    })
+  } catch (err) {
+    console.error('Profile PUT error:', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
 // Login – query user by email, verify password with bcrypt, return JWT
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body ?? {}
@@ -71,7 +172,7 @@ app.post('/api/auth/login', async (req, res) => {
     const token = jwt.sign(
       { userId: user.id, email: user.email },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: '12h' }
     )
     res.status(200).json({
       token,
@@ -113,7 +214,7 @@ app.post('/api/auth/signup', async (req, res) => {
     const token = jwt.sign(
       { userId: user.id, email: user.email },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: '12h' }
     )
     res.status(201).json({
       token,
