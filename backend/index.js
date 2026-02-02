@@ -1,13 +1,16 @@
 // backend/index.js
 import 'dotenv/config'
 
+//dependencies
 import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import mysql from 'mysql2/promise'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
+import crypto from 'crypto'
 
+//mysql connection pool
 const pool = mysql.createPool({
   host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER || 'root',
@@ -19,9 +22,53 @@ const pool = mysql.createPool({
   queueLimit: 0,
 })
 
+//jwt sign and verify
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production'
 
-// Auth middleware – verifies JWT and attaches userId to req
+//encryption for user PII
+const ENCRYPTION_KEY_BASE64 = process.env.ENCRYPTION_KEY || '' //encryption key from environment variables
+
+const ENCRYPTION_KEY = ENCRYPTION_KEY_BASE64
+  ? Buffer.from(ENCRYPTION_KEY_BASE64, 'base64') 
+  : null
+if (!ENCRYPTION_KEY || ENCRYPTION_KEY.length !== 32) {
+  throw new Error('ENCRYPTION_KEY must be a 32-byte base64 string (AES-256-GCM)')
+}
+
+//encryption prefix and lengths
+const ENC_PREFIX = 'enc:'
+const GCM_IV_LENGTH = 12
+const GCM_TAG_LENGTH = 16
+
+//encrypt text function
+function encryptText(value) {
+  if (value == null) return null
+  const trimmed = String(value).trim()
+  if (!trimmed) return null
+  const iv = crypto.randomBytes(GCM_IV_LENGTH)
+  const cipher = crypto.createCipheriv('aes-256-gcm', ENCRYPTION_KEY, iv)
+  const ciphertext = Buffer.concat([cipher.update(trimmed, 'utf8'), cipher.final()])
+  const tag = cipher.getAuthTag()
+  const payload = Buffer.concat([iv, tag, ciphertext]).toString('base64')
+  return `${ENC_PREFIX}${payload}`
+}
+
+//decrypt text function
+function decryptText(value) {
+  if (value == null) return ''
+  if (typeof value !== 'string' || !value.startsWith(ENC_PREFIX)) {
+    return value
+  }
+  const raw = Buffer.from(value.slice(ENC_PREFIX.length), 'base64')
+  const iv = raw.subarray(0, GCM_IV_LENGTH)
+  const tag = raw.subarray(GCM_IV_LENGTH, GCM_IV_LENGTH + GCM_TAG_LENGTH)
+  const ciphertext = raw.subarray(GCM_IV_LENGTH + GCM_TAG_LENGTH)
+  const decipher = crypto.createDecipheriv('aes-256-gcm', ENCRYPTION_KEY, iv)
+  decipher.setAuthTag(tag)
+  return decipher.update(ciphertext, undefined, 'utf8') + decipher.final('utf8')
+}
+
+// authentication middleware to verify JWT and attach userId to req
 function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
@@ -37,35 +84,28 @@ function authMiddleware(req, res, next) {
   }
 }
 
+// express app
 const app = express()
 app.use(helmet())
 app.use(cors({ origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/] }))
 app.use(express.json())
 
-// Health check – uses pool to verify DB connection
-app.get('/api/health', async (_, res) => {
-  try {
-    await pool.query('SELECT 1')
-    res.json({ ok: true, database: 'connected' })
-  } catch (err) {
-    res.status(500).json({ ok: false, database: 'disconnected', error: err.message })
-  }
-})
-
-// Basic scaffolds
+// basic scaffolds for products, cart, and orders
 app.get('/api/products', (_, res) => {
   res.json({ items: [], page: 1, pageSize: 20, total: 0 })
 })
 
+// cart endpoints
 app.get('/api/cart', (_, res) => {
   res.json({ items: [], total: 0 })
 })
 
+// orders endpoints
 app.post('/api/orders', (req, res) => {
   res.status(201).json({ id: 'placeholder-order-id', status: 'created' })
 })
 
-// Profile – GET (requires auth)
+//profile endpoints requires auth for security
 app.get('/api/profile', authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
@@ -79,15 +119,15 @@ app.get('/api/profile', authMiddleware, async (req, res) => {
     res.json({
       id: u.id,
       email: u.email,
-      firstName: u.first_name,
-      lastName: u.last_name,
-      phone: u.phone || '',
-      addressLine1: u.address_line1 || '',
-      addressLine2: u.address_line2 || '',
-      city: u.city || '',
-      province: u.province || '',
-      postalCode: u.postal_code || '',
-      country: u.country || '',
+      firstName: decryptText(u.first_name),
+      lastName: decryptText(u.last_name),
+      phone: decryptText(u.phone),
+      addressLine1: decryptText(u.address_line1),
+      addressLine2: decryptText(u.address_line2),
+      city: decryptText(u.city),
+      province: decryptText(u.province),
+      postalCode: decryptText(u.postal_code),
+      country: decryptText(u.country),
     })
   } catch (err) {
     console.error('Profile GET error:', err)
@@ -95,7 +135,7 @@ app.get('/api/profile', authMiddleware, async (req, res) => {
   }
 })
 
-// Profile – PUT (requires auth)
+// profile starting point, requires auth for security
 app.put('/api/profile', authMiddleware, async (req, res) => {
   const { firstName, lastName, phone, addressLine1, addressLine2, city, province, postalCode, country } = req.body ?? {}
   const fn = typeof firstName === 'string' ? firstName.trim() : null
@@ -114,15 +154,15 @@ app.put('/api/profile', authMiddleware, async (req, res) => {
         country = ? 
       WHERE id = ?`,
       [
-        fn || null,
-        ln || null,
-        phone?.trim() || null,
-        addressLine1?.trim() || null,
-        addressLine2?.trim() || null,
-        city?.trim() || null,
-        province?.trim() || null,
-        postalCode?.trim() || null,
-        country?.trim() || null,
+        fn ? encryptText(fn) : null,
+        ln ? encryptText(ln) : null,
+        encryptText(phone),
+        encryptText(addressLine1),
+        encryptText(addressLine2),
+        encryptText(city),
+        encryptText(province),
+        encryptText(postalCode),
+        encryptText(country),
         req.userId,
       ]
     )
@@ -134,15 +174,15 @@ app.put('/api/profile', authMiddleware, async (req, res) => {
     res.json({
       id: u.id,
       email: u.email,
-      firstName: u.first_name,
-      lastName: u.last_name,
-      phone: u.phone || '',
-      addressLine1: u.address_line1 || '',
-      addressLine2: u.address_line2 || '',
-      city: u.city || '',
-      province: u.province || '',
-      postalCode: u.postal_code || '',
-      country: u.country || '',
+      firstName: decryptText(u.first_name),
+      lastName: decryptText(u.last_name),
+      phone: decryptText(u.phone),
+      addressLine1: decryptText(u.address_line1),
+      addressLine2: decryptText(u.address_line2),
+      city: decryptText(u.city),
+      province: decryptText(u.province),
+      postalCode: decryptText(u.postal_code),
+      country: decryptText(u.country),
     })
   } catch (err) {
     console.error('Profile PUT error:', err)
@@ -150,7 +190,7 @@ app.put('/api/profile', authMiddleware, async (req, res) => {
   }
 })
 
-// Login – query user by email, verify password with bcrypt, return JWT
+// login – query user by email, verify password with bcrypt, return JWT
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body ?? {}
   if (!email || !password) {
@@ -158,20 +198,20 @@ app.post('/api/auth/login', async (req, res) => {
   }
   try {
     const [rows] = await pool.query(
-      'SELECT id, email, password_hash, first_name, last_name FROM users WHERE email = ?',
+      'SELECT id, email, password_hash, first_name, last_name FROM users WHERE email = ?', //query user by email
       [email.trim().toLowerCase()]
     )
     const user = rows[0]
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password' })
     }
-    const match = await bcrypt.compare(password, user.password_hash)
+    const match = await bcrypt.compare(password, user.password_hash) //verify password with bcrypt
     if (!match) {
       return res.status(401).json({ error: 'Invalid email or password' })
     }
     const token = jwt.sign(
       { userId: user.id, email: user.email },
-      JWT_SECRET,
+      JWT_SECRET, 
       { expiresIn: '12h' }
     )
     res.status(200).json({
@@ -179,8 +219,8 @@ app.post('/api/auth/login', async (req, res) => {
       user: {
         id: user.id,
         email: user.email,
-        firstName: user.first_name,
-        lastName: user.last_name,
+        firstName: decryptText(user.first_name),
+        lastName: decryptText(user.last_name),
       },
     })
   } catch (err) {
@@ -189,7 +229,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 })
 
-// Signup – hash password with bcrypt, insert user into DB
+// singup – hash password with bcrypt, insert user into DB
 app.post('/api/auth/signup', async (req, res) => {
   const { email, password, firstName, lastName } = req.body ?? {}
   if (!email || !password || !firstName?.trim() || !lastName?.trim()) {
@@ -197,14 +237,19 @@ app.post('/api/auth/signup', async (req, res) => {
   }
   const emailNorm = email.trim().toLowerCase()
   try {
-    const [existing] = await pool.query('SELECT id FROM users WHERE email = ?', [emailNorm])
+    const [existing] = await pool.query('SELECT id FROM users WHERE email = ?', [emailNorm]) //checks if the email exists
     if (existing.length > 0) {
       return res.status(409).json({ error: 'An account with this email already exists' })
     }
     const password_hash = await bcrypt.hash(password, 10)
     await pool.query(
       'INSERT INTO users (email, password_hash, first_name, last_name) VALUES (?, ?, ?, ?)',
-      [emailNorm, password_hash, firstName.trim(), lastName.trim()]
+      [
+        emailNorm,
+        password_hash,
+        encryptText(firstName), //encrypt first name
+        encryptText(lastName), //encrypt last name
+      ]
     )
     const [rows] = await pool.query(
       'SELECT id, email, first_name, last_name FROM users WHERE email = ?',
@@ -216,13 +261,14 @@ app.post('/api/auth/signup', async (req, res) => {
       JWT_SECRET,
       { expiresIn: '12h' }
     )
+    //return token and user data
     res.status(201).json({
       token,
       user: {
         id: user.id,
         email: user.email,
-        firstName: user.first_name,
-        lastName: user.last_name,
+        firstName: decryptText(user.first_name),
+        lastName: decryptText(user.last_name),
       },
     })
   } catch (err) {
