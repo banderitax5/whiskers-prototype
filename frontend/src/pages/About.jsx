@@ -1,3 +1,5 @@
+// simple about page - just a placeholder for now
+// can be expanded later with more info about the shop, team, etc.
 function About() {
   return (
     <div className="space-y-4">
@@ -8,5 +10,3 @@ function About() {
 }
 
 export default About
-
-

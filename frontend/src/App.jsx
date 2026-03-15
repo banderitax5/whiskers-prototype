@@ -1,24 +1,45 @@
-import { createBrowserRouter, RouterProvider } from 'react-router-dom'
+import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import Layout from './components/Layout.jsx'
 import Home from './pages/Home.jsx'
 import About from './pages/About.jsx'
 import Pets from './pages/Pets.jsx'
+import Profile from './pages/Profile.jsx'
 import NotFound from './pages/NotFound.jsx'
+import supabase from './lib/supabase'
 
-/**
- * Router configuration for the PetConnect application
- * Uses React Router's createBrowserRouter for client-side routing
- */
+// this wraps any page that needs the user to be logged in
+// it checks if there's a supabase session - if not, kicks them back to home
+// shows nothing while loading so you don't get a flash of the wrong page
+function RequireAuth({ children }) {
+  const [session, setSession] = useState(undefined)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
+    return () => subscription.unsubscribe()
+  }, [])
+
+  if (session === undefined) return null
+  if (!session) return <Navigate to="/" replace />
+  return children
+}
+
+// all the routes for the app - Layout wraps everything with the navbar and footer
+// profile is protected by RequireAuth so only logged-in users can see it
 const router = createBrowserRouter([
   {
-    path: '/',                    // Root path
-    element: <Layout />,          // Layout component wraps all pages with navbar, etc.
+    path: '/',                    
+    element: <Layout />,          
     children: [
-      { index: true, element: <Home /> },           // Default route - shows Home component
-      { path: 'about', element: <About /> },        // /about - shows About component
-      { path: 'pets', element: <Pets /> },          // /pets - shows Pets component
-      { path: '*', element: <NotFound /> },         // Catch-all route for 404 errors
+      { index: true, element: <Home /> },           
+      { path: 'about', element: <About /> },        
+      { path: 'pets', element: <Pets /> },          
+      { path: 'profile', element: <RequireAuth><Profile /></RequireAuth> },            
     ],
+  },
+  {
+     path: '*', element: <NotFound /> 
   },
 ])
 

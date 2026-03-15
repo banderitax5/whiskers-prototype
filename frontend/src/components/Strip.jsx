@@ -1,5 +1,7 @@
 import React from 'react'
 
+// the little orange strip below the navbar - just a promo banner
+// shows the available payment methods with a pulse animation to grab attention
 function Banner() {
 	return (
 		<div className="px-3 py-2 sm:px-4 bg-[#FF7C3A]/80">

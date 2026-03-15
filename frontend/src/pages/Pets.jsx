@@ -1,17 +1,22 @@
 import { useEffect, useState } from 'react'
 
+// the pets listing page - shows available pets for adoption
+// right now it's using hardcoded placeholder data
+// eventually this will fetch from supabase
 function Pets() {
   const [pets, setPets] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState(null)
 
+  // loads the pet data on mount
+  // the cancelled flag prevents state updates if the component unmounts
+  // before the async work finishes (avoids the "can't update unmounted component" warning)
   useEffect(() => {
     let cancelled = false
     async function loadPets() {
       setIsLoading(true)
       setErrorMessage(null)
       try {
-        // Placeholder data for now
         const data = [
           { id: '1', name: 'Buddy', species: 'Dog' },
           { id: '2', name: 'Mittens', species: 'Cat' },
@@ -47,5 +52,3 @@ function Pets() {
 }
 
 export default Pets
-
-
