@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom'
 
+// the 404 page - shows up when someone hits a URL that doesn't match any route
+// styled to match the site's dark blue / yellow theme
 function NotFound() {
   return (
     <body className="bg-white">

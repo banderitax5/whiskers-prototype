@@ -2,8 +2,13 @@ import { useState, useEffect } from 'react'
 import { Navigate } from 'react-router-dom'
 import supabase from '../lib/supabase'
 
+// base URL for our custom backend API - vite proxies /api to localhost:3001
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
+// helper that makes authenticated requests to our backend
+// grabs the current supabase session, pulls the access_token out of it,
+// and slaps it into the Authorization header so the backend can verify who's calling
+// this is how we bridge supabase auth on the frontend with our custom express backend
 async function fetchWithAuth(path, options = {}) {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) throw new Error('Not authenticated')
@@ -18,18 +23,27 @@ async function fetchWithAuth(path, options = {}) {
   return data
 }
 
+// the profile page - lets users view and edit their personal info
+// all the data is encrypted on the backend (AES-256-GCM) so the backend
+// decrypts it before sending it here, and re-encrypts when we save
 function Profile() {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  // starts as undefined so we can tell the difference between
+  // "still checking" and "definitely not logged in"
   const [session, setSession] = useState(undefined)
 
+  // on mount, check if the user has a valid supabase session
+  // if they do, fetch their profile from the backend
+  // if not, we'll redirect them to home (see the Navigate below)
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s)
       if (!s) { setLoading(false); return }
+      // GET /api/profile - backend decrypts the profile fields and sends them back
       fetchWithAuth('/profile')
         .then(setProfile)
         .catch((err) => setError(err.message || 'Failed to load profile'))
@@ -37,6 +51,9 @@ function Profile() {
     })
   }, [])
 
+  // fires when the user clicks "Save Profile"
+  // sends all the profile fields to PUT /api/profile
+  // the backend encrypts everything before upserting into the profiles table
   async function handleSubmit(e) {
     e.preventDefault()
     if (!profile) return
@@ -67,6 +84,7 @@ function Profile() {
     }
   }
 
+  // no session and done loading = not logged in, send them home
   if (session === null && !loading) {
     return <Navigate to="/" replace />
   }
@@ -79,6 +97,8 @@ function Profile() {
     )
   }
 
+  // if we got an error and there's no profile data at all, show an error page
+  // instead of a half-broken form
   if (error && !profile) {
     return (
       <div className="max-w-2xl mx-auto py-8">
@@ -92,6 +112,7 @@ function Profile() {
     )
   }
 
+  // reusable tailwind classes so we don't repeat ourselves 50 times
   const inputClass = 'w-full px-4 py-2.5 rounded-lg border border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:border-[#0b2e59] focus:ring-1 focus:ring-[#0b2e59] transition-colors outline-none'
   const labelClass = 'block text-sm font-medium text-gray-600 mb-1.5'
 

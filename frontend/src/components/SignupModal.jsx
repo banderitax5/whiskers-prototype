@@ -1,6 +1,10 @@
 import React, { useState } from 'react'
 import supabase from '../lib/supabase'
 
+// the signup modal - shows up when the user clicks "Sign Up" in the navbar
+// creates a new account through supabase auth, then immediately sends the
+// first name + last name to our backend so they get encrypted and stored
+// in the profiles table (supabase only stores email + password in auth.users)
 function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
@@ -9,11 +13,18 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
+  // the main signup flow - two steps:
+  // 1) supabase.auth.signUp creates the user in auth.users and gives us a session
+  // 2) we POST to /api/profile/init with the access token so the backend can
+  //    encrypt the first name, last name, and email before saving to profiles table
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
     setLoading(true)
     try {
+      // step 1: create the user in supabase auth
+      // the options.data stuff stores first/last name in raw_user_meta_data
+      // which is just extra metadata supabase keeps alongside the auth record
       const { data, error: authError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -27,8 +38,9 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
       if (authError) throw authError
       if (!data.session) throw new Error('Sign up failed')
 
-      // save first name and last name to the profiles table via backend
-      // so they're encrypted and show up on the profile page right away
+      // step 2: hit our backend to save the encrypted profile data
+      // we pass the access_token so the backend knows who's making the request
+      // the backend encrypts everything with AES-256-GCM before storing it
       await fetch('/api/profile/init', {
         method: 'POST',
         headers: {
@@ -41,6 +53,8 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
         }),
       })
 
+      // let the parent know signup worked - Navbar's onAuthStateChange
+      // listener will automatically pick up the new session too
       onSignupSuccess?.()
       onClose()
     } catch (err) {
@@ -84,6 +98,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
+            {/* error banner - shows supabase errors like "email already registered" */}
             {error && (
               <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg" role="alert">
                 {error}
@@ -169,7 +184,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
             </button>
           </form>
 
-          {/* Login link */}
+          {/* switches to the login modal - closes this one first then opens login */}
           <p className="mt-6 text-center text-xs sm:text-sm text-gray-600">
              Already have an account?{' '}
              <button

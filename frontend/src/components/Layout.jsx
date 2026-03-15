@@ -3,6 +3,10 @@ import Navbar from './Navbar.jsx'
 import Banner from './Banner.jsx'
 import Strip from './Strip.jsx'
 
+// the layout wrapper - every page gets the navbar, strip, and footer automatically
+// Outlet is where the actual page content (Home, Profile, etc.) gets rendered
+// the banner (brand carousel) is hidden on profile/orders/addresses pages
+// because it looks weird on those - it's only for the shopping pages
 function Layout() {
 	const location = useLocation()
 	const showBanner = location.pathname !== '/profile' && location.pathname !== '/orders' && location.pathname !== '/addresses'
@@ -25,5 +29,3 @@ function Layout() {
 }
 
 export default Layout
-
-

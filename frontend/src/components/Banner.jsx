@@ -1,6 +1,8 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { BsChevronLeft, BsChevronRight } from 'react-icons/bs'
 
+// hardcoded brand list for now - eventually this could come from the database
+// each brand has an image that shows up in the carousel on the home page
 const BRANDS = [
   { id: 1, name: 'Royal Canin', image: '/brands/royal.png' },
   { id: 2, name: 'Pedigree', image: '/brands/aozi.png' },
@@ -9,13 +11,18 @@ const BRANDS = [
   { id: 5, name: 'Special', image: '/brands/special.png' },
 ]
 
+// the brand carousel / banner - auto-scrolls through brand images
+// pauses when you hover over it so you can look at one,
+// and resumes when your mouse leaves
 function Banner() {
   const scrollRef = useRef(null)
   const [centerIndex, setCenterIndex] = useState(0)
   const [scrolling, setScrolling] = useState(false)
   const [isAutoPlaying, setIsAutoPlaying] = useState(true)
 
-
+  // scrolls the carousel left or right by one slide
+  // wraps around when you hit the end (loops back to the start)
+  // the 400ms timeout prevents spamming clicks from breaking the animation
   const scroll = useCallback((direction) => {
     if (!scrollRef.current || scrolling) return
     setScrolling(true)
@@ -31,6 +38,7 @@ function Banner() {
 
     const slide = slides[targetIndex]
     if (slide) {
+      // centers the target slide in the container
       const targetLeft = Math.max(
         0,
         slide.offsetLeft - (container.clientWidth - slide.clientWidth) / 2
@@ -40,13 +48,14 @@ function Banner() {
     setTimeout(() => setScrolling(false), 400)
   }, [scrolling, centerIndex])
 
-  // Auto-play functionality (loops back to start)
+  // auto-play - scrolls right every 1.5 seconds
+  // when it reaches the last slide, it loops back to the first one
+  // stops when isAutoPlaying is false (which happens on hover)
   useEffect(() => {
     let intervalId;
     if (isAutoPlaying) {
       intervalId = setInterval(() => {
         if (centerIndex >= BRANDS.length - 1) {
-          // Loop back to first slide
           const container = scrollRef.current
           if (container) {
             const firstSlide = container.querySelector('.brand-slide')
@@ -57,14 +66,16 @@ function Banner() {
         } else {
           scroll('right')
         }
-      }, 1500) //1000 = 1 second
+      }, 1500)
     }
     return () => {
       if (intervalId) clearInterval(intervalId)
     }
   }, [isAutoPlaying, scroll, centerIndex])
 
-  // Compute centered slide based on scroll position for smoother activation
+  // figures out which slide is currently in the center of the viewport
+  // by measuring the distance from each slide's center to the container's center
+  // this is what drives the "active" slide styling (bigger, full opacity)
   const handleScroll = useCallback(() => {
     const container = scrollRef.current
     if (!container) return
@@ -87,13 +98,10 @@ function Banner() {
     setCenterIndex(closestIndex)
   }, [])
 
-  // Initialize once on mount
+  // run once on mount to set the initial center index
   useEffect(() => {
     handleScroll()
   }, [handleScroll])
-
-  // For manual controls, allow looping but disable arrows at actual scroll bounds
-
 
   return (
       <div
@@ -101,6 +109,7 @@ function Banner() {
         onMouseEnter={() => setIsAutoPlaying(false)}
         onMouseLeave={() => setIsAutoPlaying(true)}
       >
+        {/* left arrow - also pauses auto-play when clicked */}
         <div className="absolute left-3 sm:left-6 top-1/2 -translate-y-1/2 z-10">
           <button
             onClick={() => {
@@ -115,6 +124,7 @@ function Banner() {
           </button>
         </div>
 
+        {/* the scrollable slide container - uses CSS scroll-snap for smooth snapping */}
         <div
           ref={scrollRef}
           className="flex overflow-x-auto gap-4 sm:gap-8 lg:gap-12 px-4 sm:px-8 lg:px-16 items-center min-h-[240px] sm:min-h-[360px] lg:min-h-[480px] no-scrollbar select-none"
@@ -146,6 +156,7 @@ function Banner() {
           ))}
         </div>
 
+        {/* right arrow */}
         <div className="absolute right-3 sm:right-6 top-1/2 -translate-y-1/2 z-10">
           <button
             onClick={() => {

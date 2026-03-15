@@ -8,6 +8,9 @@ import Profile from './pages/Profile.jsx'
 import NotFound from './pages/NotFound.jsx'
 import supabase from './lib/supabase'
 
+// this wraps any page that needs the user to be logged in
+// it checks if there's a supabase session - if not, kicks them back to home
+// shows nothing while loading so you don't get a flash of the wrong page
 function RequireAuth({ children }) {
   const [session, setSession] = useState(undefined)
 
@@ -22,6 +25,8 @@ function RequireAuth({ children }) {
   return children
 }
 
+// all the routes for the app - Layout wraps everything with the navbar and footer
+// profile is protected by RequireAuth so only logged-in users can see it
 const router = createBrowserRouter([
   {
     path: '/',                    

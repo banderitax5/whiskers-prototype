@@ -1,17 +1,11 @@
-// React core imports
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-
-// Global styles
 import './index.css'
-
-// Main App component
 import App from './App.jsx'
 
-/**
- * Application entry point and root render
- * Creates the React root and renders the App component
- */
+// this is the entry point of the whole frontend app
+// StrictMode is a React dev tool that warns you about potential problems
+// in your code - it doesn't affect the production build at all
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <App />

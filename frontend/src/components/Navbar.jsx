@@ -5,6 +5,9 @@ import LoginModal from './LoginModal'
 import SignupModal from './SignupModal'
 import supabase from '../lib/supabase'
 
+// the main navbar - handles navigation, search bar, auth modals, and user dropdown
+// it listens to supabase auth state changes so the UI updates automatically
+// when someone logs in or out (no manual state juggling needed)
 function Navbar() {
 	const navigate = useNavigate()
 	const [query, setQuery] = useState('')
@@ -15,6 +18,10 @@ function Navbar() {
 	const dropdownRef = useRef(null)
 	const [user, setUser] = useState(null)
 
+	// on mount, grab the current session from supabase to see if someone's already logged in
+	// then subscribe to onAuthStateChange - this fires whenever the user logs in, logs out,
+	// or the token refreshes, so we always have the latest user state
+	// the cleanup function unsubscribes so we don't leak listeners
 	useEffect(() => {
 		supabase.auth.getSession().then(({ data: { session } }) => {
 			setUser(session?.user ?? null)
@@ -25,6 +32,8 @@ function Navbar() {
 		return () => subscription.unsubscribe()
 	}, [])
 
+	// closes the profile dropdown when you click anywhere outside of it
+	// only runs the listener when the dropdown is actually open (saves performance)
 	useEffect(() => {
 		if (!isDropdownOpen) return
 		function handleClickOutside(e) {
@@ -36,6 +45,8 @@ function Navbar() {
 		return () => document.removeEventListener('mousedown', handleClickOutside)
 	}, [isDropdownOpen])
 
+	// these just close the modals after a successful login/signup
+	// the actual session update happens through onAuthStateChange above
 	function onLoginSuccess() {
 		setIsLoginOpen(false)
 	}
@@ -44,6 +55,8 @@ function Navbar() {
 		setIsSignupOpen(false)
 	}
 
+	// signs the user out via supabase, clears local state, and sends them home
+	// supabase.auth.signOut() kills the session on supabase's end too
 	async function handleLogout() {
 		await supabase.auth.signOut()
 		setUser(null)
@@ -52,10 +65,9 @@ function Navbar() {
 		navigate('/')
 	}
 
+	// placeholder for search - will hook up to a search route later
   function onSearchSubmit(e) {
 		e.preventDefault()
-		// TODO: wire to search route/action later
-		// For now, no-op
   }
 
   return (
@@ -66,6 +78,7 @@ function Navbar() {
 					<span className="text-white font-bold sm:hidden">Whiskers</span>
 				</Link>
 
+				{/* desktop search bar - hidden on mobile, shows in the mobile menu instead */}
 				<form onSubmit={onSearchSubmit} role="search" className="hidden md:block flex-1 min-w-0">
 					<div className="relative w-full min-w-0 max-w-full md:max-w-md lg:max-w-xl">
 						<input
@@ -88,7 +101,7 @@ function Navbar() {
 					</div>
 				</form>
 
-				{/* Right side: nav links + auth + cart — consistent height and spacing */}
+				{/* desktop right side - nav links, auth buttons or profile dropdown, and cart */}
 				<div className="ml-auto hidden md:flex items-center gap-3 shrink-0">
 					<nav className="flex items-center gap-2">
 						<NavLink
@@ -105,9 +118,11 @@ function Navbar() {
 						</NavLink>
 					</nav>
 
-					{/* Auth slot: same width when logged in or out so search bar doesn't shift */}
+					{/* auth slot - min-width keeps the layout stable whether logged in or out
+					    so the search bar doesn't jump around when the buttons change */}
 					<div className="flex items-center justify-end min-w-[200px] shrink-0">
 						{user ? (
+							// logged in - show the profile icon with a dropdown
 							<div className="relative" ref={dropdownRef}>
 								<button
 									onClick={() => setIsDropdownOpen((v) => !v)}
@@ -151,6 +166,7 @@ function Navbar() {
 								)}
 							</div>
 						) : (
+							// not logged in - show login and signup buttons
 							<div className="flex items-center gap-2">
 								<button
 									type="button"
@@ -179,7 +195,7 @@ function Navbar() {
 					</NavLink>
 				</div>
 
-				{/* Mobile: hamburger + cart */}
+				{/* mobile - just the cart icon and hamburger button, everything else goes in the slide-down menu */}
 				<div className="ml-auto flex md:hidden items-center gap-2 shrink-0">
 					<NavLink
 						to="/cart"
@@ -201,7 +217,7 @@ function Navbar() {
 				</div>
 			</div>
 
-			{/* Mobile menu panel */}
+			{/* mobile slide-down menu - has its own search bar, nav links, and auth buttons */}
 			{isMobileOpen && (
 				<div className="md:hidden border-t border-white/10 bg-[#0b2e59] relative z-[60]">
 					<div className="mx-auto max-w-6xl px-4 py-3 space-y-3 min-w-0">
@@ -247,6 +263,8 @@ function Navbar() {
 				</div>
 			)}
 
+			{/* login and signup modals - controlled by state, rendered here so they
+			    sit on top of everything else in the DOM */}
 			<LoginModal 
 				isOpen={isLoginOpen}
 				onClose={() => setIsLoginOpen(false)}
@@ -264,5 +282,3 @@ function Navbar() {
 }
 
 export default Navbar
-
-

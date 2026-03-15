@@ -1,5 +1,9 @@
+// base URL for backend API calls - defaults to /api which gets proxied
+// to localhost:3001 by vite's dev server proxy config
 const apiBase = import.meta.env.VITE_API_BASE || '/api'
 
+// simple GET request to the backend - no auth needed
+// used for public stuff like health checks
 export async function apiGet(path) {
   const response = await fetch(`${apiBase}${path}`)
   if (!response.ok) {
@@ -57,6 +61,7 @@ export async function apiGet(path) {
 //   return apiGet('/health')
 // }
 
+// checks if the backend is running
 export async function getHealth() {
   return apiGet('/health')
 }

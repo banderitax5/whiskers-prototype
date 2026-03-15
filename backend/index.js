@@ -105,7 +105,7 @@ app.post('/api/profile/init', authMiddleware, async (req, res) => {
       .from('profiles')
       .upsert({
         id: req.userId,
-        email: req.userEmail,
+        email: encryptText(req.userEmail),
         first_name: encryptText(firstName),
         last_name: encryptText(lastName),
       }, { onConflict: 'id' })
@@ -145,7 +145,7 @@ app.get('/api/profile', authMiddleware, async (req, res) => {
     }
     res.json({
       id: u.id,
-      email: u.email,
+      email: decryptText(u.email),
       firstName: decryptText(u.first_name),
       lastName: decryptText(u.last_name),
       phone: decryptText(u.phone),
@@ -172,7 +172,7 @@ app.put('/api/profile', authMiddleware, async (req, res) => {
   try {
     const updates = {
       id: req.userId,
-      email: req.userEmail,
+      email: encryptText(req.userEmail),
       phone: encryptText(phone),
       address_line1: encryptText(addressLine1),
       address_line2: encryptText(addressLine2),
@@ -198,7 +198,7 @@ app.put('/api/profile', authMiddleware, async (req, res) => {
 
     res.json({
       id: u.id,
-      email: u.email,
+      email: decryptText(u.email),
       firstName: decryptText(u.first_name),
       lastName: decryptText(u.last_name),
       phone: decryptText(u.phone),
