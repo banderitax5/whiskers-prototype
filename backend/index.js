@@ -90,7 +90,7 @@ app.use(helmet())
 app.use(cors({ origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/] }))
 app.use(express.json())
 
-// basic scaffolds for products, cart, and orders
+// basic scaffolding for products
 app.get('/api/products', (_, res) => {
   res.json({ items: [], page: 1, pageSize: 20, total: 0 })
 })

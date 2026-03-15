@@ -125,7 +125,7 @@ function Home() {
     <div className="space-y-3 sm:space-y-4 md:space-y-6 lg:space-y-8 px-2 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16">
       <h1 className="text-base sm:text-lg md:text-xl lg:text-2xl xl:text-3xl 2xl:text-4xl font-bold text-center px-2">SHOP BY CATEGORY</h1>
       {
-        <section className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 md:gap-4 lg:gap-5 xl:gap-6">
+        <section className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 md:gap-4 lg:gap-5 xl:gap-6 mx-4 sm:mx-6 md:mx-10 lg:mx-16 xl:mx-20 2xl:mx-28">
         <div className="relative rounded-md sm:rounded-lg md:rounded-xl lg:rounded-2xl bg-white shadow-md sm:shadow-lg border overflow-hidden p-1 sm:p-2 md:p-3 lg:p-4 xl:p-5 transition-transform duration-300 hover:scale-105 active:scale-95 cursor-pointer">
           <img src="/categoryshop/dog.jpg" alt="DOGS" className="w-full h-24 sm:h-32 md:h-40 lg:h-56 xl:h-64 2xl:h-72 object-cover rounded-md sm:rounded-lg md:rounded-xl lg:rounded-2xl"/>
           <div className="absolute right-1 sm:right-2 md:right-3 lg:right-4 xl:right-6 bottom-1 sm:bottom-2 md:bottom-3 lg:bottom-4 xl:bottom-6 text-white drop-shadow-lg max-w-[90%] sm:max-w-[85%] md:max-w-none text-right">
@@ -169,7 +169,7 @@ function Home() {
       {categories.map((category) => {
         const categoryProducts = getProductsByCategory(category.id);
         return (
-          <div key={category.id} className="mt-6 sm:mt-8 md:mt-12 lg:mt-16 xl:mt-20">
+          <div key={category.id} className="mt-6 sm:mt-8 md:mt-12 lg:mt-16 xl:mt-20 mx-4 sm:mx-6 md:mx-10 lg:mx-16 xl:mx-20 2xl:mx-28">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-0 mb-3 sm:mb-4 md:mb-6 px-1 sm:px-0">
               <h2 className="text-base sm:text-xl md:text-2xl lg:text-3xl xl:text-4xl 2xl:text-5xl font-bold text-red-600">{category.displayName}</h2>
               <a href="#" className="text-blue-600 hover:underline text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl font-semibold uppercase whitespace-nowrap">VIEW ALL</a>
