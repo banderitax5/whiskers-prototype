@@ -1,6 +1,22 @@
 import { useState, useEffect } from 'react'
 import { Navigate } from 'react-router-dom'
-import { apiGetAuth, apiPutAuth } from '../lib/api'
+import supabase from '../lib/supabase'
+
+const API_BASE = import.meta.env.VITE_API_BASE || '/api'
+
+async function fetchWithAuth(path, options = {}) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('Not authenticated')
+  const headers = {
+    ...options.headers,
+    Authorization: `Bearer ${session.access_token}`,
+  }
+  if (options.body) headers['Content-Type'] = 'application/json'
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+  return data
+}
 
 function Profile() {
   const [profile, setProfile] = useState(null)
@@ -8,19 +24,18 @@ function Profile() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-
-  const token = localStorage.getItem('token')
+  const [session, setSession] = useState(undefined)
 
   useEffect(() => {
-    if (!token) {
-      setLoading(false)
-      return
-    }
-    apiGetAuth('/profile')
-      .then(setProfile)
-      .catch((err) => setError(err.message || 'Failed to load profile'))
-      .finally(() => setLoading(false))
-  }, [token])
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      setSession(s)
+      if (!s) { setLoading(false); return }
+      fetchWithAuth('/profile')
+        .then(setProfile)
+        .catch((err) => setError(err.message || 'Failed to load profile'))
+        .finally(() => setLoading(false))
+    })
+  }, [])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -29,24 +44,21 @@ function Profile() {
     setSuccess('')
     setSaving(true)
     try {
-      const updated = await apiPutAuth('/profile', {
-        firstName: profile.firstName,
-        lastName: profile.lastName,
-        phone: profile.phone,
-        addressLine1: profile.addressLine1,
-        addressLine2: profile.addressLine2,
-        city: profile.city,
-        province: profile.province,
-        postalCode: profile.postalCode,
-        country: profile.country,
+      const updated = await fetchWithAuth('/profile', {
+        method: 'PUT',
+        body: JSON.stringify({
+          firstName: profile.firstName,
+          lastName: profile.lastName,
+          phone: profile.phone,
+          addressLine1: profile.addressLine1,
+          addressLine2: profile.addressLine2,
+          city: profile.city,
+          province: profile.province,
+          postalCode: profile.postalCode,
+          country: profile.country,
+        }),
       })
       setProfile(updated)
-      localStorage.setItem('user', JSON.stringify({
-        id: updated.id,
-        email: updated.email,
-        firstName: updated.firstName,
-        lastName: updated.lastName,
-      }))
       setSuccess('Profile saved successfully.')
     } catch (err) {
       setError(err.message || 'Failed to save profile')
@@ -55,7 +67,7 @@ function Profile() {
     }
   }
 
-  if (!token && !loading) {
+  if (session === null && !loading) {
     return <Navigate to="/" replace />
   }
 

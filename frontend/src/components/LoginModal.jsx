@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { apiPost } from '../lib/api'
+import supabase from '../lib/supabase'
 
 function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
   const [email, setEmail] = useState('')
@@ -12,9 +12,12 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
     setError('')
     setLoading(true)
     try {
-      const data = await apiPost('/auth/login', { email: email.trim(), password })
-      localStorage.setItem('token', data.token)
-      localStorage.setItem('user', JSON.stringify(data.user))
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      })
+      if (authError) throw authError
+      if (!data.user) throw new Error('Login failed')
       onLoginSuccess?.()
       onClose()
     } catch (err) {
@@ -70,11 +73,12 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
               <input
                 type="email"
                 id="email"
+                placeholder="Enter your email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoComplete="email"
-                className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 sm:px-4 py-2 rounded-lg border bg-white border-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
 
@@ -85,11 +89,12 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
               <input
                 type="password"
                 id="password"
+                placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 autoComplete="current-password"
-                className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 sm:px-4 py-2 rounded-lg border bg-white border-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
 

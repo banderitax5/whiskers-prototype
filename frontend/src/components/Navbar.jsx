@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { BsCartFill, BsPersonCircle } from 'react-icons/bs'
 import LoginModal from './LoginModal'
 import SignupModal from './SignupModal'
+import supabase from '../lib/supabase'
 
 function Navbar() {
 	const navigate = useNavigate()
@@ -12,14 +13,17 @@ function Navbar() {
 	const [isMobileOpen, setIsMobileOpen] = useState(false)
 	const [isDropdownOpen, setIsDropdownOpen] = useState(false)
 	const dropdownRef = useRef(null)
+	const [user, setUser] = useState(null)
 
-	const [user, setUser] = useState(() => {
-		try {
-			return JSON.parse(localStorage.getItem('user') || 'null')
-		} catch {
-			return null
-		}
-	})
+	useEffect(() => {
+		supabase.auth.getSession().then(({ data: { session } }) => {
+			setUser(session?.user ?? null)
+		})
+		const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+			setUser(session?.user ?? null)
+		})
+		return () => subscription.unsubscribe()
+	}, [])
 
 	useEffect(() => {
 		if (!isDropdownOpen) return
@@ -33,26 +37,15 @@ function Navbar() {
 	}, [isDropdownOpen])
 
 	function onLoginSuccess() {
-		try {
-			setUser(JSON.parse(localStorage.getItem('user') || 'null'))
-		} catch {
-			setUser(null)
-		}
 		setIsLoginOpen(false)
 	}
 
 	function onSignupSuccess() {
-		try {
-			setUser(JSON.parse(localStorage.getItem('user') || 'null'))
-		} catch {
-			setUser(null)
-		}
 		setIsSignupOpen(false)
 	}
 
-	function handleLogout() {
-		localStorage.removeItem('token')
-		localStorage.removeItem('user')
+	async function handleLogout() {
+		await supabase.auth.signOut()
 		setUser(null)
 		setIsDropdownOpen(false)
 		setIsMobileOpen(false)

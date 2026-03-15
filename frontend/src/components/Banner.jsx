@@ -6,7 +6,7 @@ const BRANDS = [
   { id: 2, name: 'Pedigree', image: '/brands/aozi.png' },
   { id: 3, name: 'Whiskas', image: '/brands/topbreed.png' },
   { id: 4, name: 'Purina', image: '/brands/vitality.png' },
-  { id: 4, name: 'Special', image: '/brands/special.png' },
+  { id: 5, name: 'Special', image: '/brands/special.png' },
 ]
 
 function Banner() {
@@ -14,7 +14,7 @@ function Banner() {
   const [centerIndex, setCenterIndex] = useState(0)
   const [scrolling, setScrolling] = useState(false)
   const [isAutoPlaying, setIsAutoPlaying] = useState(true)
-  const autoPlayRef = useRef(null)
+
 
   const scroll = useCallback((direction) => {
     if (!scrollRef.current || scrolling) return
@@ -57,7 +57,7 @@ function Banner() {
         } else {
           scroll('right')
         }
-      }, 2000) //2.5 seconds
+      }, 1500) //1000 = 1 second
     }
     return () => {
       if (intervalId) clearInterval(intervalId)
@@ -93,8 +93,7 @@ function Banner() {
   }, [handleScroll])
 
   // For manual controls, allow looping but disable arrows at actual scroll bounds
-  const atStart = centerIndex === 0
-  const atEnd = centerIndex === BRANDS.length - 1
+
 
   return (
       <div

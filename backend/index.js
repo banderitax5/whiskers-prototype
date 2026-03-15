@@ -1,46 +1,34 @@
-// backend/index.js
+// loads the .env file so we can use environment variables like SUPABASE_URL, etc.
 import 'dotenv/config'
-
-//dependencies
 import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
-import mysql from 'mysql2/promise'
-import bcrypt from 'bcryptjs'
-import jwt from 'jsonwebtoken'
+import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 
-//mysql connection pool
-const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  port: Number(process.env.DB_PORT) || 3306,
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-})
+// this is the supabase client for the backend — uses the service_role key
+// so it can bypass row level security and do admin-level stuff
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+)
 
-//jwt sign and verify
-const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production'
-
-//encryption for user PII
-const ENCRYPTION_KEY_BASE64 = process.env.ENCRYPTION_KEY || '' //encryption key from environment variables
-
+// grabs the encryption key from .env and turns it into a 32-byte buffer
+// this is needed for AES-256-GCM encryption of user personal info
+const ENCRYPTION_KEY_BASE64 = process.env.ENCRYPTION_KEY || ''
 const ENCRYPTION_KEY = ENCRYPTION_KEY_BASE64
-  ? Buffer.from(ENCRYPTION_KEY_BASE64, 'base64') 
+  ? Buffer.from(ENCRYPTION_KEY_BASE64, 'base64')
   : null
 if (!ENCRYPTION_KEY || ENCRYPTION_KEY.length !== 32) {
   throw new Error('ENCRYPTION_KEY must be a 32-byte base64 string (AES-256-GCM)')
 }
 
-//encryption prefix and lengths
 const ENC_PREFIX = 'enc:'
 const GCM_IV_LENGTH = 12
 const GCM_TAG_LENGTH = 16
 
-//encrypt text function
+// takes plain text (like a name or phone number) and encrypts it
+// so it's stored safely in the database — no one can read it without the key
 function encryptText(value) {
   if (value == null) return null
   const trimmed = String(value).trim()
@@ -53,7 +41,8 @@ function encryptText(value) {
   return `${ENC_PREFIX}${payload}`
 }
 
-//decrypt text function
+// does the opposite of encryptText — takes the encrypted string from the database
+// and turns it back into readable text so we can send it to the frontend
 function decryptText(value) {
   if (value == null) return ''
   if (typeof value !== 'string' || !value.startsWith(ENC_PREFIX)) {
@@ -68,53 +57,91 @@ function decryptText(value) {
   return decipher.update(ciphertext, undefined, 'utf8') + decipher.final('utf8')
 }
 
-// authentication middleware to verify JWT and attach userId to req
-function authMiddleware(req, res, next) {
+// this runs before any protected route — it checks if the user sent a valid
+// supabase access token, and if so, attaches their user id and email to the request
+async function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
   if (!token) {
     return res.status(401).json({ error: 'Authentication required' })
   }
-  try {
-    const payload = jwt.verify(token, JWT_SECRET)
-    req.userId = payload.userId
-    next()
-  } catch {
+  const { data: { user }, error } = await supabase.auth.getUser(token)
+  if (error || !user) {
     return res.status(401).json({ error: 'Invalid or expired token' })
   }
+  req.userId = user.id
+  req.userEmail = user.email
+  next()
 }
 
-// express app
+// sets up express with security headers (helmet), cors for local dev, and json parsing
 const app = express()
 app.use(helmet())
 app.use(cors({ origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/] }))
 app.use(express.json())
 
-// basic scaffolding for products
+// placeholder for products — returns empty for now, will be replaced
+// when we hook up the product menu from the database
 app.get('/api/products', (_, res) => {
   res.json({ items: [], page: 1, pageSize: 20, total: 0 })
 })
 
-// cart endpoints
+// placeholder for cart — returns empty for now
 app.get('/api/cart', (_, res) => {
   res.json({ items: [], total: 0 })
 })
 
-// orders endpoints
+// placeholder for creating orders — just returns a fake order id for now
 app.post('/api/orders', (req, res) => {
   res.status(201).json({ id: 'placeholder-order-id', status: 'created' })
 })
 
-//profile endpoints requires auth for security
+// called right after signup — saves the first name and last name (encrypted)
+// into the profiles table so they show up when the user opens their profile
+app.post('/api/profile/init', authMiddleware, async (req, res) => {
+  const { firstName, lastName } = req.body ?? {}
+  try {
+    const { error } = await supabase
+      .from('profiles')
+      .upsert({
+        id: req.userId,
+        email: req.userEmail,
+        first_name: encryptText(firstName),
+        last_name: encryptText(lastName),
+      }, { onConflict: 'id' })
+    if (error) throw error
+    res.status(201).json({ ok: true })
+  } catch (err) {
+    console.error('Profile init error:', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// fetches the logged-in user's profile from the profiles table
+// decrypts all the personal info before sending it back to the frontend
+// if no profile exists yet, returns empty fields so the form still loads
 app.get('/api/profile', authMiddleware, async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      'SELECT id, email, first_name, last_name, phone, address_line1, address_line2, city, province, postal_code, country FROM users WHERE id = ?',
-      [req.userId]
-    )
-    const u = rows[0]
-    if (!u) {
-      return res.status(404).json({ error: 'User not found' })
+    const { data: u, error } = await supabase
+      .from('profiles')
+      .select('id, email, first_name, last_name, phone, address_line1, address_line2, city, province, postal_code, country')
+      .eq('id', req.userId)
+      .single()
+
+    if (error || !u) {
+      return res.json({
+        id: req.userId,
+        email: req.userEmail,
+        firstName: '',
+        lastName: '',
+        phone: '',
+        addressLine1: '',
+        addressLine2: '',
+        city: '',
+        province: '',
+        postalCode: '',
+        country: '',
+      })
     }
     res.json({
       id: u.id,
@@ -135,42 +162,40 @@ app.get('/api/profile', authMiddleware, async (req, res) => {
   }
 })
 
-// profile starting point, requires auth for security
+// saves/updates the user's profile — encrypts all personal info before storing it
+// uses upsert so it creates the row if it doesn't exist, or updates it if it does
+// then fetches the updated row and sends it back decrypted
 app.put('/api/profile', authMiddleware, async (req, res) => {
   const { firstName, lastName, phone, addressLine1, addressLine2, city, province, postalCode, country } = req.body ?? {}
   const fn = typeof firstName === 'string' ? firstName.trim() : null
   const ln = typeof lastName === 'string' ? lastName.trim() : null
   try {
-    await pool.query(
-      `UPDATE users SET 
-        first_name = COALESCE(?, first_name), 
-        last_name = COALESCE(?, last_name), 
-        phone = ?, 
-        address_line1 = ?, 
-        address_line2 = ?, 
-        city = ?, 
-        province = ?, 
-        postal_code = ?, 
-        country = ? 
-      WHERE id = ?`,
-      [
-        fn ? encryptText(fn) : null,
-        ln ? encryptText(ln) : null,
-        encryptText(phone),
-        encryptText(addressLine1),
-        encryptText(addressLine2),
-        encryptText(city),
-        encryptText(province),
-        encryptText(postalCode),
-        encryptText(country),
-        req.userId,
-      ]
-    )
-    const [rows] = await pool.query(
-      'SELECT id, email, first_name, last_name, phone, address_line1, address_line2, city, province, postal_code, country FROM users WHERE id = ?',
-      [req.userId]
-    )
-    const u = rows[0]
+    const updates = {
+      id: req.userId,
+      email: req.userEmail,
+      phone: encryptText(phone),
+      address_line1: encryptText(addressLine1),
+      address_line2: encryptText(addressLine2),
+      city: encryptText(city),
+      province: encryptText(province),
+      postal_code: encryptText(postalCode),
+      country: encryptText(country),
+    }
+    if (fn) updates.first_name = encryptText(fn)
+    if (ln) updates.last_name = encryptText(ln)
+
+    const { error: upsertError } = await supabase
+      .from('profiles')
+      .upsert(updates, { onConflict: 'id' })
+    if (upsertError) throw upsertError
+
+    const { data: u, error: selectError } = await supabase
+      .from('profiles')
+      .select('id, email, first_name, last_name, phone, address_line1, address_line2, city, province, postal_code, country')
+      .eq('id', req.userId)
+      .single()
+    if (selectError) throw selectError
+
     res.json({
       id: u.id,
       email: u.email,
@@ -190,101 +215,6 @@ app.put('/api/profile', authMiddleware, async (req, res) => {
   }
 })
 
-// login – query user by email, verify password with bcrypt, return JWT
-app.post('/api/auth/login', async (req, res) => {
-  const { email, password } = req.body ?? {}
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' })
-  }
-  try {
-    const [rows] = await pool.query(
-      'SELECT id, email, password_hash, first_name, last_name FROM users WHERE email = ?', //query user by email
-      [email.trim().toLowerCase()]
-    )
-    const user = rows[0]
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid email or password' })
-    }
-    const match = await bcrypt.compare(password, user.password_hash) //verify password with bcrypt
-    if (!match) {
-      return res.status(401).json({ error: 'Invalid email or password' })
-    }
-    const token = jwt.sign(
-      { userId: user.id, email: user.email },
-      JWT_SECRET, 
-      { expiresIn: '12h' }
-    )
-    res.status(200).json({
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        firstName: decryptText(user.first_name),
-        lastName: decryptText(user.last_name),
-      },
-    })
-  } catch (err) {
-    console.error('Login error:', err)
-    res.status(500).json({ error: 'Server error' })
-  }
-})
-
-// singup – hash password with bcrypt, insert user into DB
-app.post('/api/auth/signup', async (req, res) => {
-  const { email, password, firstName, lastName } = req.body ?? {}
-  if (!email || !password || !firstName?.trim() || !lastName?.trim()) {
-    return res.status(400).json({ error: 'Email, password, first name, and last name are required' })
-  }
-  const emailNorm = email.trim().toLowerCase()
-  try {
-    const [existing] = await pool.query('SELECT id FROM users WHERE email = ?', [emailNorm]) //checks if the email exists
-    if (existing.length > 0) {
-      return res.status(409).json({ error: 'An account with this email already exists' })
-    }
-    const password_hash = await bcrypt.hash(password, 10)
-    await pool.query(
-      'INSERT INTO users (email, password_hash, first_name, last_name) VALUES (?, ?, ?, ?)',
-      [
-        emailNorm,
-        password_hash,
-        encryptText(firstName), //encrypt first name
-        encryptText(lastName), //encrypt last name
-      ]
-    )
-    const [rows] = await pool.query(
-      'SELECT id, email, first_name, last_name FROM users WHERE email = ?',
-      [emailNorm]
-    )
-    const user = rows[0]
-    const token = jwt.sign(
-      { userId: user.id, email: user.email },
-      JWT_SECRET,
-      { expiresIn: '12h' }
-    )
-    //return token and user data
-    res.status(201).json({
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        firstName: decryptText(user.first_name),
-        lastName: decryptText(user.last_name),
-      },
-    })
-  } catch (err) {
-    console.error('Signup error:', err)
-    res.status(500).json({ error: 'Server error' })
-  }
-})
-
+// starts the server on port 3001 (or whatever PORT is set in .env)
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => console.log(`API on http://localhost:${PORT}`))
-
-pool.getConnection()
-  .then((conn) => {
-    console.log('Database connected')
-    conn.release()
-  })
-  .catch((err) => {
-    console.error('Database connection failed:', err.message)
-  })

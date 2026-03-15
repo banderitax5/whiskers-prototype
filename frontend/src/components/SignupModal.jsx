@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { apiPost } from '../lib/api'
+import supabase from '../lib/supabase'
 
 function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
   const [firstName, setFirstName] = useState('')
@@ -14,14 +14,33 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
     setError('')
     setLoading(true)
     try {
-      const data = await apiPost('/auth/signup', {
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
+      const { data, error: authError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
+        options: {
+          data: {
+            first_name: firstName.trim(),
+            last_name: lastName.trim(),
+          },
+        },
       })
-      localStorage.setItem('token', data.token)
-      localStorage.setItem('user', JSON.stringify(data.user))
+      if (authError) throw authError
+      if (!data.session) throw new Error('Sign up failed')
+
+      // save first name and last name to the profiles table via backend
+      // so they're encrypted and show up on the profile page right away
+      await fetch('/api/profile/init', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${data.session.access_token}`,
+        },
+        body: JSON.stringify({
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+        }),
+      })
+
       onSignupSuccess?.()
       onClose()
     } catch (err) {
@@ -78,11 +97,12 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                 <input
                   type="text"
                   id="firstName"
+                  placeholder="Enter your first name"
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
                   required
                   autoComplete="given-name"
-                  className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
 
@@ -93,11 +113,12 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                 <input
                   type="text"
                   id="lastName"
+                  placeholder="Enter your last name"
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
                   required
                   autoComplete="family-name"
-                  className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
             </div>
@@ -109,11 +130,12 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
               <input
                 type="email"
                 id="email"
+                placeholder="Enter your email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoComplete="email"
-                className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
 
@@ -124,11 +146,12 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
               <input
                 type="password"
                 id="password"
+                placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 autoComplete="new-password"
-                className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
 
