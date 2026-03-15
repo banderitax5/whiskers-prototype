@@ -14,20 +14,16 @@ function RequireAuth({ children }) {
   return children
 }
 
-/**
- * Router configuration for the PetConnect application
- * Uses React Router's createBrowserRouter for client-side routing
- */
 const router = createBrowserRouter([
   {
-    path: '/',                    // Root path
-    element: <Layout />,          // Layout component wraps all pages with navbar, etc.
+    path: '/',                    
+    element: <Layout />,          
     children: [
-      { index: true, element: <Home /> },           // Default route - shows Home component
-      { path: 'about', element: <About /> },        // /about - shows About component
-      { path: 'pets', element: <Pets /> },          // /pets - shows Pets component
-      { path: 'profile', element: <RequireAuth><Profile /></RequireAuth> },    // /profile - user profile (auth required)
-      { path: '*', element: <NotFound /> },         // Catch-all route for 404 errors
+      { index: true, element: <Home /> },           
+      { path: 'about', element: <About /> },        
+      { path: 'pets', element: <Pets /> },          
+      { path: 'profile', element: <RequireAuth><Profile /></RequireAuth> },    
+      { path: '*', element: <NotFound /> },        
     ],
   },
 ])
