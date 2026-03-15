@@ -2,6 +2,7 @@ import { Outlet, useLocation } from 'react-router-dom'
 import Navbar from './Navbar.jsx'
 import Banner from './Banner.jsx'
 import Strip from './Strip.jsx'
+import Footer from './Footer.jsx'
 
 // the layout wrapper - every page gets the navbar, strip, and footer automatically
 // Outlet is where the actual page content (Home, Profile, etc.) gets rendered
@@ -19,11 +20,7 @@ function Layout() {
 			<main className="flex-1 mx-auto w-full px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
 				<Outlet />
 			</main>
-			<footer className="mt-auto border-t bg-white/80">
-				<div className="mx-auto w-full px-4 sm:px-6 lg:px-8 py-3 text-sm text-gray-600 max-w-6xl">
-					© {new Date().getFullYear()} Whiskers
-				</div>
-			</footer>
+			<Footer />
 		</div>
 	)
 }
