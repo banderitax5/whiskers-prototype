@@ -9,7 +9,10 @@ import Strip from './Strip.jsx'
 // because it looks weird on those - it's only for the shopping pages
 function Layout() {
 	const location = useLocation()
-	const showBanner = location.pathname !== '/profile' && location.pathname !== '/orders' && location.pathname !== '/addresses'
+	const showBanner = location.pathname !== '/profile' && 
+						location.pathname !== '/orders' && 
+						location.pathname !== '/addresses' && 
+						location.pathname !== '/admin' 
 
 	return (
 		<div className="min-h-screen flex flex-col bg-gray-50 text-gray-900">

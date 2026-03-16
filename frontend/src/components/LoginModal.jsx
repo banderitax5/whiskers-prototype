@@ -1,31 +1,43 @@
 import React, { useState } from 'react'
 import supabase from '../lib/supabase'
 
+const API_BASE = import.meta.env.VITE_API_BASE || '/api'
+
 // the login modal - pops up when the user clicks "Log In" in the navbar
-// uses supabase's built-in signInWithPassword so we don't have to deal
-// with hashing or token management ourselves, supabase handles all of that
+// login now goes through our backend (/api/auth/login) instead of directly to supabase
+// this way the backend's rate limiter actually protects against brute force attacks
+// (5 attempts per 15 minutes per IP, then you're locked out)
 function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // fires when the user hits the login button
-  // sends the email + password to supabase - if it works, supabase gives us
-  // back a session with tokens and the user object automatically
-  // the onAuthStateChange listener in Navbar picks up the new session
+  // sends login to our backend which rate-limits it, then forwards to supabase
+  // if it works, we get back a session object and use supabase.auth.setSession
+  // to store it locally - this triggers onAuthStateChange in the Navbar
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
     setLoading(true)
     try {
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
+      // hit our backend login endpoint (rate-limited)
+      const res = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), password }),
       })
-      if (authError) throw authError
-      if (!data.user) throw new Error('Login failed')
-      // tell the parent component (Navbar) that login worked so it can close the modal
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Login failed')
+
+      // take the session from the backend response and set it in the supabase client
+      // this makes supabase.auth.getSession() and onAuthStateChange work as expected
+      const { error: setErr } = await supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+      })
+      if (setErr) throw setErr
+
       onLoginSuccess?.()
       onClose()
     } catch (err) {
@@ -35,7 +47,6 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
     }
   }
 
-  // don't render anything if the modal isn't supposed to be open
   if (!isOpen) return null
 
   return (
@@ -70,19 +81,19 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
-            {/* shows up in red if supabase rejects the login (wrong password, etc.) */}
+            {/* shows up in red if login fails (wrong password, rate limited, etc.) */}
             {error && (
               <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg" role="alert">
                 {error}
               </p>
             )}
             <div>
-              <label htmlFor="email" className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="login-email" className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                 EMAIL
               </label>
               <input
                 type="email"
-                id="email"
+                id="login-email"
                 placeholder="Enter your email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -93,12 +104,12 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="login-password" className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                 PASSWORD
               </label>
               <input
                 type="password"
-                id="password"
+                id="login-password"
                 placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

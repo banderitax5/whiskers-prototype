@@ -5,9 +5,12 @@ import LoginModal from './LoginModal'
 import SignupModal from './SignupModal'
 import supabase from '../lib/supabase'
 
+const API_BASE = import.meta.env.VITE_API_BASE || '/api'
+
 // the main navbar - handles navigation, search bar, auth modals, and user dropdown
 // it listens to supabase auth state changes so the UI updates automatically
 // when someone logs in or out (no manual state juggling needed)
+// also fetches the user's role so we can show/hide the admin link
 function Navbar() {
 	const navigate = useNavigate()
 	const [query, setQuery] = useState('')
@@ -17,17 +20,37 @@ function Navbar() {
 	const [isDropdownOpen, setIsDropdownOpen] = useState(false)
 	const dropdownRef = useRef(null)
 	const [user, setUser] = useState(null)
+	// tracks whether the current user is an admin - controls visibility of admin links
+	const [isAdmin, setIsAdmin] = useState(false)
+
+	// fetches the user's role from the backend whenever we get a new session
+	// if they're an admin, we flip isAdmin to true so the admin link shows up
+	async function fetchRole(session) {
+		if (!session) { setIsAdmin(false); return }
+		try {
+			const res = await fetch(`${API_BASE}/me/role`, {
+				headers: { Authorization: `Bearer ${session.access_token}` },
+			})
+			if (!res.ok) { setIsAdmin(false); return }
+			const { role } = await res.json()
+			setIsAdmin(role === 'admin')
+		} catch {
+			setIsAdmin(false)
+		}
+	}
 
 	// on mount, grab the current session from supabase to see if someone's already logged in
 	// then subscribe to onAuthStateChange - this fires whenever the user logs in, logs out,
 	// or the token refreshes, so we always have the latest user state
-	// the cleanup function unsubscribes so we don't leak listeners
+	// also fetches the role each time the session changes
 	useEffect(() => {
 		supabase.auth.getSession().then(({ data: { session } }) => {
 			setUser(session?.user ?? null)
+			fetchRole(session)
 		})
 		const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
 			setUser(session?.user ?? null)
+			fetchRole(session)
 		})
 		return () => subscription.unsubscribe()
 	}, [])
@@ -60,6 +83,7 @@ function Navbar() {
 	async function handleLogout() {
 		await supabase.auth.signOut()
 		setUser(null)
+		setIsAdmin(false)
 		setIsDropdownOpen(false)
 		setIsMobileOpen(false)
 		navigate('/')
@@ -116,6 +140,15 @@ function Navbar() {
 						>
 							Deals
 						</NavLink>
+						{/* only shows up if the logged-in user has the admin role */}
+						{isAdmin && (
+							<NavLink
+								to="/admin"
+								className="h-9 px-4 flex items-center justify-center rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition-colors"
+							>
+								Admin
+							</NavLink>
+						)}
 					</nav>
 
 					{/* auth slot - min-width keeps the layout stable whether logged in or out
@@ -155,6 +188,16 @@ function Navbar() {
 										>
 											Addresses
 										</Link>
+										{/* admin link in dropdown too - only visible for admins */}
+										{isAdmin && (
+											<Link
+												to="/admin"
+												className="block px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+												onClick={() => setIsDropdownOpen(false)}
+											>
+												Admin Panel
+											</Link>
+										)}
 										<button
 											type="button"
 											onClick={handleLogout}
@@ -250,6 +293,10 @@ function Navbar() {
 							{user ? (
 								<>
 									<Link to="/profile" className="text-white/90 hover:text-white font-semibold" onClick={() => setIsMobileOpen(false)}>Profile</Link>
+									{/* admin link in mobile menu - only for admins */}
+									{isAdmin && (
+										<Link to="/admin" className="text-red-300 hover:text-red-200 font-semibold" onClick={() => setIsMobileOpen(false)}>Admin</Link>
+									)}
 									<button onClick={handleLogout} className="text-red-300 hover:text-red-200 font-semibold">Logout</button>
 								</>
 							) : (

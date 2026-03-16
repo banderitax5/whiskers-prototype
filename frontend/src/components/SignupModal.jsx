@@ -1,10 +1,12 @@
 import React, { useState } from 'react'
 import supabase from '../lib/supabase'
 
+const API_BASE = import.meta.env.VITE_API_BASE || '/api'
+
 // the signup modal - shows up when the user clicks "Sign Up" in the navbar
-// creates a new account through supabase auth, then immediately sends the
-// first name + last name to our backend so they get encrypted and stored
-// in the profiles table (supabase only stores email + password in auth.users)
+// signup now goes through our backend (/api/auth/signup) instead of directly to supabase
+// the backend handles everything: creates the auth user, encrypts the profile data,
+// and rate-limits signups (3 per hour per IP) to prevent spam accounts
 function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
@@ -13,48 +15,36 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // the main signup flow - two steps:
-  // 1) supabase.auth.signUp creates the user in auth.users and gives us a session
-  // 2) we POST to /api/profile/init with the access token so the backend can
-  //    encrypt the first name, last name, and email before saving to profiles table
+  // sends all the signup data to our backend in one shot
+  // the backend creates the supabase auth user AND saves the encrypted profile
+  // then returns the session so we can set it locally with supabase.auth.setSession
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
     setLoading(true)
     try {
-      // step 1: create the user in supabase auth
-      // the options.data stuff stores first/last name in raw_user_meta_data
-      // which is just extra metadata supabase keeps alongside the auth record
-      const { data, error: authError } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        options: {
-          data: {
-            first_name: firstName.trim(),
-            last_name: lastName.trim(),
-          },
-        },
-      })
-      if (authError) throw authError
-      if (!data.session) throw new Error('Sign up failed')
-
-      // step 2: hit our backend to save the encrypted profile data
-      // we pass the access_token so the backend knows who's making the request
-      // the backend encrypts everything with AES-256-GCM before storing it
-      await fetch('/api/profile/init', {
+      // hit our backend signup endpoint (rate-limited)
+      const res = await fetch(`${API_BASE}/auth/signup`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${data.session.access_token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          email: email.trim(),
+          password,
           firstName: firstName.trim(),
           lastName: lastName.trim(),
         }),
       })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Sign up failed')
 
-      // let the parent know signup worked - Navbar's onAuthStateChange
-      // listener will automatically pick up the new session too
+      // take the session from the backend and set it in the supabase client
+      // this triggers onAuthStateChange in the Navbar so the UI updates
+      const { error: setErr } = await supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+      })
+      if (setErr) throw setErr
+
       onSignupSuccess?.()
       onClose()
     } catch (err) {
@@ -98,7 +88,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
-            {/* error banner - shows supabase errors like "email already registered" */}
+            {/* error banner - shows rate limit errors, supabase errors, etc. */}
             {error && (
               <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg" role="alert">
                 {error}
@@ -106,12 +96,12 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
             )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div>
-                <label htmlFor="firstName" className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="signup-firstName" className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                   FIRST NAME
                 </label>
                 <input
                   type="text"
-                  id="firstName"
+                  id="signup-firstName"
                   placeholder="Enter your first name"
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
@@ -122,12 +112,12 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
               </div>
 
               <div>
-                <label htmlFor="lastName" className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="signup-lastName" className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                   LAST NAME
                 </label>
                 <input
                   type="text"
-                  id="lastName"
+                  id="signup-lastName"
                   placeholder="Enter your last name"
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
@@ -139,12 +129,12 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
             </div>
 
             <div>
-              <label htmlFor="email" className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="signup-email" className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                 EMAIL
               </label>
               <input
                 type="email"
-                id="email"
+                id="signup-email"
                 placeholder="Enter your email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -155,12 +145,12 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="signup-password" className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                 PASSWORD
               </label>
               <input
                 type="password"
-                id="password"
+                id="signup-password"
                 placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
