@@ -2,9 +2,9 @@ import React from "react";
 
 function Footer() {
   return (
-    <footer className="footer sm:footer-horizontal bg-base-300 text-base-content p-10">
+    <footer className="footer sm:footer-horizontal bg-[#031730] text-base-content p-10">
       <nav>
-        <h6 className="footer-title">START SHOPPIING</h6>
+        <h6 className="footer-title text-white">START SHOPPIING</h6>
         <a className="link link-hover">Dog</a>
         <a className="link link-hover">Cat</a>
         <a className="link link-hover">Bird</a>
@@ -12,7 +12,7 @@ function Footer() {
       </nav>
 
       <nav>
-        <h6 className="footer-title">SUPPORT</h6>
+        <h6 className="footer-title text-white">SUPPORT</h6>
         <a className="link link-hover">My Account</a>
         <a className="link link-hover">Payment</a>
         <a className="link link-hover">Returns</a>
@@ -20,7 +20,7 @@ function Footer() {
       </nav>
 
       <nav>
-        <h6 className="footer-title">Social</h6>
+        <h6 className="footer-title text-white">Social</h6>
         <div className="grid grid-flow-col gap-4">
           <a>
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" className="fill-current">
