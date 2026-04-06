@@ -8,6 +8,8 @@ import Profile from './pages/Profile.jsx'
 import NotFound from './pages/NotFound.jsx'
 import Admin from './pages/Admin.jsx'
 import supabase from './lib/supabase'
+import AdminLayout from './components/AdminLayout.jsx'
+import AdminDashboard from './components/AdminDashboard.jsx'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -65,15 +67,31 @@ const router = createBrowserRouter([
   {
     path: '/',
     element: <Layout />,
-    children:
-    [
+    children: [
       { index: true, element: <Home /> },
       { path: 'about', element: <About /> },
       { path: 'pets', element: <Pets /> },
       { path: 'profile', element: <RequireAuth><Profile /></RequireAuth> },
-      { path: 'admin', element: <RequireAdmin><Admin /></RequireAdmin> },
     ],
   },
+
+  // ADMIN ROUTES (separate layout - no navbar)
+  {
+    path: '/admin',
+    element: (
+      <RequireAdmin>
+        <AdminLayout />
+      </RequireAdmin>
+    ),
+    children: [
+      { index: true, element: <AdminDashboard /> },
+
+      // future admin pages (optional but ready)
+      // { path: 'products', element: <Products /> },
+      // { path: 'inventory', element: <Inventory /> },
+    ],
+  },
+
   { path: '*', element: <NotFound /> },
 ])
 
