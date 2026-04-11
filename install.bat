@@ -22,7 +22,18 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+echo.
+echo ============================================
+echo  Installing root dependencies (concurrently)...
+echo ============================================
 cd ..
+call npm install
+if %errorlevel% neq 0 (
+    echo ERROR: Root install failed.
+    pause
+    exit /b 1
+)
+
 echo.
 echo ============================================
 echo  All dependencies installed successfully!
@@ -33,6 +44,6 @@ echo       SUPABASE_SERVICE_KEY, and ENCRYPTION_KEY
 echo    2. Copy frontend\.env.example to frontend\.env
 echo       and fill in your VITE_SUPABASE_URL and
 echo       VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY
-echo    3. Run start.bat to launch the app
+echo    3. Run start.bat or: npm run dev(with tunnel) or npm run dev:local(without tunnel) (from repo root)
 echo ============================================
 pause
