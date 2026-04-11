@@ -134,7 +134,7 @@ function Home() {
     <div className="space-y-3 sm:space-y-4 md:space-y-6 lg:space-y-8 px-2 sm:px-4 md:px-6 lg:px-8 xl:px-12 2xl:px-16">
       <h1 className="text-base sm:text-lg md:text-xl lg:text-2xl xl:text-3xl 2xl:text-4xl font-bold text-center px-2">SHOP BY CATEGORY</h1>
 
-      {/* the category grid — 6 clickable cards with images (food, vitamins, accessories, etc.)
+      {/* the category grid: 6 clickable cards with images (food, vitamins, accessories, etc.)
           these are static for now but could be dynamic later */}
       <section className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 md:gap-4 lg:gap-5 xl:gap-6 mx-4 sm:mx-6 md:mx-10 lg:mx-16 xl:mx-20 2xl:mx-28">
         <div className="relative rounded-md sm:rounded-lg md:rounded-xl lg:rounded-2xl bg-white shadow-md sm:shadow-lg border overflow-hidden p-1 sm:p-2 md:p-3 lg:p-4 xl:p-5 transition-transform duration-300 hover:scale-105 active:scale-95 cursor-pointer">

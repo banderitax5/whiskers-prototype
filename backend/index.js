@@ -195,7 +195,7 @@ app.post('/api/auth/signup', signupLimiter, async (req, res) => {
     })
     if (authError) throw authError
     if (!data.session) {
-      return res.status(400).json({ error: 'Signup failed — no session returned' })
+      return res.status(400).json({ error: 'Signup failed, no session returned' })
     }
 
     // step 2: save the encrypted profile using the admin client (bypasses RLS)

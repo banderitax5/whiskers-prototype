@@ -30,50 +30,50 @@ function Navbar() {
   }
 
   async function fetchRole(session) {
-  if (!session) { 
-    setIsAdmin(false)
-    localStorage.removeItem("role")
-    return 
+    if (!session) {
+      setIsAdmin(false)
+      localStorage.removeItem("role")
+      return
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/me/role`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+
+      if (!res.ok) throw new Error()
+
+      const { role } = await res.json()
+
+      setIsAdmin(role === 'admin')
+
+      //  SAVE ROLE
+      localStorage.setItem("role", role)
+
+    } catch {
+      setIsAdmin(false)
+    }
   }
 
-  try {
-    const res = await fetch(`${API_BASE}/me/role`, {
-      headers: { Authorization: `Bearer ${session.access_token}` },
+  useEffect(() => {
+    // LOAD ROLE FROM STORAGE FIRST (instant UI)
+    const savedRole = localStorage.getItem("role")
+    if (savedRole === "admin") {
+      setIsAdmin(true)
+    }
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
+      fetchRole(session)
     })
 
-    if (!res.ok) throw new Error()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+      fetchRole(session)
+    })
 
-    const { role } = await res.json()
-
-    setIsAdmin(role === 'admin')
-
-    //  SAVE ROLE
-    localStorage.setItem("role", role)
-
-  } catch {
-    setIsAdmin(false)
-  }
-}
-
- useEffect(() => {
-  // LOAD ROLE FROM STORAGE FIRST (instant UI)
-  const savedRole = localStorage.getItem("role")
-  if (savedRole === "admin") {
-    setIsAdmin(true)
-  }
-
-  supabase.auth.getSession().then(({ data: { session } }) => {
-    setUser(session?.user ?? null)
-    fetchRole(session)
-  })
-
-  const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-    setUser(session?.user ?? null)
-    fetchRole(session)
-  })
-
-  return () => subscription.unsubscribe()
-}, [])
+    return () => subscription.unsubscribe()
+  }, [])
 
   useEffect(() => {
     if (!isDropdownOpen) return
@@ -95,19 +95,19 @@ function Navbar() {
   }
 
   async function handleLogout() {
-  await supabase.auth.signOut()
+    await supabase.auth.signOut()
 
-  setUser(null)
-  setIsAdmin(false)
+    setUser(null)
+    setIsAdmin(false)
 
-  // CLEAR ROLE
-  localStorage.removeItem("role")
+    // CLEAR ROLE
+    localStorage.removeItem("role")
 
-  setIsDropdownOpen(false)
-  navigate('/')
-}
+    setIsDropdownOpen(false)
+    navigate('/')
+  }
 
-	// placeholder for search - will hook up to a search route later
+  // placeholder for search - will hook up to a search route later
   function onSearchSubmit(e) {
     e.preventDefault()
     console.log(query)
@@ -182,7 +182,7 @@ function Navbar() {
 
               {isDropdownOpen && (
                 <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-xl shadow-xl border z-[9999]">
-                  <Link to="/profile" className="block px-4 py-2 hover:bg-gray-100">Profile</Link>
+                  <Link to="/profile" className="block px-4 py-2 hover:bg-gray-100 hover:rounded-t-xl">Profile</Link>
                   <Link to="/orders" className="block px-4 py-2 hover:bg-gray-100">Orders</Link>
                   <Link to="/addresses" className="block px-4 py-2 hover:bg-gray-100">Addresses</Link>
 
@@ -194,7 +194,7 @@ function Navbar() {
 
                   <button
                     onClick={handleLogout}
-                    className="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50"
+                    className="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 hover:rounded-b-xl"
                   >
                     Logout
                   </button>
@@ -230,7 +230,7 @@ function Navbar() {
       </div>
 
       {/* MODALS */}
-      <LoginModal 
+      <LoginModal
         isOpen={isLoginOpen}
         onClose={() => setIsLoginOpen(false)}
         onSwitchToSignup={() => setIsSignupOpen(true)}
