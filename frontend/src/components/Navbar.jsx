@@ -1,10 +1,11 @@
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
-import { BsCartFill, BsMessenger } from 'react-icons/bs'
+import { BsCartFill, BsMessenger, BsSunFill, BsMoonStarsFill } from 'react-icons/bs'
 import { FaUser } from "react-icons/fa";
 import LoginModal from './LoginModal'
 import SignupModal from './SignupModal'
 import supabase from '../lib/supabase'
+import { useShop } from '../context/ShopContext.jsx'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -18,6 +19,8 @@ function Navbar() {
   const [user, setUser] = useState(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const [theme, setTheme] = useState('light')
+  const [isCartPinging, setIsCartPinging] = useState(false)
+  const { cartCount, lastAddedAt } = useShop()
 
   // ✅ GET USER INITIAL (same as admin layout)
   const getInitial = () => {
@@ -105,6 +108,13 @@ function Navbar() {
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [isDropdownOpen])
+
+  useEffect(() => {
+    if (!lastAddedAt) return
+    setIsCartPinging(true)
+    const timer = setTimeout(() => setIsCartPinging(false), 1300)
+    return () => clearTimeout(timer)
+  }, [lastAddedAt])
 
   function onLoginSuccess() {
     setIsLoginOpen(false)
@@ -226,27 +236,36 @@ function Navbar() {
           {/* CART */}
           <NavLink
             to="/cart"
-            className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+            className="relative w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
           >
             <BsCartFill className="text-white w-5 h-5" />
+            {cartCount > 0 && (
+              <>
+                <span className="absolute -right-1 -top-1 inline-flex min-w-[18px] items-center justify-center rounded-full bg-yellow-400 px-1 text-[10px] font-bold text-[#0b2e59]">
+                  {cartCount > 99 ? '99+' : cartCount}
+                </span>
+                {isCartPinging && (
+                  <span className="absolute -right-1 -top-1 h-[18px] w-[18px] rounded-full bg-yellow-300/80 animate-ping" />
+                )}
+              </>
+            )}
           </NavLink>
 
-          {/* theme toggle */}
+          {/* theme toggle - minimal pill with sliding knob */}
           <button
             type="button"
             onClick={toggleTheme}
-            className="group h-10 min-w-[88px] rounded-full bg-white/10 px-1.5 transition hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-yellow-300/70"
+            className={`relative flex h-8 w-16 items-center rounded-full p-1 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-yellow-300/70 ${theme === 'dark' ? 'bg-slate-600' : 'bg-yellow-300'}`}
             aria-label="Toggle light and dark mode"
             title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           >
-            <span className="relative flex h-full items-center">
-              <span
-                className={`absolute left-1 top-1 h-8 w-8 rounded-full bg-white transition-transform duration-300 ${theme === 'dark' ? 'translate-x-10' : 'translate-x-0'}`}
-              />
-              <span className="relative z-10 flex w-full items-center justify-between px-1 text-[12px] font-semibold">
-                <span className={`${theme === 'light' ? 'text-[#0b2e59]' : 'text-white/80'}`}>L</span>
-                <span className={`${theme === 'dark' ? 'text-[#0b2e59]' : 'text-white/80'}`}>D</span>
-              </span>
+            <span
+              className={`flex h-6 w-6 items-center justify-center rounded-full bg-white shadow-md transition-transform duration-300 ${theme === 'dark' ? 'translate-x-8' : 'translate-x-0'}`}
+            >
+              {theme === 'dark'
+                ? <BsMoonStarsFill className="h-3.5 w-3.5 text-slate-700" />
+                : <BsSunFill className="h-3.5 w-3.5 text-yellow-500" />
+              }
             </span>
           </button>
         </div>
