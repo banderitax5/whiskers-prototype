@@ -1,6 +1,7 @@
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
-import { BsCartFill } from 'react-icons/bs'
+import { BsCartFill, BsMessenger } from 'react-icons/bs'
+import { FaUser } from "react-icons/fa";
 import LoginModal from './LoginModal'
 import SignupModal from './SignupModal'
 import supabase from '../lib/supabase'
@@ -16,6 +17,7 @@ function Navbar() {
   const dropdownRef = useRef(null)
   const [user, setUser] = useState(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [theme, setTheme] = useState('light')
 
   // ✅ GET USER INITIAL (same as admin layout)
   const getInitial = () => {
@@ -55,11 +57,29 @@ function Navbar() {
     }
   }
 
+  // applies the selected theme to the whole document
+  // data-theme is for daisyui and dark class is for tailwind dark variants
+  function applyTheme(nextTheme) {
+    document.documentElement.setAttribute('data-theme', nextTheme)
+    document.documentElement.classList.toggle('dark', nextTheme === 'dark')
+    localStorage.setItem('theme', nextTheme)
+    setTheme(nextTheme)
+  }
+
   useEffect(() => {
     // LOAD ROLE FROM STORAGE FIRST (instant UI)
     const savedRole = localStorage.getItem("role")
     if (savedRole === "admin") {
       setIsAdmin(true)
+    }
+
+    // load saved theme once on mount
+    const savedTheme = localStorage.getItem('theme')
+    if (savedTheme === 'dark' || savedTheme === 'light') {
+      applyTheme(savedTheme)
+    } else {
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+      applyTheme(prefersDark ? 'dark' : 'light')
     }
 
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -113,6 +133,10 @@ function Navbar() {
     console.log(query)
   }
 
+  function toggleTheme() {
+    applyTheme(theme === 'dark' ? 'light' : 'dark')
+  }
+
   return (
     <header className="bg-[#0b2e59] shadow-md sticky top-0 z-[9999]">
       <div className="mx-auto max-w-7xl px-4 py-3 flex items-center gap-4">
@@ -142,34 +166,14 @@ function Navbar() {
         </form>
 
         {/* RIGHT SIDE */}
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-4">
 
           {/* NAV BUTTONS */}
           <nav className="hidden md:flex items-center gap-2">
-            <NavLink
-              to="/brands"
-              className="px-4 h-10 flex items-center rounded-lg bg-[#1f4db8] text-white text-sm font-semibold hover:bg-[#2b63e3]"
-            >
-              Brands
-            </NavLink>
-
-            <NavLink
-              to="/deals"
-              className="px-4 h-10 flex items-center rounded-lg bg-[#1f4db8] text-white text-sm font-semibold hover:bg-[#2b63e3]"
-            >
-              Deals
-            </NavLink>
-
-            {isAdmin && (
-              <NavLink
-                to="/admin"
-                className="px-4 h-10 flex items-center rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700"
-              >
-                Admin
-              </NavLink>
-            )}
           </nav>
-
+          <NavLink to="/chat" className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20">
+          <BsMessenger className="text-white w-6 h-6" />
+          </NavLink>
           {/* PROFILE / AUTH */}
           {user ? (
             <div className="relative" ref={dropdownRef}>
@@ -181,7 +185,7 @@ function Navbar() {
               </button>
 
               {isDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-xl shadow-xl border z-[9999]">
+                <div className="absolute right-0 top-full mt-2 w-40 bg-white rounded-xl shadow-xl border z-[9999]">
                   <Link to="/profile" className="block px-4 py-2 hover:bg-gray-100 hover:rounded-t-xl">Profile</Link>
                   <Link to="/orders" className="block px-4 py-2 hover:bg-gray-100">Orders</Link>
                   <Link to="/addresses" className="block px-4 py-2 hover:bg-gray-100">Addresses</Link>
@@ -202,20 +206,20 @@ function Navbar() {
               )}
             </div>
           ) : (
-            <div className="hidden md:flex items-center gap-2">
+            <div className="relative" ref={dropdownRef}>
               <button
-                onClick={() => setIsLoginOpen(true)}
-                className="h-10 px-4 rounded-lg border border-white/40 text-white hover:bg-white/10"
+                onClick={() => setIsDropdownOpen((v) => !v)}
+                className="w-10 h-10 rounded-full bg-yellow-400 text-[#0b2e59] flex items-center justify-center font-bold"
               >
-                Log In
+                <FaUser className="text-white w-6 h-6" />
               </button>
 
-              <button
-                onClick={() => setIsSignupOpen(true)}
-                className="h-10 px-4 rounded-lg bg-[#ffd21e] text-black font-semibold hover:brightness-95"
-              >
-                Sign Up
-              </button>
+              {isDropdownOpen && (
+                <div className="absolute right-0 top-full mt-2 w-40 bg-white rounded-xl shadow-xl border z-[9999]">
+                  <Link onClick={() => { setIsLoginOpen(true); setIsDropdownOpen(false) }} className="block px-4 py-2 hover:bg-gray-100 hover:rounded-t-xl">Sign In</Link>
+                  <Link onClick={() => { setIsSignupOpen(true); setIsDropdownOpen(false) }} className="block px-4 py-2 hover:bg-gray-100 hover: rounded-b-xl">Sign Up</Link>
+                </div>
+              )}
             </div>
           )}
 
@@ -226,6 +230,25 @@ function Navbar() {
           >
             <BsCartFill className="text-white w-5 h-5" />
           </NavLink>
+
+          {/* theme toggle */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="group h-10 min-w-[88px] rounded-full bg-white/10 px-1.5 transition hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-yellow-300/70"
+            aria-label="Toggle light and dark mode"
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            <span className="relative flex h-full items-center">
+              <span
+                className={`absolute left-1 top-1 h-8 w-8 rounded-full bg-white transition-transform duration-300 ${theme === 'dark' ? 'translate-x-10' : 'translate-x-0'}`}
+              />
+              <span className="relative z-10 flex w-full items-center justify-between px-1 text-[12px] font-semibold">
+                <span className={`${theme === 'light' ? 'text-[#0b2e59]' : 'text-white/80'}`}>L</span>
+                <span className={`${theme === 'dark' ? 'text-[#0b2e59]' : 'text-white/80'}`}>D</span>
+              </span>
+            </span>
+          </button>
         </div>
       </div>
 

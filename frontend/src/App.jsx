@@ -4,6 +4,7 @@ import Layout from './components/Layout.jsx'
 import Home from './pages/Home.jsx'
 import About from './pages/About.jsx'
 import Pets from './pages/Pets.jsx'
+import Menu from './pages/Menu.jsx'
 import Profile from './pages/Profile.jsx'
 import NotFound from './pages/NotFound.jsx'
 import Admin from './pages/Admin.jsx'
@@ -69,6 +70,7 @@ const router = createBrowserRouter([
     element: <Layout />,
     children: [
       { index: true, element: <Home /> },
+      { path: 'menu', element: <Menu /> },
       { path: 'about', element: <About /> },
       { path: 'pets', element: <Pets /> },
       { path: 'profile', element: <RequireAuth><Profile /></RequireAuth> },

@@ -148,7 +148,7 @@ function AdminLayout() {
             <input
               type="text"
               placeholder="Search data, users, or reports..."
-              className="px-4 py-2 rounded-full border text-sm focus:outline-none"
+              className="px-4 py-2 rounded-full border text-sm focus:outline-none focus:ring-1 focus:ring-yellow-600 bg-white"
             />
 
             {/* SMALL PROFILE ICON */}
