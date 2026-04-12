@@ -7,7 +7,7 @@ function Checkout() {
   const location = useLocation()
   const { cartItems, clearCart, pushNotification } = useShop()
 
-  const selectedIds = location.state?.selectedIds || []
+  const selectedIds = useMemo(() => location.state?.selectedIds || [], [location.state?.selectedIds])
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
 
   const checkoutItems = useMemo(() => {
