@@ -1,16 +1,23 @@
-import { Toaster as SileoToaster } from 'sileo'
-import 'sileo/styles.css'
+import { Toaster } from 'react-hot-toast'
 
-// central toaster host for sileo notifications
-// forced to light theme so it never renders with a dark background
 export default function FloatingNotification() {
   return (
-    <SileoToaster
-      position="bottom-left"
-      offset={{ bottom: 24, left: 16 }}
-      options={{ duration: 2500 }}
-      theme="light"
-      zIndex={10000}
+    <Toaster
+      position="top-right"
+      toastOptions={{
+        duration: 2500,
+        style: {
+          borderRadius: '8px',
+          padding: '10px 16px',
+          fontSize: '14px',
+        },
+        success: {
+          iconTheme: { primary: '#16a34a', secondary: '#fff' },
+        },
+        error: {
+          iconTheme: { primary: '#dc2626', secondary: '#fff' },
+        },
+      }}
     />
   )
 }

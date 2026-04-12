@@ -1,13 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 
+// full screen product dialog that pops up when you click on a product card
+// uses createPortal to render directly on document.body so it always covers
+// the entire viewport no matter where the component sits in the tree
+// press Escape or click the dark backdrop to close it
 function ProductQuickViewDialog({ product, isOpen, onClose, onAddToCart, onBuyNow }) {
   const [qty, setQty] = useState(1)
   const safePrice = Number(product?.price) || 0
 
+  // reset quantity back to 1 every time a new product is opened
   useEffect(() => {
     if (isOpen) setQty(1)
   }, [isOpen, product?.id])
 
+  // when the dialog is open, listen for the Escape key and lock body scroll
+  // cleanup removes the listener and unlocks scroll when the dialog closes
   useEffect(() => {
     if (!isOpen) return
     function onKey(e) {
@@ -21,6 +29,8 @@ function ProductQuickViewDialog({ product, isOpen, onClose, onAddToCart, onBuyNo
     }
   }, [isOpen, onClose])
 
+  // placeholder preview thumbnails using the same image three times
+  // when real product galleries are added, this array will have different images
   const previews = useMemo(() => {
     if (!product?.image) return []
     return [product.image, product.image, product.image]
@@ -31,12 +41,13 @@ function ProductQuickViewDialog({ product, isOpen, onClose, onAddToCart, onBuyNo
   function increase() { setQty((v) => v + 1) }
   function decrease() { setQty((v) => Math.max(1, v - 1)) }
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[10020] flex items-center justify-center overflow-y-auto bg-black/60 backdrop-blur-sm"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="relative mx-4 my-6 w-full max-w-4xl rounded-2xl bg-white dark:bg-gray-800 shadow-2xl sm:mx-6">
+      <div className="relative mx-2 my-4 w-full max-w-4xl rounded-2xl bg-white dark:bg-gray-800 shadow-2xl sm:mx-6 sm:my-6">
+        {/* close button in the top right corner */}
         <button
           type="button"
           onClick={onClose}
@@ -48,9 +59,12 @@ function ProductQuickViewDialog({ product, isOpen, onClose, onAddToCart, onBuyNo
           </svg>
         </button>
 
-        <div className="grid grid-cols-1 gap-6 p-5 sm:p-6 md:grid-cols-2">
+        {/* two column layout: images on the left, product info on the right */}
+        {/* collapses to a single column on mobile */}
+        <div className="grid grid-cols-1 gap-4 p-4 sm:gap-6 sm:p-6 md:grid-cols-2">
           <div className="flex gap-3">
-            <div className="flex flex-col gap-2">
+            {/* thumbnail previews on the side, hidden on small screens to save space */}
+            <div className="hidden flex-col gap-2 sm:flex">
               {previews.map((img, idx) => (
                 <button
                   key={`${img}-${idx}`}
@@ -61,11 +75,13 @@ function ProductQuickViewDialog({ product, isOpen, onClose, onAddToCart, onBuyNo
                 </button>
               ))}
             </div>
+            {/* main product image */}
             <div className="flex flex-1 items-center justify-center rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 p-4">
-              <img src={product.image} alt={product.name} className="max-h-[280px] w-full object-contain" />
+              <img src={product.image} alt={product.name} className="max-h-[220px] w-full object-contain sm:max-h-[280px]" />
             </div>
           </div>
 
+          {/* product details, price, description, quantity picker, and action buttons */}
           <div className="flex flex-col">
             <h3 className="text-xl font-bold text-gray-900 dark:text-white sm:text-2xl">{product.name}</h3>
             <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{product.brand || product.collection || 'Whiskers'}</p>
@@ -79,33 +95,27 @@ function ProductQuickViewDialog({ product, isOpen, onClose, onAddToCart, onBuyNo
               </p>
             </div>
 
-            <div className="mt-4">
-              <p className="text-sm font-semibold text-green-700 dark:text-green-400">Available at:</p>
-              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-gray-600 dark:text-gray-300">
-                <li>Whiskers Main Branch</li>
-                <li>Whiskers North Branch</li>
-                <li>Whiskers Express Branch</li>
-              </ul>
-            </div>
-
+            {/* quantity stepper: minus button, current qty, plus button */}
             <div className="mt-5 flex items-center gap-1">
               <button type="button" onClick={decrease} className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 text-lg font-semibold text-gray-700 dark:text-gray-200 transition hover:bg-gray-100 dark:hover:bg-gray-700">-</button>
               <div className="flex h-10 min-w-[48px] items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 px-3 text-sm font-semibold text-gray-800 dark:text-gray-100">{qty}</div>
               <button type="button" onClick={increase} className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 text-lg font-semibold text-gray-700 dark:text-gray-200 transition hover:bg-gray-100 dark:hover:bg-gray-700">+</button>
             </div>
 
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              <button type="button" onClick={() => onAddToCart(product, qty)} className="h-12 rounded-lg bg-yellow-400 text-sm font-bold text-gray-900 transition hover:bg-yellow-500 active:bg-yellow-600">
+            {/* add to cart and buy now buttons side by side */}
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-5 sm:gap-3">
+              <button type="button" onClick={() => onAddToCart(product, qty)} className="h-10 rounded-lg bg-yellow-400 text-xs font-bold text-gray-900 transition hover:bg-yellow-500 active:bg-yellow-600 sm:h-12 sm:text-sm">
                 Add to Cart
               </button>
-              <button type="button" onClick={() => onBuyNow(product, qty)} className="h-12 rounded-lg bg-[#0b2e59] text-sm font-bold text-white transition hover:bg-[#15407a]">
+              <button type="button" onClick={() => onBuyNow(product, qty)} className="h-10 rounded-lg bg-[#0b2e59] text-xs font-bold text-white transition hover:bg-[#15407a] sm:h-12 sm:text-sm">
                 Buy Now
               </button>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 

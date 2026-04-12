@@ -9,6 +9,8 @@ import { useShop } from '../context/ShopContext.jsx'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
+// the main navbar that sticks to the top of every page
+// handles user auth state, theme toggling, cart badge, and the login/signup modals
 function Navbar() {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
@@ -20,9 +22,9 @@ function Navbar() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [theme, setTheme] = useState('light')
   const [isCartPinging, setIsCartPinging] = useState(false)
-  const { cartCount, lastAddedAt } = useShop()
+  const { cartCount, lastAddedAt, setOpenLoginFn } = useShop()
 
-  // ✅ GET USER INITIAL (same as admin layout)
+  // grabs the first letter of the user's name or email for the profile circle
   const getInitial = () => {
     if (!user) return "?"
 
@@ -34,6 +36,8 @@ function Navbar() {
     return "?"
   }
 
+  // checks the backend for the user's role (admin or regular user)
+  // saves it to localStorage so the admin link shows up instantly on reload
   async function fetchRole(session) {
     if (!session) {
       setIsAdmin(false)
@@ -52,7 +56,6 @@ function Navbar() {
 
       setIsAdmin(role === 'admin')
 
-      //  SAVE ROLE
       localStorage.setItem("role", role)
 
     } catch {
@@ -69,14 +72,15 @@ function Navbar() {
     setTheme(nextTheme)
   }
 
+  // runs once on mount to set up auth, theme, and register the login opener
   useEffect(() => {
-    // LOAD ROLE FROM STORAGE FIRST (instant UI)
+    // load role from storage first so the admin link shows up right away
     const savedRole = localStorage.getItem("role")
     if (savedRole === "admin") {
       setIsAdmin(true)
     }
 
-    // load saved theme once on mount
+    // load saved theme or fall back to the system preference
     const savedTheme = localStorage.getItem('theme')
     if (savedTheme === 'dark' || savedTheme === 'light') {
       applyTheme(savedTheme)
@@ -85,6 +89,11 @@ function Navbar() {
       applyTheme(prefersDark ? 'dark' : 'light')
     }
 
+    // hand ShopContext a function that opens the login modal
+    // this lets the cart system pop the login when a guest tries to add something
+    setOpenLoginFn(() => setIsLoginOpen(true))
+
+    // grab the current session and start listening for auth changes
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
       fetchRole(session)
@@ -96,8 +105,10 @@ function Navbar() {
     })
 
     return () => subscription.unsubscribe()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // closes the profile dropdown when clicking anywhere outside of it
   useEffect(() => {
     if (!isDropdownOpen) return
     function handleClickOutside(e) {
@@ -109,6 +120,8 @@ function Navbar() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [isDropdownOpen])
 
+  // triggers the ping animation on the cart icon whenever something gets added
+  // the animation runs for 1.3 seconds then stops
   useEffect(() => {
     if (!lastAddedAt) return
     setIsCartPinging(true)
@@ -116,6 +129,7 @@ function Navbar() {
     return () => clearTimeout(timer)
   }, [lastAddedAt])
 
+  // close the modal after a successful login or signup
   function onLoginSuccess() {
     setIsLoginOpen(false)
   }
@@ -124,25 +138,26 @@ function Navbar() {
     setIsSignupOpen(false)
   }
 
+  // signs the user out, clears their role, and sends them back to the homepage
   async function handleLogout() {
     await supabase.auth.signOut()
 
     setUser(null)
     setIsAdmin(false)
 
-    // CLEAR ROLE
     localStorage.removeItem("role")
 
     setIsDropdownOpen(false)
     navigate('/')
   }
 
-  // placeholder for search - will hook up to a search route later
+  // placeholder for search, will hook up to a search route later
   function onSearchSubmit(e) {
     e.preventDefault()
     console.log(query)
   }
 
+  // flips between light and dark mode
   function toggleTheme() {
     applyTheme(theme === 'dark' ? 'light' : 'dark')
   }
@@ -151,12 +166,12 @@ function Navbar() {
     <header className="bg-[#0b2e59] shadow-md sticky top-0 z-[9999]">
       <div className="mx-auto max-w-7xl px-4 py-3 flex items-center gap-4">
 
-        {/* LOGO */}
+        {/* logo that links back to the homepage */}
         <Link to="/" className="flex items-center gap-2 shrink-0">
           <img src="logo/logo-whiskers.png" alt="Whiskers" className="h-12 w-auto" />
         </Link>
 
-        {/* SEARCH */}
+        {/* search bar, hidden on mobile */}
         <form onSubmit={onSearchSubmit} className="flex-1 hidden md:flex">
           <div className="flex w-full max-w-2xl mx-auto">
             <input
@@ -175,16 +190,20 @@ function Navbar() {
           </div>
         </form>
 
-        {/* RIGHT SIDE */}
+        {/* right side icons and controls */}
         <div className="ml-auto flex items-center gap-4">
 
-          {/* NAV BUTTONS */}
           <nav className="hidden md:flex items-center gap-2">
           </nav>
+
+          {/* messenger icon */}
           <NavLink to="/chat" className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20">
           <BsMessenger className="text-white w-6 h-6" />
           </NavLink>
-          {/* PROFILE / AUTH */}
+
+          {/* profile button and dropdown */}
+          {/* if the user is logged in, show their initial and a dropdown with profile links */}
+          {/* if not logged in, show a generic user icon with sign in / sign up options */}
           {user ? (
             <div className="relative" ref={dropdownRef}>
               <button
@@ -200,6 +219,7 @@ function Navbar() {
                   <Link to="/orders" className="block px-4 py-2 hover:bg-gray-100">Orders</Link>
                   <Link to="/addresses" className="block px-4 py-2 hover:bg-gray-100">Addresses</Link>
 
+                  {/* admin panel link only shows up if the user has the admin role */}
                   {isAdmin && (
                     <Link to="/admin" className="block px-4 py-2 text-red-600 hover:bg-red-50">
                       Admin Panel
@@ -233,7 +253,8 @@ function Navbar() {
             </div>
           )}
 
-          {/* CART */}
+          {/* cart icon with badge showing how many items are in the cart */}
+          {/* the ping animation plays for a bit whenever a new item gets added */}
           <NavLink
             to="/cart"
             className="relative w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
@@ -251,7 +272,7 @@ function Navbar() {
             )}
           </NavLink>
 
-          {/* theme toggle - minimal pill with sliding knob */}
+          {/* theme toggle pill that slides between sun (light) and moon (dark) */}
           <button
             type="button"
             onClick={toggleTheme}
@@ -271,7 +292,7 @@ function Navbar() {
         </div>
       </div>
 
-      {/* MODALS */}
+      {/* login and signup modals, controlled by state above */}
       <LoginModal
         isOpen={isLoginOpen}
         onClose={() => setIsLoginOpen(false)}
