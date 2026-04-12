@@ -214,21 +214,20 @@ function Navbar() {
               </button>
 
               {isDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-40 bg-white rounded-xl shadow-xl border z-[9999]">
-                  <Link to="/profile" className="block px-4 py-2 hover:bg-gray-100 hover:rounded-t-xl">Profile</Link>
-                  <Link to="/orders" className="block px-4 py-2 hover:bg-gray-100">Orders</Link>
-                  <Link to="/addresses" className="block px-4 py-2 hover:bg-gray-100">Addresses</Link>
+                <div className="absolute right-0 top-full mt-2 w-40 bg-white dark:bg-gray-800 rounded-xl shadow-xl border dark:border-gray-700 z-[9999]">
+                  <Link to="/profile" className="block px-4 py-2 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 hover:rounded-t-xl">Profile</Link>
+                  <Link to="/orders" className="block px-4 py-2 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700">Orders</Link>
+                  <Link to="/addresses" className="block px-4 py-2 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700">Addresses</Link>
 
-                  {/* admin panel link only shows up if the user has the admin role */}
                   {isAdmin && (
-                    <Link to="/admin" className="block px-4 py-2 text-red-600 hover:bg-red-50">
+                    <Link to="/admin" className="block px-4 py-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30">
                       Admin Panel
                     </Link>
                   )}
 
                   <button
                     onClick={handleLogout}
-                    className="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 hover:rounded-b-xl"
+                    className="w-full text-left px-4 py-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 hover:rounded-b-xl"
                   >
                     Logout
                   </button>
@@ -245,9 +244,9 @@ function Navbar() {
               </button>
 
               {isDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-40 bg-white rounded-xl shadow-xl border z-[9999]">
-                  <Link onClick={() => { setIsLoginOpen(true); setIsDropdownOpen(false) }} className="block px-4 py-2 hover:bg-gray-100 hover:rounded-t-xl">Sign In</Link>
-                  <Link onClick={() => { setIsSignupOpen(true); setIsDropdownOpen(false) }} className="block px-4 py-2 hover:bg-gray-100 hover: rounded-b-xl">Sign Up</Link>
+                <div className="absolute right-0 top-full mt-2 w-40 bg-white dark:bg-gray-800 rounded-xl shadow-xl border dark:border-gray-700 z-[9999]">
+                  <Link onClick={() => { setIsLoginOpen(true); setIsDropdownOpen(false) }} className="block px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 hover:rounded-t-xl text-gray-900 dark:text-gray-100">Sign In</Link>
+                  <Link onClick={() => { setIsSignupOpen(true); setIsDropdownOpen(false) }} className="block px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 hover:rounded-b-xl text-gray-900 dark:text-gray-100">Sign Up</Link>
                 </div>
               )}
             </div>
