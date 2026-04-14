@@ -8,14 +8,14 @@ function Strip() {
 
   return (
     <div className="bg-[#FF7C3A]/80">
-      <div className="mx-auto max-w-7xl px-4 sm:py-1.5">
+      <div className="mx-auto max-w-7xl px-4 -py-2">
         <div className="relative overflow-hidden sm:h-7">
           <div className="absolute inset-y-0 left-0 flex w-max items-center text-xs text-white animate-slide sm:text-sm md:text-base">
             <span className="pr-8">{message}</span>
             <span className="pr-8">{message}</span>
             <span className="pr-8">{message}</span>
             <span className="pr-8">{message}</span>
-			<span className="pr-8">{message}</span>
+			      <span className="pr-8">{message}</span>
           </div>
         </div>
       </div>
