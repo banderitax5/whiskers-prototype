@@ -74,13 +74,11 @@ function Navbar() {
 
   // runs once on mount to set up auth, theme, and register the login opener
   useEffect(() => {
-    // load role from storage first so the admin link shows up right away
     const savedRole = localStorage.getItem("role")
     if (savedRole === "admin") {
       setIsAdmin(true)
     }
 
-    // load saved theme or fall back to the system preference
     const savedTheme = localStorage.getItem('theme')
     if (savedTheme === 'dark' || savedTheme === 'light') {
       applyTheme(savedTheme)
@@ -89,11 +87,8 @@ function Navbar() {
       applyTheme(prefersDark ? 'dark' : 'light')
     }
 
-    // hand ShopContext a function that opens the login modal
-    // this lets the cart system pop the login when a guest tries to add something
     setOpenLoginFn(() => setIsLoginOpen(true))
 
-    // grab the current session and start listening for auth changes
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
       fetchRole(session)
@@ -105,7 +100,6 @@ function Navbar() {
     })
 
     return () => subscription.unsubscribe()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // closes the profile dropdown when clicking anywhere outside of it
@@ -121,7 +115,6 @@ function Navbar() {
   }, [isDropdownOpen])
 
   // triggers the ping animation on the cart icon whenever something gets added
-  // the animation runs for 1.3 seconds then stops
   useEffect(() => {
     if (!lastAddedAt) return
     setIsCartPinging(true)
@@ -129,7 +122,6 @@ function Navbar() {
     return () => clearTimeout(timer)
   }, [lastAddedAt])
 
-  // close the modal after a successful login or signup
   function onLoginSuccess() {
     setIsLoginOpen(false)
   }
@@ -138,40 +130,32 @@ function Navbar() {
     setIsSignupOpen(false)
   }
 
-  // signs the user out, clears their role, and sends them back to the homepage
   async function handleLogout() {
     await supabase.auth.signOut()
-
     setUser(null)
     setIsAdmin(false)
-
     localStorage.removeItem("role")
-
     setIsDropdownOpen(false)
     navigate('/')
   }
 
-  // placeholder for search, will hook up to a search route later
   function onSearchSubmit(e) {
     e.preventDefault()
     console.log(query)
   }
 
-  // flips between light and dark mode
   function toggleTheme() {
     applyTheme(theme === 'dark' ? 'light' : 'dark')
   }
 
   return (
-    <header className="bg-[#0b2e59] shadow-md sticky top-0 z-[9999]">
+    <header className="bg-[#0b2e59] dark:bg-gray-900 shadow-md sticky top-0 z-[9999]">
       <div className="mx-auto max-w-7xl px-4 py-3 flex items-center gap-4">
 
-        {/* logo that links back to the homepage */}
         <Link to="/" className="flex items-center gap-2 shrink-0">
           <img src="logo/logo-whiskers.png" alt="Whiskers" className="h-12 w-auto" />
         </Link>
 
-        {/* search bar, hidden on mobile */}
         <form onSubmit={onSearchSubmit} className="flex-1 hidden md:flex">
           <div className="flex w-full max-w-2xl mx-auto">
             <input
@@ -179,36 +163,28 @@ function Navbar() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search over 500 Pet products..."
-              className="w-full h-11 px-5 rounded-l-full bg-white text-gray-800 placeholder-gray-400 focus:outline-none"
+              className="w-full h-11 px-5 rounded-l-full bg-white text-gray-800 placeholder-gray-400 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 focus:outline-none"
             />
             <button
               type="submit"
-              className="h-11 px-6 rounded-r-full bg-blue-700 text-white font-semibold hover:bg-blue-800 transition"
+              className="h-11 px-6 rounded-r-full bg-blue-700 text-white font-semibold hover:bg-blue-800 dark:bg-blue-600 dark:hover:bg-blue-700 transition"
             >
               Search
             </button>
           </div>
         </form>
 
-        {/* right side icons and controls */}
         <div className="ml-auto flex items-center gap-4">
 
-          <nav className="hidden md:flex items-center gap-2">
-          </nav>
-
-          {/* messenger icon */}
-          <NavLink to="/chat" className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20">
-          <BsMessenger className="text-white w-6 h-6" />
+          <NavLink to="/chat" className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 dark:bg-white/5 dark:hover:bg-white/10">
+            <BsMessenger className="text-white w-6 h-6" />
           </NavLink>
 
-          {/* profile button and dropdown */}
-          {/* if the user is logged in, show their initial and a dropdown with profile links */}
-          {/* if not logged in, show a generic user icon with sign in / sign up options */}
           {user ? (
             <div className="relative" ref={dropdownRef}>
               <button
                 onClick={() => setIsDropdownOpen((v) => !v)}
-                className="w-10 h-10 rounded-full bg-yellow-400 text-[#0b2e59] flex items-center justify-center font-bold"
+                className="w-10 h-10 rounded-full bg-yellow-400 text-[#0b2e59] dark:bg-yellow-300 dark:text-gray-900 flex items-center justify-center font-bold"
               >
                 {getInitial()}
               </button>
@@ -238,7 +214,7 @@ function Navbar() {
             <div className="relative" ref={dropdownRef}>
               <button
                 onClick={() => setIsDropdownOpen((v) => !v)}
-                className="w-10 h-10 rounded-full bg-yellow-400 text-[#0b2e59] flex items-center justify-center font-bold"
+                className="w-10 h-10 rounded-full bg-yellow-400 text-[#0b2e59] dark:bg-yellow-300 dark:text-gray-900 flex items-center justify-center font-bold"
               >
                 <FaUser className="text-white w-6 h-6" />
               </button>
@@ -252,11 +228,9 @@ function Navbar() {
             </div>
           )}
 
-          {/* cart icon with badge showing how many items are in the cart */}
-          {/* the ping animation plays for a bit whenever a new item gets added */}
           <NavLink
             to="/cart"
-            className="relative w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+            className="relative w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 dark:bg-white/5 dark:hover:bg-white/10"
           >
             <BsCartFill className="text-white w-5 h-5" />
             {cartCount > 0 && (
@@ -271,13 +245,10 @@ function Navbar() {
             )}
           </NavLink>
 
-          {/* theme toggle pill that slides between sun (light) and moon (dark) */}
           <button
             type="button"
             onClick={toggleTheme}
             className={`relative flex h-8 w-16 items-center rounded-full p-1 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-yellow-300/70 ${theme === 'dark' ? 'bg-slate-600' : 'bg-yellow-300'}`}
-            aria-label="Toggle light and dark mode"
-            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           >
             <span
               className={`flex h-6 w-6 items-center justify-center rounded-full bg-white shadow-md transition-transform duration-300 ${theme === 'dark' ? 'translate-x-8' : 'translate-x-0'}`}
@@ -291,7 +262,6 @@ function Navbar() {
         </div>
       </div>
 
-      {/* login and signup modals, controlled by state above */}
       <LoginModal
         isOpen={isLoginOpen}
         onClose={() => setIsLoginOpen(false)}
