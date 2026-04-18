@@ -6,7 +6,10 @@ import Layout from './components/Layout.jsx'
 import Home from './pages/Home.jsx'
 import About from './pages/About.jsx'
 import Pets from './pages/Pets.jsx'
+import Menu from './pages/Menu.jsx'
 import Profile from './pages/Profile.jsx'
+import Cart from './pages/Cart.jsx'
+import Checkout from './pages/Checkout.jsx'
 import NotFound from './pages/NotFound.jsx'
 
 // ADMIN COMPONENTS
@@ -88,6 +91,9 @@ const router = createBrowserRouter([
     element: <Layout />,
     children: [
       { index: true, element: <Home /> },
+      { path: 'menu', element: <Menu /> },
+      { path: 'cart', element: <Cart /> },
+      { path: 'checkout', element: <Checkout /> },
       { path: 'about', element: <About /> },
       { path: 'pets', element: <Pets /> },
       {

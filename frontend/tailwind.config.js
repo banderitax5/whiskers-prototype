@@ -2,6 +2,7 @@ import daisyui from 'daisyui'
 
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: 'class',
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
@@ -25,7 +26,7 @@ export default {
       },
       animation: 
       {
-        'slide': 'slide 15s linear infinite',
+        'slide': 'slide 10s linear infinite',
         'pulse-slow': 'fadeInOut 2.5s ease-in-out infinite'
       }
     },

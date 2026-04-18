@@ -58,7 +58,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-3 sm:p-4 z-[70]">
-      <div className="bg-white rounded-2xl overflow-hidden w-full max-w-lg sm:max-w-2xl lg:max-w-4xl flex flex-col md:flex-row shadow-xl animate-in fade-in duration-300">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl overflow-hidden w-full max-w-lg sm:max-w-2xl lg:max-w-4xl flex flex-col md:flex-row shadow-xl animate-in fade-in duration-300">
         {/* Left side - Image */}
         <div className="md:w-1/2 p-3 hidden md:flex items-center justify-center">
           <img
@@ -74,7 +74,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
           <button
             type="button"
             onClick={onClose}
-            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -96,7 +96,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
             )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div>
-                <label htmlFor="signup-firstName" className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="signup-firstName" className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   FIRST NAME
                 </label>
                 <input
@@ -107,12 +107,12 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                   onChange={(e) => setFirstName(e.target.value)}
                   required
                   autoComplete="given-name"
-                  className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
 
               <div>
-                <label htmlFor="signup-lastName" className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="signup-lastName" className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   LAST NAME
                 </label>
                 <input
@@ -123,13 +123,13 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                   onChange={(e) => setLastName(e.target.value)}
                   required
                   autoComplete="family-name"
-                  className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
             </div>
 
             <div>
-              <label htmlFor="signup-email" className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="signup-email" className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 EMAIL
               </label>
               <input
@@ -140,12 +140,12 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoComplete="email"
-                className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
 
             <div>
-              <label htmlFor="signup-password" className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="signup-password" className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 PASSWORD
               </label>
               <input
@@ -156,7 +156,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 autoComplete="new-password"
-                className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
 
@@ -175,7 +175,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
           </form>
 
           {/* switches to the login modal - closes this one first then opens login */}
-          <p className="mt-6 text-center text-xs sm:text-sm text-gray-600">
+          <p className="mt-6 text-center text-xs sm:text-sm text-gray-600 dark:text-gray-400">
              Already have an account?{' '}
              <button
                className="text-[#0039a6] hover:text-[#0046cc] font-semibold"
