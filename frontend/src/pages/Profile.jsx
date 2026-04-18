@@ -2,10 +2,8 @@ import { useState, useEffect } from 'react'
 import { Navigate } from 'react-router-dom'
 import supabase from '../lib/supabase'
 
-// base URL for our custom backend API - vite proxies /api to localhost:3001
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
-// helper that makes authenticated requests to our backend
 async function fetchWithAuth(path, options = {}) {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) throw new Error('Not authenticated')
@@ -31,6 +29,17 @@ function Profile() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [session, setSession] = useState(undefined)
+  const [fieldErrors, setFieldErrors] = useState({})
+
+  const philippinesData = {
+    "Metro Manila": [
+      "Quezon City","Manila","Makati","Taguig","Pasig","Mandaluyong",
+      "Pasay","Parañaque","Las Piñas","Caloocan","Marikina",
+      "Valenzuela","San Juan","Malabon","Navotas","Pateros"
+    ],
+    "Cebu": ["Cebu City","Mandaue","Lapu-Lapu"],
+    "Davao del Sur": ["Davao City"]
+  }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
@@ -107,7 +116,7 @@ function Profile() {
         </p>
       </div>
 
-      <form className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+      <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
 
         <div className="p-6 sm:p-8 space-y-6">
 
@@ -135,9 +144,7 @@ function Profile() {
                 <input
                   className={inputClass}
                   value={profile?.firstName ?? ''}
-                  onChange={(e) =>
-                    setProfile((p) => ({ ...p, firstName: e.target.value }))
-                  }
+                  onChange={(e)=>setProfile(p=>({...p,firstName:e.target.value}))}
                 />
               </div>
 
@@ -146,49 +153,42 @@ function Profile() {
                 <input
                   className={inputClass}
                   value={profile?.lastName ?? ''}
-                  onChange={(e) =>
-                    setProfile((p) => ({ ...p, lastName: e.target.value }))
-                  }
+                  onChange={(e)=>setProfile(p=>({...p,lastName:e.target.value}))}
                 />
               </div>
             </div>
 
             <div>
               <label className={labelClass}>Email</label>
-              <div className="px-4 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-100 dark:border-gray-600">
+              <div className="px-4 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 border">
                 {profile?.email ?? ''}
               </div>
-              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                Email cannot be changed.
-              </p>
             </div>
           </section>
 
           {/* CONTACT */}
-          <section className="space-y-4 pt-2 border-t border-gray-100 dark:border-gray-700">
-            <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-              Contact
-            </h2>
-
-            <div>
-              <label className={labelClass}>Phone</label>
-              <input
-                type="tel"
-                className={inputClass}
-                placeholder="e.g. 09XX XXX XXXX"
-                value={profile?.phone ?? ''}
-                onChange={(e) =>
-                  setProfile((p) => ({ ...p, phone: e.target.value }))
+          <section>
+            <label className={labelClass}>Phone</label>
+            <input
+              type="tel"
+              className={inputClass}
+              placeholder="e.g. 09XX XXX XXXX"
+              value={profile?.phone ?? ''}
+              onChange={(e)=>{
+                const value=e.target.value
+                if(!/^[0-9]*$/.test(value)){
+                  setFieldErrors(p=>({...p,phone:'Invalid entry. Ex. 09123129312'}))
+                } else {
+                  setFieldErrors(p=>({...p,phone:''}))
                 }
-              />
-            </div>
+                setProfile(p=>({...p,phone:value}))
+              }}
+            />
+            {fieldErrors.phone && <p className="text-red-500 text-xs mt-1">{fieldErrors.phone}</p>}
           </section>
 
           {/* ADDRESS */}
           <section className="space-y-4 pt-2 border-t border-gray-100 dark:border-gray-700">
-            <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-              Address
-            </h2>
 
             <div>
               <label className={labelClass}>Address Line 1</label>
@@ -210,59 +210,78 @@ function Profile() {
               />
             </div>
 
+            {/* Province + City */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className={labelClass}>City</label>
-                <input
-                  className={inputClass}
-                  placeholder="e.g. Quezon City"
-                  value={profile?.city ?? ''}
-                  onChange={(e)=>setProfile(p=>({...p,city:e.target.value}))}
-                />
-              </div>
-
               <div>
                 <label className={labelClass}>Province / State</label>
-                <input
+                <select
                   className={inputClass}
-                  placeholder="e.g. Metro Manila"
                   value={profile?.province ?? ''}
-                  onChange={(e)=>setProfile(p=>({...p,province:e.target.value}))}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className={labelClass}>Postal Code</label>
-                <input
-                  className={inputClass}
-                  placeholder="e.g. 1101"
-                  value={profile?.postalCode ?? ''}
-                  onChange={(e)=>setProfile(p=>({...p,postalCode:e.target.value}))}
-                />
+                  onChange={(e)=>setProfile(p=>({...p,province:e.target.value,city:''}))}
+                >
+                  <option value="">Select Province</option>
+                  {Object.keys(philippinesData).map(p=><option key={p}>{p}</option>)}
+                </select>
               </div>
 
               <div>
-                <label className={labelClass}>Country</label>
-                <input
+                <label className={labelClass}>City</label>
+                <select
                   className={inputClass}
-                  placeholder="e.g. Philippines"
-                  value={profile?.country ?? ''}
-                  onChange={(e)=>setProfile(p=>({...p,country:e.target.value}))}
-                />
+                  value={profile?.city ?? ''}
+                  onChange={(e)=>setProfile(p=>({...p,city:e.target.value}))}
+                  disabled={!profile?.province}
+                >
+                  <option value="">Select City</option>
+                  {(philippinesData[profile?.province]||[]).map(c=><option key={c}>{c}</option>)}
+                </select>
               </div>
             </div>
+
+            {/* Postal */}
+            <div>
+              <label className={labelClass}>Postal Code</label>
+              <input
+                className={inputClass}
+                placeholder="e.g. 1101"
+                value={profile?.postalCode ?? ''}
+                onChange={(e)=>{
+                  const value=e.target.value
+                  if(!/^[0-9]*$/.test(value)){
+                    setFieldErrors(p=>({...p,postalCode:'Invalid entry. Ex. 1800'}))
+                  } else {
+                    setFieldErrors(p=>({...p,postalCode:''}))
+                  }
+                  setProfile(p=>({...p,postalCode:value}))
+                }}
+              />
+              {fieldErrors.postalCode && <p className="text-red-500 text-xs mt-1">{fieldErrors.postalCode}</p>}
+            </div>
+
+            {/* Country */}
+            <div>
+              <label className={labelClass}>Country</label>
+              <select
+                className={inputClass}
+                value={profile?.country ?? ''}
+                onChange={(e)=>setProfile(p=>({...p,country:e.target.value}))}
+              >
+                <option value="">Select Country</option>
+                <option value="Philippines">Philippines</option>
+              </select>
+            </div>
+
           </section>
 
         </div>
 
-        <div className="px-6 sm:px-8 py-4 bg-gray-50 dark:bg-gray-700 border-t border-gray-100 dark:border-gray-600">
+        <div className="px-6 py-4 bg-gray-50 dark:bg-gray-700 border-t">
           <button
             type="submit"
+            disabled={saving}
             className="px-6 py-2.5 rounded-lg bg-[#dbb727] hover:bg-[#0d3a6e] text-white font-semibold"
           >
-            Save Profile
+            {saving ? 'Saving...' : 'Save Profile'}
           </button>
         </div>
 
