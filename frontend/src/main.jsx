@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 import { ShopProvider } from './context/ShopContext.jsx'
+import { PetsProvider } from './context/PetsContext.jsx'
 
 // this is the entry point of the whole frontend app
 // StrictMode is a React dev tool that warns you about potential problems
@@ -10,7 +11,9 @@ import { ShopProvider } from './context/ShopContext.jsx'
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ShopProvider>
-      <App />
+      <PetsProvider>
+        <App />
+      </PetsProvider>
     </ShopProvider>
   </StrictMode>,
 )
