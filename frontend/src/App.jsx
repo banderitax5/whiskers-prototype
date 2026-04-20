@@ -95,7 +95,14 @@ const router = createBrowserRouter([
       { path: 'cart', element: <Cart /> },
       { path: 'checkout', element: <Checkout /> },
       { path: 'about', element: <About /> },
-      { path: 'pets', element: <Pets /> },
+      {
+        path: 'pets',
+        element: (
+          <RequireAuth>
+            <Pets />
+          </RequireAuth>
+        ),
+      },
       {
         path: 'profile',
         element: (
