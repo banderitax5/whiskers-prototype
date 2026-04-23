@@ -108,7 +108,7 @@ function Profile() {
     <div className="max-w-2xl mx-auto py-6 bg-white dark:bg-gray-900 min-h-screen">
 
       <div className="mb-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white tracking-tight">
+        <h1 className="text-2xl sm:text-3xl font-bold text-[#0b2e59] dark:text-yellow-300 tracking-tight">
           Profile
         </h1>
         <p className="mt-1.5 text-gray-500 dark:text-gray-400 text-sm sm:text-base">
@@ -279,7 +279,7 @@ function Profile() {
           <button
             type="submit"
             disabled={saving}
-            className="px-6 py-2.5 rounded-lg bg-[#dbb727] hover:bg-[#0d3a6e] text-white font-semibold"
+            className="px-6 py-2.5 rounded-lg bg-[#0b2e59] hover:bg-[#15407a] text-white font-semibold"
           >
             {saving ? 'Saving...' : 'Save Profile'}
           </button>
