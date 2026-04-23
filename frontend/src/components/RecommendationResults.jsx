@@ -82,7 +82,7 @@ function RecommendationResults({ pet }) {
         {recommendations.map((product, index) => (
           <article
             key={product.id}
-            className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col hover:shadow-md transition-shadow"
+            className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col hover:shadow-md transition-shadow dark:bg-gray-800"
           >
             <div className="relative aspect-square bg-gray-50 overflow-hidden">
               <img
@@ -101,16 +101,16 @@ function RecommendationResults({ pet }) {
             </div>
 
             <div className="p-4 flex-1 flex flex-col">
-              <div className="text-xs text-gray-500 uppercase tracking-wide">{product.brand}</div>
-              <h3 className="font-semibold text-gray-900 mt-0.5 mb-1.5 line-clamp-2">
+              <div className="text-xs text-gray-500 uppercase tracking-wide dark:text-white">{product.brand}</div>
+              <h3 className="font-semibold text-gray-900 mt-0.5 mb-1.5 line-clamp-2 dark:text-white">
                 {product.name}
               </h3>
-              <p className="text-xs text-gray-600 line-clamp-2 mb-3">{product.description}</p>
+              <p className="text-xs text-gray-600 line-clamp-2 mb-3 dark:text-gray-400">{product.description}</p>
 
               {product.reasons && product.reasons.length > 0 && (
                 <ul className="mb-3 space-y-1">
                   {product.reasons.map((reason, i) => (
-                    <li key={i} className="flex items-start gap-1.5 text-xs text-emerald-700">
+                    <li key={i} className="flex items-start gap-1.5 text-xs text-emerald-700 dark:text-emerald-400">
                       <span className="mt-0.5">&#10003;</span>
                       <span>{reason}</span>
                     </li>
@@ -119,7 +119,7 @@ function RecommendationResults({ pet }) {
               )}
 
               <div className="mt-auto flex items-center justify-between pt-3 border-t border-gray-100">
-                <span className="font-bold text-[#0b2e59]">&#8369;{product.price.toLocaleString()}</span>
+                <span className="font-bold text-[#0b2e59] dark:text-blue-500">&#8369;{product.price.toLocaleString()}</span>
                 <button
                   type="button"
                   onClick={() => addToCart(product, 1)}
