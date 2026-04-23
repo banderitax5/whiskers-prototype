@@ -1,15 +1,41 @@
-import { useMemo } from 'react'
+import { useMemo, useEffect, useRef } from 'react'
 import { useShop } from '../context/ShopContext'
+import { usePets } from '../context/PetsContext'
 import { recommendFor } from '../data/petFoodCatalog'
 import { findLabel, HEALTH_CONDITION_OPTIONS } from '../data/petFormOptions'
+// import { logTopRecommendation } from '../lib/recommendationLogger'
+import supabase from '../lib/supabase'
 
 // shows the ranked list of recommended products for a given pet profile
 // runs the scoring engine and displays each product with the reasons it matched
 // also includes a small "no results" state for edge cases
 function RecommendationResults({ pet }) {
   const { addToCart } = useShop()
+  const { isAuthenticated } = usePets()
 
   const recommendations = useMemo(() => recommendFor(pet), [pet])
+
+  // dedupe logging so revisiting the same pet in one tab doesn't spam the table
+  // key format: `${petId}:${topProductId}` - changes only when the top match changes
+  const loggedKeyRef = useRef(null)
+
+  useEffect(() => {
+    if (!isAuthenticated || !pet || recommendations.length === 0) return
+    const topProduct = recommendations[0]
+    const dedupeKey = `${pet.id}:${topProduct.id}`
+    if (loggedKeyRef.current === dedupeKey) return
+    loggedKeyRef.current = dedupeKey
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.id) {
+        ({
+          userId: session.user.id,
+          pet,
+          topProduct,
+        })
+      }
+    })
+  }, [pet, recommendations, isAuthenticated])
 
   if (!pet) {
     return (
@@ -36,6 +62,7 @@ function RecommendationResults({ pet }) {
 
   return (
     <div className="space-y-4">
+      
       <div className="bg-gradient-to-r from-[#0b2e59] to-[#134680] text-white rounded-xl p-5">
         <h2 className="text-lg sm:text-xl font-semibold">
           Recommended for {pet.name}
@@ -46,7 +73,11 @@ function RecommendationResults({ pet }) {
           <span className="font-medium">{healthLabel.toLowerCase()}</span>
         </p>
       </div>
-
+      <div className="bg-yellow-50 border border-yellow-400 rounded-lg p-4 text-xs text-blue-900">
+        <strong>Note:</strong> These recommendations are generated from a rule-based engine matching
+        species, life stage, and declared health conditions. They are not a substitute for
+        professional veterinary advice.
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {recommendations.map((product, index) => (
           <article
@@ -102,11 +133,7 @@ function RecommendationResults({ pet }) {
         ))}
       </div>
 
-      <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 text-xs text-blue-900">
-        <strong>Note:</strong> These recommendations are generated from a rule-based engine matching
-        species, life stage, and declared health conditions. They are not a substitute for
-        professional veterinary advice.
-      </div>
+      
     </div>
   )
 }

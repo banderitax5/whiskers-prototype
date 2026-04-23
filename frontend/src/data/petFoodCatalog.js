@@ -4,7 +4,7 @@
 // the recommendation engine matches a pet's profile against these fields
 export const PET_FOOD_CATALOG = [
   {
-    id: 'pf-001',
+    id: 101,
     name: 'Royal Canin Renal Support Dog Food',
     price: 1250,
     image: '/categoryshop/dog.jpg',
@@ -17,7 +17,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Therapeutic diet formulated to support kidney function in adult and senior dogs.',
   },
   {
-    id: 'pf-002',
+    id: 102,
     name: 'Hill\'s Prescription Diet w/d Multi-Benefit',
     price: 1650,
     image: '/categoryshop/dog.png',
@@ -30,7 +30,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Low-fat, high-fiber formula supporting glucose control and healthy weight.',
   },
   {
-    id: 'pf-003',
+    id: 103,
     name: 'Purina Pro Plan Sensitive Skin & Stomach',
     price: 980,
     image: '/categoryshop/dog.jpg',
@@ -43,7 +43,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Salmon-first, gentle recipe for dogs with sensitive digestion and itchy skin.',
   },
   {
-    id: 'pf-004',
+    id: 104,
     name: 'Pedigree Puppy Complete Nutrition',
     price: 450,
     image: '/categoryshop/dog.png',
@@ -56,7 +56,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Balanced nutrition for fast-growing puppies up to 12 months.',
   },
   {
-    id: 'pf-005',
+    id: 105,
     name: 'Royal Canin Senior Dog 7+ Years',
     price: 920,
     image: '/categoryshop/dog.jpg',
@@ -69,7 +69,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Tailored for senior dogs with joint and heart-health nutrients.',
   },
   {
-    id: 'pf-006',
+    id: 106,
     name: 'Whiskers Grain-Free Adult Dog',
     price: 780,
     image: '/categoryshop/dog.png',
@@ -82,7 +82,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Hypoallergenic grain-free recipe for dogs with food sensitivities.',
   },
   {
-    id: 'pf-007',
+    id: 107,
     name: 'Hill\'s Science Diet Adult Healthy Mobility',
     price: 1120,
     image: '/categoryshop/dog.jpg',
@@ -95,7 +95,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Supports joint mobility and healthy weight with glucosamine and L-carnitine.',
   },
   {
-    id: 'pf-008',
+    id: 108,
     name: 'Pedigree Dentastix Oral Care',
     price: 280,
     image: '/categoryshop/dog.png',
@@ -108,7 +108,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Daily dental chew that reduces tartar build-up.',
   },
   {
-    id: 'pf-009',
+    id: 109,
     name: 'Purina Beneful Healthy Weight',
     price: 650,
     image: '/categoryshop/dog.jpg',
@@ -121,7 +121,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Reduced-calorie formula for dogs needing weight control.',
   },
   {
-    id: 'pf-010',
+    id: 110,
     name: 'Whiskers Liver Care Diet',
     price: 1380,
     image: '/categoryshop/dog.png',
@@ -135,7 +135,7 @@ export const PET_FOOD_CATALOG = [
   },
 
   {
-    id: 'pf-011',
+    id: 111,
     name: 'Royal Canin Urinary SO Cat',
     price: 1180,
     image: '/categoryshop/cat.jpg',
@@ -148,7 +148,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Veterinary diet that helps dissolve and prevent struvite stones.',
   },
   {
-    id: 'pf-012',
+    id: 112,
     name: 'Hill\'s Prescription Diet m/d Diabetic',
     price: 1520,
     image: '/categoryshop/cat.jpg',
@@ -161,7 +161,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Low-carb, high-protein formula for diabetic and overweight cats.',
   },
   {
-    id: 'pf-013',
+    id: 113,
     name: 'Whiskas Kitten Complete',
     price: 380,
     image: '/categoryshop/cat.jpg',
@@ -174,7 +174,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Essential nutrition for kittens during their first 12 months.',
   },
   {
-    id: 'pf-014',
+    id: 114,
     name: 'Purina Pro Plan Sensitive Skin Cat',
     price: 890,
     image: '/categoryshop/cat.jpg',
@@ -187,7 +187,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Hydrolyzed protein and omega-rich recipe for sensitive cats.',
   },
   {
-    id: 'pf-015',
+    id: 115,
     name: 'Royal Canin Hairball Care Cat',
     price: 720,
     image: '/categoryshop/cat.jpg',
@@ -200,7 +200,7 @@ export const PET_FOOD_CATALOG = [
     description: 'High-fiber formula that helps move hair through the digestive tract.',
   },
   {
-    id: 'pf-016',
+    id: 116,
     name: 'Whiskers Senior Cat 11+',
     price: 850,
     image: '/categoryshop/cat.jpg',
@@ -213,7 +213,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Gentle senior recipe with reduced phosphorus for kidney health.',
   },
   {
-    id: 'pf-017',
+    id: 117,
     name: 'Hill\'s Science Diet Dental Care Cat',
     price: 980,
     image: '/categoryshop/cat.jpg',
@@ -226,7 +226,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Unique kibble texture that cleans teeth with every bite.',
   },
   {
-    id: 'pf-018',
+    id: 118,
     name: 'Ciao Grain-Free Tuna Cat Food',
     price: 560,
     image: '/categoryshop/cat.jpg',
@@ -239,7 +239,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Grain-free tuna recipe for cats with dietary sensitivities.',
   },
   {
-    id: 'pf-019',
+    id: 119,
     name: 'Purina Feline Renal Formula',
     price: 1280,
     image: '/categoryshop/cat.jpg',
@@ -252,7 +252,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Low-phosphorus therapeutic diet for cats with kidney disease.',
   },
   {
-    id: 'pf-020',
+    id: 120,
     name: 'Whiskers Weight Control Cat',
     price: 680,
     image: '/categoryshop/cat.jpg',
@@ -266,7 +266,7 @@ export const PET_FOOD_CATALOG = [
   },
 
   {
-    id: 'pf-021',
+    id: 121,
     name: 'Avian Plus Complete Pellet',
     price: 420,
     image: '/categoryshop/berd.jpg',
@@ -279,7 +279,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Complete pelleted diet for parrots, cockatiels, and budgies.',
   },
   {
-    id: 'pf-022',
+    id: 122,
     name: 'Avian Plus Senior Bird Blend',
     price: 480,
     image: '/categoryshop/berd.jpg',
@@ -292,7 +292,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Enriched with omega-3 for aging birds.',
   },
   {
-    id: 'pf-023',
+    id: 123,
     name: 'Whiskers Bird Egg-Food Juvenile',
     price: 320,
     image: '/categoryshop/berd.jpg',
@@ -305,7 +305,7 @@ export const PET_FOOD_CATALOG = [
     description: 'High-protein egg food for young and breeding birds.',
   },
   {
-    id: 'pf-024',
+    id: 124,
     name: 'Avian Plus Liver & Kidney Support',
     price: 560,
     image: '/categoryshop/berd.jpg',
@@ -319,7 +319,7 @@ export const PET_FOOD_CATALOG = [
   },
 
   {
-    id: 'pf-025',
+    id: 125,
     name: 'Aqua Pro Tropical Flakes',
     price: 220,
     image: '/categoryshop/fish.png',
@@ -332,7 +332,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Daily flake diet for tropical freshwater fish.',
   },
   {
-    id: 'pf-026',
+    id: 126,
     name: 'Aqua Pro Goldfish Weight Control',
     price: 260,
     image: '/categoryshop/fish.png',
@@ -345,7 +345,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Reduced-protein formula to prevent overfeeding goldfish.',
   },
   {
-    id: 'pf-027',
+    id: 127,
     name: 'Aqua Pro Growth Pellets Juvenile',
     price: 290,
     image: '/categoryshop/fish.png',
@@ -358,7 +358,7 @@ export const PET_FOOD_CATALOG = [
     description: 'High-protein pellets for rapidly growing juvenile fish.',
   },
   {
-    id: 'pf-028',
+    id: 128,
     name: 'Aqua Pro Sensitive Formula',
     price: 310,
     image: '/categoryshop/fish.png',
@@ -372,7 +372,7 @@ export const PET_FOOD_CATALOG = [
   },
 
   {
-    id: 'pf-029',
+    id: 129,
     name: 'Whiskers Multi-Vitamin Drops (Dog)',
     price: 380,
     image: '/categoryshop/all.png',
@@ -385,7 +385,7 @@ export const PET_FOOD_CATALOG = [
     description: 'Daily vitamin supplement mixed into food.',
   },
   {
-    id: 'pf-030',
+    id: 130,
     name: 'Whiskers Multi-Vitamin Drops (Cat)',
     price: 380,
     image: '/categoryshop/all.png',
