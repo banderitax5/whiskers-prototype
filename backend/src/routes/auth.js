@@ -5,12 +5,15 @@ import { loginLimiter, signupLimiter } from '../middleware/rateLimiter.js'
 
 const router = Router()
 
+// login route with rate limiter to prevent spam
 router.post('/login', loginLimiter, async (req, res) => {
   const { email, password } = req.body ?? {}
+  // check if user actually sent something
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password are required' })
   }
   try {
+    // sending credentials to supabase auth
     const { data, error } = await supabaseAuth.auth.signInWithPassword({
       email: email.trim(),
       password,
@@ -23,12 +26,14 @@ router.post('/login', loginLimiter, async (req, res) => {
   }
 })
 
+// signup route for new users
 router.post('/signup', signupLimiter, async (req, res) => {
   const { email, password, firstName, lastName } = req.body ?? {}
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password are required' })
   }
   try {
+    // create the auth user first
     const { data, error: authError } = await supabaseAuth.auth.signUp({
       email: email.trim(),
       password,
@@ -47,9 +52,10 @@ router.post('/signup', signupLimiter, async (req, res) => {
     const userId = data.user.id
     const userEmail = data.user.email
 
-    // Wait for the database trigger to create the bare profile row
+    // wait a bit for the db trigger to finish creating the profile row
     await new Promise(r => setTimeout(r, 500))
 
+    // update the profile with encrypted info for security
     const { data: updated } = await supabaseAdmin
       .from('profiles')
       .update({
@@ -61,6 +67,7 @@ router.post('/signup', signupLimiter, async (req, res) => {
       .eq('id', userId)
       .select()
 
+    // if update fails we try to upsert instead just to be sure
     if (!updated || updated.length === 0) {
       console.log('Profile update returned 0 rows, falling back to upsert')
       const { error: upsertError } = await supabaseAdmin
