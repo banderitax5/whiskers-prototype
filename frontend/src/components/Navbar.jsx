@@ -38,16 +38,20 @@ function Navbar() {
 
   // checks the backend for the user's role (admin or regular user)
   // saves it to localStorage so the admin link shows up instantly on reload
-  async function fetchRole(session) {
-    if (!session) {
+  // pulls a fresh token from supabase to avoid 401 from expired tokens
+  async function fetchRole(hasSession) {
+    if (!hasSession) {
       setIsAdmin(false)
       localStorage.removeItem("role")
       return
     }
 
     try {
+      const { data: { session: current } } = await supabase.auth.getSession()
+      if (!current) return
+
       const res = await fetch(`${API_BASE}/me/role`, {
-        headers: { Authorization: `Bearer ${session.access_token}` },
+        headers: { Authorization: `Bearer ${current.access_token}` },
       })
 
       if (!res.ok) throw new Error()
@@ -91,12 +95,12 @@ function Navbar() {
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
-      fetchRole(session)
+      fetchRole(!!session)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
-      fetchRole(session)
+      fetchRole(!!session)
     })
 
     return () => subscription.unsubscribe()
