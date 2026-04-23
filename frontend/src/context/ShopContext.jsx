@@ -9,11 +9,17 @@ import supabase from '../lib/supabase'
 const ShopContext = createContext(null)
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
-// grabs the latest access token directly from supabase at call time
-// avoids stale tokens stuck in react state closures after a background refresh
-async function getToken() {
-  const { data: { session } } = await supabase.auth.getSession()
-  return session?.access_token || null
+// checks whether a JWT access token has expired or is about to expire
+// decodes the payload and compares the exp claim against the current time
+// the 10 second buffer avoids sending a token that expires mid-flight
+function isTokenExpired(token) {
+  if (!token) return true
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    return payload.exp * 1000 < Date.now() + 10_000
+  } catch {
+    return true
+  }
 }
 
 // takes a row from the cart_items database table and reshapes it
@@ -35,43 +41,70 @@ export function ShopProvider({ children }) {
   const [session, setSession] = useState(null)
   const [lastAddedAt, setLastAddedAt] = useState(0)
 
+  // holds the latest access token, updated synchronously whenever the session changes
+  // reading from a ref avoids the race where getSession() returns a stale token
+  // during an in-progress background refresh
+  const tokenRef = useRef(null)
+
+  // tracks whether we already loaded the cart for the current session
+  // prevents duplicate fetches when multiple auth events fire in quick succession
+  const cartLoadedRef = useRef(false)
+
   // this ref holds a function that opens the login modal
   // the Navbar registers it on mount so we can trigger the login popup from anywhere
   const openLoginRef = useRef(null)
 
+  // returns the current token from the ref
+  // for user-initiated actions (like addToCart) the ref is always up to date
+  // because onAuthStateChange updates it synchronously before any user interaction
+  function getToken() {
+    return tokenRef.current
+  }
+
   // fetches the cart from the backend and updates local state
-  // always pulls a fresh token so we never send an expired one
-  const loadCart = useCallback(async () => {
-    const token = await getToken()
-    if (!token) return
+  // returns true on success so the caller knows whether to mark the cart as loaded
+  // returns false on failure so the next auth event can retry with a fresh token
+  const loadCart = useCallback(async (token) => {
+    const t = token || tokenRef.current
+    if (!t) return false
     try {
       const res = await fetch(`${API_BASE}/cart`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${t}` },
       })
-      if (!res.ok) return
+      if (!res.ok) return false
       const { items } = await res.json()
       setCartItems((items || []).map(normalizeDbItem))
+      return true
     } catch {
-      // network hiccup, just keep whatever we have locally
+      return false
     }
   }, [])
 
   // listen for auth changes so we always know if the user is logged in
-  // on sign in or token refresh we reload the cart to stay in sync
-  // on sign out we clear the cart since it belongs to that user
+  // the cart is loaded once per session, the flag is only set after a successful
+  // fetch so that if the first event carries a revoked token (401) the next event
+  // with a refreshed token will retry instead of being skipped
+  // on SIGNED_IN the flag resets so a fresh login always fetches the cart
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
+      tokenRef.current = s?.access_token || null
       setSession(s)
-      if (s) loadCart()
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
+      tokenRef.current = s?.access_token || null
       setSession(s)
       if (!s) {
+        cartLoadedRef.current = false
         setCartItems([])
         return
       }
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-        loadCart()
+      if (event === 'SIGNED_IN') {
+        cartLoadedRef.current = false
+      }
+      if (!cartLoadedRef.current) {
+        loadCart(s.access_token).then((ok) => {
+          if (ok) cartLoadedRef.current = true
+        })
       }
     })
     return () => subscription.unsubscribe()
@@ -95,8 +128,8 @@ export function ShopProvider({ children }) {
   // if the user is not logged in, it opens the login modal and bails out
   // uses optimistic updates so the UI feels instant, then syncs with the backend
   const addToCart = useCallback(async (product, quantity = 1, opts = { notify: true }) => {
-    const token = await getToken()
-    if (!token) {
+    const token = getToken()
+    if (!token || isTokenExpired(token)) {
       if (openLoginRef.current) openLoginRef.current()
       pushNotification('Please sign in to add items to cart', 'info')
       return
@@ -156,8 +189,8 @@ export function ShopProvider({ children }) {
     setCartItems((prev) =>
       prev.map((item) => (item.id === productId ? { ...item, quantity: qty } : item))
     )
-    const token = await getToken()
-    if (!token) return
+    const token = getToken()
+    if (!token || isTokenExpired(token)) return
     try {
       await fetch(`${API_BASE}/cart/${productId}`, {
         method: 'PUT',
@@ -178,8 +211,8 @@ export function ShopProvider({ children }) {
     const removed = cartItems.find((item) => item.id === productId)
     setCartItems((prev) => prev.filter((item) => item.id !== productId))
     if (removed) pushNotification(`${removed.name} removed from cart`, 'info')
-    const token = await getToken()
-    if (!token) return
+    const token = getToken()
+    if (!token || isTokenExpired(token)) return
     try {
       await fetch(`${API_BASE}/cart`, {
         method: 'DELETE',
@@ -203,8 +236,8 @@ export function ShopProvider({ children }) {
       const setIds = new Set(ids)
       setCartItems((prev) => prev.filter((item) => !setIds.has(item.id)))
     }
-    const token = await getToken()
-    if (!token) return
+    const token = getToken()
+    if (!token || isTokenExpired(token)) return
     try {
       await fetch(`${API_BASE}/cart`, {
         method: 'DELETE',

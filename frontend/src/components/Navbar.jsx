@@ -36,25 +36,27 @@ function Navbar() {
     return "?"
   }
 
+  // tracks whether we already checked the role for the current session
+  // prevents duplicate /me/role calls when multiple auth events fire on load
+  const roleCheckedRef = useRef(false)
+
   // checks the backend for the user's role (admin or regular user)
   // saves it to localStorage so the admin link shows up instantly on reload
-  // pulls a fresh token from supabase to avoid 401 from expired tokens
-  async function fetchRole(hasSession) {
-    if (!hasSession) {
+  // returns true on success so the caller knows whether to mark the role as checked
+  // returns false on failure so the next auth event can retry with a fresh token
+  async function fetchRole(token) {
+    if (!token) {
       setIsAdmin(false)
       localStorage.removeItem("role")
-      return
+      return false
     }
 
     try {
-      const { data: { session: current } } = await supabase.auth.getSession()
-      if (!current) return
-
       const res = await fetch(`${API_BASE}/me/role`, {
-        headers: { Authorization: `Bearer ${current.access_token}` },
+        headers: { Authorization: `Bearer ${token}` },
       })
 
-      if (!res.ok) throw new Error()
+      if (!res.ok) return false
 
       const { role } = await res.json()
 
@@ -62,8 +64,9 @@ function Navbar() {
 
       localStorage.setItem("role", role)
 
+      return true
     } catch {
-      setIsAdmin(false)
+      return false
     }
   }
 
@@ -95,12 +98,28 @@ function Navbar() {
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
-      fetchRole(!!session)
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    // the role is checked once per session, the flag is only set after a successful
+    // fetch so that if the first event carries a revoked token (401) the next event
+    // with a refreshed token will retry instead of being skipped
+    // on SIGNED_IN the flag resets so a fresh login always rechecks the role
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null)
-      fetchRole(!!session)
+      if (!session) {
+        roleCheckedRef.current = false
+        setIsAdmin(false)
+        localStorage.removeItem("role")
+        return
+      }
+      if (event === 'SIGNED_IN') {
+        roleCheckedRef.current = false
+      }
+      if (!roleCheckedRef.current) {
+        fetchRole(session.access_token).then((ok) => {
+          if (ok) roleCheckedRef.current = true
+        })
+      }
     })
 
     return () => subscription.unsubscribe()

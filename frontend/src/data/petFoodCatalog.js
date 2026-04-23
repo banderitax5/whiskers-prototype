@@ -469,6 +469,6 @@ export function recommendFor(pet) {
     })
     .filter((product) => product.score > 0)
     .sort((a, b) => b.score - a.score)
-
+    
   return scored
 }

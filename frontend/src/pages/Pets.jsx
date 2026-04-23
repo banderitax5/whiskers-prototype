@@ -9,6 +9,7 @@ import {
   HEALTH_CONDITION_OPTIONS,
   getLifeStageOptions,
 } from '../data/petFormOptions'
+import ProductQuickViewDialog from '../components/ProductQuickViewDialog'
 
 // the main pets page - shows the signed-in user's saved pets as a sidebar of tabs
 // clicking a pet reveals its recommended foods based on its profile

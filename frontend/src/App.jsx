@@ -1,5 +1,5 @@
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Layout from './components/Layout.jsx'
 
 // USER PAGES
@@ -24,7 +24,7 @@ import AdminCustomers from './components/AdminCustomers.jsx'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
-// RequireAuth
+// redirects to home if the user is not logged in
 function RequireAuth({ children }) {
   const [session, setSession] = useState(undefined)
 
@@ -43,39 +43,41 @@ function RequireAuth({ children }) {
   return children
 }
 
-// RequireAdmin
+// checks the user's role via the backend and only renders children if admin
+// uses a checked flag that is only set after a successful call so that
+// if the first auth event carries a revoked token the next event retries
 function RequireAdmin({ children }) {
   const [state, setState] = useState('loading')
+  const checkedRef = useRef(false)
 
   useEffect(() => {
-    async function checkAdmin() {
-      const { data: { session } } = await supabase.auth.getSession()
-
-      if (!session) {
-        setState('denied')
-        return
-      }
-
+    async function checkAdmin(token) {
+      if (!token) return
       try {
         const res = await fetch(`${API_BASE}/me/role`, {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
+          headers: { Authorization: `Bearer ${token}` },
         })
-
-        if (!res.ok) {
-          setState('denied')
-          return
-        }
-
+        if (!res.ok) return
         const { role } = await res.json()
+        checkedRef.current = true
         setState(role === 'admin' ? 'allowed' : 'denied')
       } catch {
-        setState('denied')
+        // let the next auth event retry
       }
     }
 
-    checkAdmin()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+      if (!s) {
+        checkedRef.current = false
+        setState('denied')
+        return
+      }
+      if (!checkedRef.current) {
+        checkAdmin(s.access_token)
+      }
+    })
+
+    return () => subscription.unsubscribe()
   }, [])
 
   if (state === 'loading') return null
