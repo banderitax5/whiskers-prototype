@@ -12,7 +12,7 @@ export const loginLimiter = rateLimit({
 // 3 accounts per hour per IP
 export const signupLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  max: 3,
+  max: 10,
   message: { error: 'Too many signups. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,

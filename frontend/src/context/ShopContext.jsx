@@ -3,11 +3,24 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import toast from 'react-hot-toast'
 import supabase from '../lib/supabase'
 
-// this is the global shop context that handles the cart for the whole app
-// it talks to the backend API to persist cart items in the database
+// global shop context that handles the cart for the whole app
+// talks to the backend API to persist cart items in the database
 // every component that needs cart data or actions uses the useShop() hook
 const ShopContext = createContext(null)
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
+
+// checks whether a JWT access token has expired or is about to expire
+// decodes the payload and compares the exp claim against the current time
+// the 10 second buffer avoids sending a token that expires mid-flight
+function isTokenExpired(token) {
+  if (!token) return true
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    return payload.exp * 1000 < Date.now() + 10_000
+  } catch {
+    return true
+  }
+}
 
 // takes a row from the cart_items database table and reshapes it
 // into the format the frontend components expect
@@ -28,41 +41,74 @@ export function ShopProvider({ children }) {
   const [session, setSession] = useState(null)
   const [lastAddedAt, setLastAddedAt] = useState(0)
 
+  // holds the latest access token, updated synchronously whenever the session changes
+  // reading from a ref avoids the race where getSession() returns a stale token
+  // during an in-progress background refresh
+  const tokenRef = useRef(null)
+
+  // tracks whether we already loaded the cart for the current session
+  // prevents duplicate fetches when multiple auth events fire in quick succession
+  const cartLoadedRef = useRef(false)
+
   // this ref holds a function that opens the login modal
-  // the Navbar registers it on mount so we can pop the login from anywhere
+  // the Navbar registers it on mount so we can trigger the login popup from anywhere
   const openLoginRef = useRef(null)
 
-  // listen for auth changes so we always know if the user is logged in
-  // when they log out, we clear the cart since it belongs to that user
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s)
-      if (!s) setCartItems([])
-    })
-    return () => subscription.unsubscribe()
-  }, [])
-
-  // whenever the session changes (login, signup, token refresh)
-  // we pull the user's cart from the database so it stays in sync
-  useEffect(() => {
-    if (!session) return
-    loadCart(session.access_token)
-  }, [session])
+  // returns the current token from the ref
+  // for user-initiated actions (like addToCart) the ref is always up to date
+  // because onAuthStateChange updates it synchronously before any user interaction
+  function getToken() {
+    return tokenRef.current
+  }
 
   // fetches the cart from the backend and updates local state
-  async function loadCart(token) {
+  // returns true on success so the caller knows whether to mark the cart as loaded
+  // returns false on failure so the next auth event can retry with a fresh token
+  const loadCart = useCallback(async (token) => {
+    const t = token || tokenRef.current
+    if (!t) return false
     try {
       const res = await fetch(`${API_BASE}/cart`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${t}` },
       })
-      if (!res.ok) return
+      if (!res.ok) return false
       const { items } = await res.json()
       setCartItems((items || []).map(normalizeDbItem))
+      return true
     } catch {
-      // network hiccup, just keep whatever we have locally
+      return false
     }
-  }
+  }, [])
+
+  // listen for auth changes so we always know if the user is logged in
+  // the cart is loaded once per session, the flag is only set after a successful
+  // fetch so that if the first event carries a revoked token (401) the next event
+  // with a refreshed token will retry instead of being skipped
+  // on SIGNED_IN the flag resets so a fresh login always fetches the cart
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      tokenRef.current = s?.access_token || null
+      setSession(s)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
+      tokenRef.current = s?.access_token || null
+      setSession(s)
+      if (!s) {
+        cartLoadedRef.current = false
+        setCartItems([])
+        return
+      }
+      if (event === 'SIGNED_IN') {
+        cartLoadedRef.current = false
+      }
+      if (!cartLoadedRef.current) {
+        loadCart(s.access_token).then((ok) => {
+          if (ok) cartLoadedRef.current = true
+        })
+      }
+    })
+    return () => subscription.unsubscribe()
+  }, [loadCart])
 
   // called by the Navbar to hand us a function that opens the login modal
   // this way ShopContext can trigger the login popup without importing Navbar
@@ -82,7 +128,8 @@ export function ShopProvider({ children }) {
   // if the user is not logged in, it opens the login modal and bails out
   // uses optimistic updates so the UI feels instant, then syncs with the backend
   const addToCart = useCallback(async (product, quantity = 1, opts = { notify: true }) => {
-    if (!session) {
+    const token = getToken()
+    if (!token || isTokenExpired(token)) {
       if (openLoginRef.current) openLoginRef.current()
       pushNotification('Please sign in to add items to cart', 'info')
       return
@@ -117,7 +164,7 @@ export function ShopProvider({ children }) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           productId: product.id,
@@ -130,10 +177,10 @@ export function ShopProvider({ children }) {
         }),
       })
     } catch {
-      // the optimistic update already happened so the user still sees the item
+      // optimistic update already happened so the user still sees the item
       // the backend will catch up on the next page load
     }
-  }, [session])
+  }, [])
 
   // changes the quantity for a specific product in the cart
   // updates locally first, then tells the backend
@@ -142,20 +189,21 @@ export function ShopProvider({ children }) {
     setCartItems((prev) =>
       prev.map((item) => (item.id === productId ? { ...item, quantity: qty } : item))
     )
-    if (!session) return
+    const token = getToken()
+    if (!token || isTokenExpired(token)) return
     try {
       await fetch(`${API_BASE}/cart/${productId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ quantity: qty }),
       })
     } catch {
       // silent fail, local state is already updated
     }
-  }, [session])
+  }, [])
 
   // removes a single product from the cart by its id
   // shows a toast so the user knows it was removed
@@ -163,20 +211,21 @@ export function ShopProvider({ children }) {
     const removed = cartItems.find((item) => item.id === productId)
     setCartItems((prev) => prev.filter((item) => item.id !== productId))
     if (removed) pushNotification(`${removed.name} removed from cart`, 'info')
-    if (!session) return
+    const token = getToken()
+    if (!token || isTokenExpired(token)) return
     try {
       await fetch(`${API_BASE}/cart`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ productIds: [productId] }),
       })
     } catch {
       // silent fail
     }
-  }, [session, cartItems])
+  }, [cartItems])
 
   // removes multiple items at once, or clears the whole cart if no ids are passed
   // the Cart page uses this for the "Remove Selected" button
@@ -187,20 +236,21 @@ export function ShopProvider({ children }) {
       const setIds = new Set(ids)
       setCartItems((prev) => prev.filter((item) => !setIds.has(item.id)))
     }
-    if (!session) return
+    const token = getToken()
+    if (!token || isTokenExpired(token)) return
     try {
       await fetch(`${API_BASE}/cart`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${token}`,
         },
         body: ids ? JSON.stringify({ productIds: ids }) : JSON.stringify({}),
       })
     } catch {
       // silent fail
     }
-  }, [session])
+  }, [])
 
   // total number of individual items in the cart (accounts for quantity)
   // this is what shows up on the cart badge in the navbar

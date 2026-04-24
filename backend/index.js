@@ -5,7 +5,6 @@ import helmet from 'helmet'
 
 // Eagerly validate encryption key on startup
 import './src/utils/encryption.js'
-
 import { authMiddleware } from './src/middleware/auth.js'
 import authRoutes from './src/routes/auth.js'
 import profileRoutes from './src/routes/profile.js'
@@ -50,5 +49,5 @@ app.use('/api/products', productsRoutes)
 app.use('/api/orders', ordersRoutes)
 app.use('/api/admin', adminRoutes)
 
-const PORT = process.env.PORT || 3001
+const PORT = process.env.PORT || 4141
 app.listen(PORT, () => console.log(`API running on port ${PORT}`))
