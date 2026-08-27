@@ -82,7 +82,7 @@ function ProductQuickViewDialog({ product, isOpen, onClose, onAddToCart, onBuyNo
             </div>
             {/* main product image */}
             <div className="flex flex-1 items-center justify-center rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 p-4">
-              <img src={p.image} alt={p.name} className="max-h-[220px] w-full object-contain sm:max-h-[280px]" />
+              <img src={p.image} alt={p.name} loading="lazy" className="max-h-[220px] w-full object-contain sm:max-h-[280px]" />
             </div>
           </div>
 

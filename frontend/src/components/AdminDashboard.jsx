@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import supabase from '../lib/supabase';
 import { apiGetAuth } from '../lib/api';
-import { AdminPage, StatCard, ErrorBanner, EmptyState } from './adminTheme';
+import { AdminPage, StatCard, EmptyState } from './adminTheme';
 import { BsBarChart } from 'react-icons/bs';
+import toast from 'react-hot-toast';
 
 function AdminDashboard() {
   const [stats, setStats] = useState(null);
-  const [error, setError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -17,7 +17,7 @@ function AdminDashboard() {
         const data = await apiGetAuth('/admin/stats', session.access_token);
         if (!cancelled) setStats(data);
       } catch (err) {
-        if (!cancelled) setError(err.message);
+        if (!cancelled) toast.error(err.message);
       }
     }
     load();
@@ -38,17 +38,16 @@ function AdminDashboard() {
 
   return (
     <AdminPage title="Data Analytics" subtitle="A live look at how the store is performing.">
-      <ErrorBanner message={error} />
 
       {!stats ? (
-        <div className="text-center text-gray-500 py-10">Loading analytics...</div>
+        <div className="text-center text-gray-500 dark:text-slate-400 py-10">Loading analytics...</div>
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {cards.map((c) => <StatCard key={c.label} label={c.label} value={c.value} />)}
           </div>
 
-          <div className="mt-8 rounded-xl border border-gray-200 bg-gray-50">
+          <div className="mt-8 rounded-xl border border-gray-200 dark:border-[#1e3a5f] bg-gray-50 dark:bg-[#0f2137]">
             <EmptyState
               icon={<BsBarChart />}
               title="Detailed Charts Coming Soon"

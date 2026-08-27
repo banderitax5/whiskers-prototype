@@ -3,9 +3,10 @@ import { Toaster } from 'react-hot-toast'
 export default function FloatingNotification() {
   return (
     <Toaster
-      position="top-right"
+      position="bottom-right"
       toastOptions={{
-        duration: 2500,
+        duration: 4000,
+        dismissible: true,
         style: {
           borderRadius: '8px',
           padding: '10px 16px',

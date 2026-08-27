@@ -1,14 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import supabase from '../lib/supabase';
-import { apiGetAuth } from '../lib/api';
-import { AdminPage, AdminTable, EmptyState, ErrorBanner, StatCard, StatusPill } from './adminTheme';
+import { apiGetAuth, apiPatchAuth } from '../lib/api';
+import { AdminPage, AdminTable, EmptyState, StatCard, StatusPill } from './adminTheme';
 import { BsPeople, BsSearch } from 'react-icons/bs';
+import toast from 'react-hot-toast';
+
+const ROLES = ['user', 'admin'];
+const ROLE_KIND = { user: 'progress', admin: 'success' };
 
 const AdminCustomers = () => {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
+  const [savingId, setSavingId] = useState(null);
+  const [openDropdown, setOpenDropdown] = useState(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   useEffect(() => {
     let cancelled = false;
@@ -20,7 +27,7 @@ const AdminCustomers = () => {
         const { items } = await apiGetAuth('/admin/customers', session.access_token);
         if (!cancelled) setCustomers(items || []);
       } catch (err) {
-        if (!cancelled) setError(err.message);
+        if (!cancelled) toast.error(err.message);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -28,6 +35,30 @@ const AdminCustomers = () => {
     load();
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (openDropdown === null) return;
+    const close = () => setOpenDropdown(null);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [openDropdown]);
+
+  async function changeRole(customer, nextRole) {
+    if (nextRole === customer.role) return;
+    setSavingId(customer.id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      await apiPatchAuth(`/admin/customers/${customer.id}/role`, { role: nextRole }, session.access_token);
+      setCustomers((prev) => prev.map((c) => c.id === customer.id ? { ...c, role: nextRole } : c));
+      toast.success(`Role changed to ${nextRole}`);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setSavingId(null);
+      setOpenDropdown(null);
+    }
+  }
 
   const filtered = customers.filter((u) => {
     const q = search.toLowerCase();
@@ -42,25 +73,56 @@ const AdminCustomers = () => {
           <div className="w-9 h-9 rounded-full bg-yellow-400 text-[#0b2e59] flex items-center justify-center font-black text-sm">
             {(u.firstName?.[0] || u.lastName?.[0] || '?').toUpperCase()}
           </div>
-          <span className="font-black uppercase text-sm tracking-wide text-gray-900">
+          <span className="font-black uppercase text-sm tracking-wide text-gray-900 dark:text-slate-100">
             {`${u.firstName || ''} ${u.lastName || ''}`.trim() || 'Unknown'}
           </span>
         </div>
       ),
     },
-    { key: 'phone', label: 'Contact', render: (u) => <span className="text-gray-700">{u.phone || 'N/A'}</span> },
+    { key: 'phone', label: 'Contact', render: (u) => <span className="text-gray-700 dark:text-slate-300">{u.phone || 'N/A'}</span> },
     {
       key: 'feedback', label: 'Feedback',
       render: (u) => u.feedback
-        ? <span className="italic text-sm text-gray-700">"{u.feedback}"</span>
-        : <span className="text-gray-400 italic text-sm">No feedback yet</span>,
+        ? <span className="italic text-sm text-gray-700 dark:text-slate-300">"{u.feedback}"</span>
+        : <span className="text-gray-400 dark:text-slate-500 italic text-sm">No feedback yet</span>,
     },
-    { key: 'status', label: 'Status', render: () => <StatusPill kind="progress">User</StatusPill> },
+    {
+      key: 'role', label: 'Role',
+      render: (u) => (
+        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+          <StatusPill kind={ROLE_KIND[u.role] || 'neutral'}>{u.role}</StatusPill>
+          <div className="relative">
+            <button
+              type="button"
+              disabled={savingId === u.id}
+              onClick={() => setOpenDropdown(openDropdown === u.id ? null : u.id)}
+              className="w-[6rem] bg-white dark:bg-[#162d4a] text-gray-700 dark:text-slate-200 border border-gray-200 dark:border-[#1e3a5f] rounded-lg text-[10px] font-black uppercase tracking-widest px-2 py-1.5 text-left focus:outline-none focus:border-[#0b2e59] cursor-pointer flex items-center justify-between gap-1"
+            >
+              <span className="truncate">{u.role}</span>
+              <svg className="w-2.5 h-2.5 shrink-0 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg>
+            </button>
+            {openDropdown === u.id && (
+              <div className="absolute z-50 mt-1 w-full bg-white dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] rounded-lg shadow-lg overflow-hidden">
+                {ROLES.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => changeRole(u, r)}
+                    className={`w-full text-left px-2 py-1.5 text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 dark:hover:bg-[#1e3a5f] ${r === u.role ? 'text-[#0b2e59] dark:text-yellow-200 bg-gray-50 dark:bg-[#1e3a5f]/50' : 'text-gray-700 dark:text-slate-300'}`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ),
+    },
   ];
 
   return (
     <AdminPage title="Customer Management" subtitle="People who signed up to your store.">
-      <ErrorBanner message={error} />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
         <StatCard label="Total Registered" value={customers.length} />
@@ -69,12 +131,12 @@ const AdminCustomers = () => {
       </div>
 
       <div className="mb-4 relative max-w-md">
-        <BsSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <BsSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500" />
         <input
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           placeholder="Search by name or phone..."
-          className="w-full pl-10 pr-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-[#0b2e59]"
+          className="w-full pl-10 pr-4 py-2 rounded-lg bg-white dark:bg-[#162d4a] border border-gray-300 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]"
         />
       </div>
 
@@ -84,6 +146,9 @@ const AdminCustomers = () => {
         rowKey={(u) => u.id}
         loading={loading}
         colSpan={4}
+        page={page}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
         empty={
           <EmptyState
             icon={<BsPeople />}

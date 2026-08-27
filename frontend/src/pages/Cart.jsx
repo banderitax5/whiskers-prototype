@@ -97,7 +97,7 @@ function Cart() {
                   </label>
 
                   <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-md bg-gray-50 dark:bg-gray-700">
-                    <img src={item.image} alt={item.name} className="h-12 w-12 object-contain" />
+                    <img src={item.image} alt={item.name} loading="lazy" className="h-12 w-12 object-contain" />
                   </div>
 
                   <div className="min-w-0 flex-1 sm:flex-initial">

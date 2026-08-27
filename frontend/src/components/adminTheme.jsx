@@ -1,24 +1,41 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BsChevronExpand, BsArrowUp, BsArrowDown } from 'react-icons/bs';
 
 // Admin theme that matches the homepage look:
 //   light/white surface, yellow (#facc15) primary accent, navy (#0b2e59) headers
 //   green for positive states, red for negative states only
+//   auto-detects OS dark/light preference on mount
 
-const SURFACE = 'bg-white';
-const SURFACE_PANEL = 'bg-gray-50';
+// eslint-disable-next-line react-refresh/only-export-components
+export function useThemeDetection() {
+  useEffect(() => {
+    const saved = localStorage.getItem('theme');
+    let theme;
+    if (saved === 'dark' || saved === 'light') {
+      theme = saved;
+    } else {
+      theme = window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+  }, []);
+}
+
+// Navy-based dark palette matching the homepage aesthetic
+const SURFACE = 'bg-white dark:bg-[#0f2137]';
+const SURFACE_PANEL = 'bg-gray-50 dark:bg-[#0b1929]';
 const SURFACE_NAVY = 'bg-[#0b2e59]';
-const BORDER = 'border border-gray-200';
-const TEXT = 'text-gray-900';
-const TEXT_DIM = 'text-gray-500';
-const ACCENT = 'bg-yellow-400 hover:bg-yellow-500 text-gray-900';
-const ACCENT_SOFT = 'bg-yellow-100 text-gray-900';
+const BORDER = 'border border-gray-200 dark:border-[#1e3a5f]';
+const TEXT = 'text-gray-900 dark:text-gray-100';
+const TEXT_DIM = 'text-gray-500 dark:text-slate-400';
+const ACCENT = 'bg-yellow-400 hover:bg-yellow-500 text-gray-900 dark:text-gray-900';
+const ACCENT_SOFT = 'bg-yellow-100 text-gray-900 dark:bg-yellow-900/30 dark:text-yellow-200';
 
 export function AdminPage({ title, subtitle, children }) {
   return (
     <div className={`p-4 sm:p-6 ${TEXT}`}>
       <div className="mb-6">
-        <h1 className="text-2xl sm:text-3xl font-black uppercase tracking-wide text-[#0b2e59]">
+        <h1 className="text-2xl sm:text-3xl font-black uppercase tracking-wide text-[#0b2e59] dark:text-yellow-200">
           {title}
         </h1>
         {subtitle && <p className={`text-sm ${TEXT_DIM} mt-1`}>{subtitle}</p>}
@@ -31,18 +48,81 @@ export function AdminPage({ title, subtitle, children }) {
 export function StatCard({ label, value }) {
   return (
     <div className={`${SURFACE} ${BORDER} p-5 rounded-xl shadow-sm`}>
-      <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+      <span className="text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-slate-400">
         {label}
       </span>
-      <h2 className="text-3xl font-black mt-1 text-[#0b2e59]">{value}</h2>
+      <h2 className="text-3xl font-black mt-1 text-[#0b2e59] dark:text-yellow-200">{value}</h2>
     </div>
   );
 }
 
-export function AdminTable({ columns, rows, rowKey, loading, empty, colSpan, onRowClick, sortKey, sortDir, onSort }) {
+function Pagination({ page, totalPages, rowsLength, pageSize, onPageChange }) {
+  const getPageNumbers = () => {
+    const pages = [];
+    const delta = 1;
+    const left = Math.max(2, page - delta);
+    const right = Math.min(totalPages - 1, page + delta);
+    pages.push(1);
+    if (left > 2) pages.push('...');
+    for (let i = left; i <= right; i++) pages.push(i);
+    if (right < totalPages - 1) pages.push('...');
+    if (totalPages > 1) pages.push(totalPages);
+    return pages;
+  };
+  const [gotoVal, setGotoVal] = React.useState('');
+  const handleGoto = (e) => {
+    e.preventDefault();
+    const p = parseInt(gotoVal, 10);
+    if (p >= 1 && p <= totalPages && onPageChange) {
+      onPageChange(p);
+      setGotoVal('');
+    }
+  };
+  const pageBtnClass = (p) =>
+    `w-8 h-8 rounded-lg text-xs font-black transition ${
+      p === page
+        ? 'bg-[#0b2e59] text-white'
+        : 'border border-gray-200 dark:border-[#1e3a5f] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#162d4a]'
+    }`;
+  const navBtnClass = `px-3 py-1 rounded-lg text-xs font-black uppercase tracking-widest border border-gray-200 dark:border-[#1e3a5f] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#162d4a] disabled:opacity-30 disabled:cursor-not-allowed transition`;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-gray-100 dark:border-[#1e3a5f]">
+      <span className="text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">
+        Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, rowsLength)} of {rowsLength}
+      </span>
+      <div className="flex items-center gap-1 flex-wrap justify-end">
+        <button onClick={() => onPageChange(page - 1)} disabled={page <= 1} className={navBtnClass}>Prev</button>
+        {getPageNumbers().map((p, i) =>
+          p === '...' ? (
+            <span key={`e${i}`} className="w-8 h-8 flex items-center justify-center text-xs text-gray-400 dark:text-slate-500 select-none">...</span>
+          ) : (
+            <button key={p} onClick={() => onPageChange(p)} className={pageBtnClass(p)}>{p}</button>
+          )
+        )}
+        <button onClick={() => onPageChange(page + 1)} disabled={page >= totalPages} className={navBtnClass}>Next</button>
+        <form onSubmit={handleGoto} className="flex items-center gap-1 ml-2">
+          <span className="text-[11px] text-gray-500 dark:text-slate-400 whitespace-nowrap">Go to page:</span>
+          <input
+            type="text"
+            value={gotoVal}
+            onChange={(e) => setGotoVal(e.target.value)}
+            className="w-12 h-8 rounded-lg text-xs text-center border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#162d4a] text-gray-700 dark:text-slate-200 outline-none focus:border-[#0b2e59] dark:focus:border-yellow-200 transition"
+            placeholder={page}
+          />
+          <button type="submit" className="px-2 h-8 rounded-lg text-[10px] font-black uppercase tracking-wider border border-gray-200 dark:border-[#1e3a5f] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#162d4a] transition">Go</button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+export function AdminTable({ columns, rows, rowKey, loading, empty, colSpan, onRowClick, sortKey, sortDir, onSort, page, pageSize, onPageChange }) {
+  const totalPages = pageSize ? Math.ceil(rows.length / pageSize) : 1;
+  const paginatedRows = pageSize ? rows.slice((page - 1) * pageSize, page * pageSize) : rows;
+
   return (
     <div className={`overflow-x-auto rounded-xl ${BORDER} ${SURFACE} shadow-sm`}>
-      <table className="table w-full text-gray-900">
+      <table className="table w-full text-gray-900 dark:text-slate-200">
         <thead>
           <tr className="bg-[#0b2e59] text-yellow-300 uppercase text-[10px] font-black tracking-widest">
             {columns.map((c) => (
@@ -66,21 +146,21 @@ export function AdminTable({ columns, rows, rowKey, loading, empty, colSpan, onR
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan={colSpan || columns.length} className="text-center py-12 text-gray-400">
+              <td colSpan={colSpan || columns.length} className="text-center py-12 text-gray-400 dark:text-slate-500">
                 <span className="inline-block w-4 h-4 border-2 border-[#0b2e59] border-t-transparent rounded-full animate-spin mr-2 align-middle" />
                 Loading...
               </td>
             </tr>
-          ) : rows.length === 0 ? (
+          ) : paginatedRows.length === 0 ? (
             <tr>
               <td colSpan={colSpan || columns.length} className="p-0">{empty}</td>
             </tr>
           ) : (
-            rows.map((row, i) => (
+            paginatedRows.map((row, i) => (
               <tr
                 key={rowKey ? rowKey(row, i) : i}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
-                className={`border-b border-gray-100 hover:bg-yellow-50 transition-colors ${onRowClick ? 'cursor-pointer' : ''}`}
+                className={`border-b border-gray-100 dark:border-[#1e3a5f] hover:bg-yellow-50 dark:hover:bg-[#162d4a]/50 transition-colors ${onRowClick ? 'cursor-pointer' : ''}`}
               >
                 {columns.map((c) => (
                   <td key={c.key} className={`py-4 px-5 align-middle ${c.cellClassName || ''}`}>
@@ -92,6 +172,10 @@ export function AdminTable({ columns, rows, rowKey, loading, empty, colSpan, onR
           )}
         </tbody>
       </table>
+
+      {pageSize && totalPages > 1 && (
+        <Pagination page={page} totalPages={totalPages} rowsLength={rows.length} pageSize={pageSize} onPageChange={onPageChange} />
+      )}
     </div>
   );
 }
@@ -99,10 +183,10 @@ export function AdminTable({ columns, rows, rowKey, loading, empty, colSpan, onR
 export function EmptyState({ icon, title, message, action }) {
   return (
     <div className="flex flex-col items-center justify-center text-center py-14 px-6">
-      <div className="w-16 h-16 rounded-full bg-yellow-100 border border-yellow-300 flex items-center justify-center text-[#0b2e59] text-3xl mb-4">
+      <div className="w-16 h-16 rounded-full bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-700 flex items-center justify-center text-[#0b2e59] dark:text-yellow-200 text-3xl mb-4">
         {icon}
       </div>
-      <h3 className="text-lg font-black uppercase tracking-wide text-[#0b2e59]">{title}</h3>
+      <h3 className="text-lg font-black uppercase tracking-wide text-[#0b2e59] dark:text-yellow-200">{title}</h3>
       <p className={`text-sm ${TEXT_DIM} mt-1 max-w-sm`}>{message}</p>
       {action && <div className="mt-4">{action}</div>}
     </div>
@@ -112,25 +196,58 @@ export function EmptyState({ icon, title, message, action }) {
 export function ErrorBanner({ message }) {
   if (!message) return null;
   return (
-    <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-300 text-red-700 text-sm">
+    <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 text-sm">
       {message}
     </div>
   );
 }
 
 export const btnPrimary = `${ACCENT} px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition`;
-export const btnGhost = `bg-white hover:bg-gray-50 text-[#0b2e59] border border-gray-300 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition`;
+export const btnGhost = `bg-white hover:bg-gray-50 text-[#0b2e59] border border-gray-300 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition dark:bg-[#162d4a] dark:hover:bg-[#1e3a5f] dark:text-slate-200 dark:border-[#1e3a5f]`;
 
 export function StatusPill({ kind = 'neutral', children }) {
   const map = {
-    success: 'bg-green-100 text-green-800 border border-green-300',
-    danger: 'bg-red-100 text-red-700 border border-red-300',
-    progress: 'bg-yellow-100 text-gray-900 border border-yellow-300',
-    neutral: 'bg-gray-100 text-gray-700 border border-gray-300',
+    success: 'bg-green-100 text-green-800 border border-green-300 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700',
+    danger: 'bg-red-100 text-red-700 border border-red-300 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700',
+    progress: 'bg-yellow-100 text-gray-900 border border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-200 dark:border-yellow-700',
+    neutral: 'bg-gray-100 text-gray-700 border border-gray-300 dark:bg-[#162d4a] dark:text-slate-300 dark:border-[#1e3a5f]',
   };
   return (
-    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${map[kind]}`}>
+    <span className={`inline-flex items-center justify-center w-[5.5rem] px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest text-center whitespace-nowrap overflow-hidden ${map[kind]}`}>
       {children}
     </span>
+  );
+}
+
+export function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', onConfirm, onCancel, danger = false }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50" onClick={onCancel}>
+      <div
+        className="bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] rounded-xl shadow-2xl p-6 w-full max-w-sm mx-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-lg font-black uppercase tracking-wide text-gray-900 dark:text-slate-100 mb-2">{title}</h3>
+        <p className="text-sm text-gray-600 dark:text-slate-400 mb-6">{message}</p>
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest border border-gray-300 dark:border-[#1e3a5f] text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#162d4a] transition"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition ${
+              danger
+                ? 'bg-red-600 hover:bg-red-700 text-white'
+                : 'bg-yellow-400 hover:bg-yellow-500 text-gray-900'
+            }`}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

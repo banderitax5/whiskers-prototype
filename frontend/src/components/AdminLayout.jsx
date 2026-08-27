@@ -1,6 +1,8 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom"
 import { useState, useEffect } from "react"
 import supabase from "../lib/supabase"
+import { useThemeDetection } from "./adminTheme"
+import FloatingNotification from "./Toaster.jsx"
 import {
   BsBarChart,
   BsBoxSeam,
@@ -21,6 +23,8 @@ function AdminLayout() {
   const navigate = useNavigate()
   const [user, setUser] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  useThemeDetection()
 
   // grab the current user on mount so we can show their name/initial
   useEffect(() => {
@@ -62,13 +66,13 @@ function AdminLayout() {
   ]
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-gray-50 dark:bg-[#0b1929]">
 
       {/* dark overlay that shows behind the sidebar on mobile when it's open */}
       {/* tapping it closes the sidebar */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/40 md:hidden"
+          className="fixed inset-0 z-40 bg-black/40 dark:bg-black/60 md:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
@@ -93,7 +97,7 @@ function AdminLayout() {
           <div className="w-20 h-20 bg-gradient-to-br from-yellow-300 to-yellow-500 text-[#0b2e59] rounded-full flex items-center justify-center text-3xl font-bold mb-3 shadow-md">
             {getInitial()}
           </div>
-          <p className="font-semibold text-sm">
+          <p className="font-semibold text-sm text-white">
             Welcome, {user?.email?.split("@")[0] || "Admin"}
           </p>
         </div>
@@ -135,7 +139,7 @@ function AdminLayout() {
       </aside>
 
       {/* main content area where the active admin page renders */}
-      <main className="flex-1 p-4 sm:p-6 overflow-y-auto">
+      <main className="flex-1 p-4 sm:p-6 overflow-y-auto dark:bg-[#0b1929]">
 
         {/* top bar with hamburger menu (mobile), title, search, and profile icon */}
         <div className="flex items-center justify-between mb-6 gap-3">
@@ -143,13 +147,13 @@ function AdminLayout() {
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 md:hidden"
+            className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 dark:border-[#1e3a5f] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#162d4a] md:hidden"
             aria-label="Open sidebar"
           >
             <BsList className="h-5 w-5" />
           </button>
 
-          <h1 className="text-lg sm:text-xl font-semibold text-gray-800">
+          <h1 className="text-lg sm:text-xl font-semibold text-gray-800 dark:text-slate-100">
             Admin Dashboard
           </h1>
 
@@ -157,7 +161,7 @@ function AdminLayout() {
             <input
               type="text"
               placeholder="Search..."
-              className="hidden sm:block px-4 py-2 rounded-full border border-gray-200 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#0b2e59] bg-white"
+              className="hidden sm:block px-4 py-2 rounded-full border border-gray-200 dark:border-[#1e3a5f] text-sm text-gray-700 dark:text-slate-200 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-[#0b2e59] bg-white dark:bg-[#162d4a]"
             />
             <div className="w-8 h-8 bg-yellow-400 text-[#0b2e59] rounded-full flex items-center justify-center text-sm font-bold">
               {getInitial()}
@@ -167,6 +171,7 @@ function AdminLayout() {
 
         <Outlet />
       </main>
+      <FloatingNotification />
     </div>
   )
 }

@@ -28,6 +28,21 @@ export const apiPutAuth = (path, body, token) => request(path, { method: 'PUT', 
 export const apiPatchAuth = (path, body, token) => request(path, { method: 'PATCH', body, token })
 export const apiDeleteAuth = (path, token) => request(path, { method: 'DELETE', token })
 
+// file upload helper - sends FormData (multipart) or JSON for URL fetch
+export async function apiUploadAuth(path, body, token) {
+  const isFormData = body instanceof FormData
+  const headers = { Authorization: `Bearer ${token}` }
+  if (!isFormData) headers['Content-Type'] = 'application/json'
+  const res = await fetch(`${apiBase}${path}`, {
+    method: 'POST',
+    headers,
+    body: isFormData ? body : JSON.stringify(body),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+  return data
+}
+
 // checks if the backend is running
 export async function getHealth() {
   return apiGet('/health')

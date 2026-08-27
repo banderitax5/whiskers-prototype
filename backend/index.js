@@ -21,7 +21,7 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "blob:"],
+      imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co"],
       fontSrc: ["'self'", "data:"],
       connectSrc: ["'self'", "https://*.supabase.co", "wss://*.supabase.co"],
       frameAncestors: ["'self'"],

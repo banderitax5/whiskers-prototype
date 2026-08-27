@@ -1,4 +1,6 @@
 import { Router } from 'express'
+import multer from 'multer'
+import sharp from 'sharp'
 import { supabaseAdmin } from '../config/supabase.js'
 import { authMiddleware, requireAdmin } from '../middleware/auth.js'
 import { decryptText } from '../utils/encryption.js'
@@ -60,7 +62,6 @@ router.get('/customers', async (req, res) => {
     const { data, error } = await supabaseAdmin
       .from('profiles')
       .select('id, first_name, last_name, phone, role, feedback(comments)')
-      .eq('role', 'user')
       .order('first_name', { ascending: true })
     if (error) throw error
 
@@ -71,6 +72,37 @@ router.get('/customers', async (req, res) => {
     res.json({ items: customers })
   } catch (err) {
     console.error('Admin customers error:', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// PATCH /api/admin/customers/:id/role
+// body: { role } — must be 'user' or 'admin'
+// prevents admin from demoting themselves
+router.patch('/customers/:id/role', async (req, res) => {
+  const { role } = req.body ?? {}
+  const ALLOWED_ROLES = ['user', 'admin']
+
+  if (!role || !ALLOWED_ROLES.includes(role)) {
+    return res.status(400).json({ error: `role must be one of: ${ALLOWED_ROLES.join(', ')}` })
+  }
+
+  // prevent admin from demoting themselves
+  if (req.params.id === req.userId && role !== 'admin') {
+    return res.status(400).json({ error: 'Cannot change your own admin role' })
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('profiles')
+      .update({ role })
+      .eq('id', req.params.id)
+      .select('id, role')
+      .single()
+    if (error) throw error
+    res.json({ item: data })
+  } catch (err) {
+    console.error('Admin role update error:', err)
     res.status(500).json({ error: 'Server error' })
   }
 })
@@ -144,6 +176,19 @@ router.patch('/products/:id', async (req, res) => {
 // DELETE /api/admin/products/:id
 router.delete('/products/:id', async (req, res) => {
   try {
+    // Fetch product to get image_url for cleanup
+    const { data: product } = await supabaseAdmin
+      .from('product')
+      .select('image_url')
+      .eq('prod_id', req.params.id)
+      .single()
+
+    // Delete image from Storage if it exists
+    const filename = extractStorageFilename(product?.image_url)
+    if (filename) {
+      await supabaseAdmin.storage.from('product-images').remove([filename]).catch(() => {})
+    }
+
     const { error } = await supabaseAdmin.from('product').delete().eq('prod_id', req.params.id)
     if (error) throw error
     res.json({ success: true })
@@ -347,5 +392,102 @@ router.delete('/order-items/:id', async (req, res) => {
     res.status(500).json({ error: 'Server error' })
   }
 })
+
+// ── Image Upload / Delete ──────────────────────────────────────────────────────
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+    cb(null, allowed.includes(file.mimetype))
+  },
+})
+
+const ALLOWED_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' }
+
+// POST /api/admin/images/upload
+// Accepts multipart file (field: "image") OR JSON { imageUrl }
+router.post('/images/upload', upload.single('image'), async (req, res) => {
+  try {
+    let fileBuffer
+    let ext = 'jpg'
+
+    if (req.file) {
+      fileBuffer = await sharp(req.file.buffer)
+        .resize({ width: 1200, withoutEnlargement: true })
+        .jpeg({ quality: 80 })
+        .toBuffer()
+    } else if (req.body?.imageUrl) {
+      const resp = await fetch(req.body.imageUrl)
+      if (!resp.ok) return res.status(400).json({ error: 'Failed to fetch image from URL' })
+
+      const remoteType = resp.headers.get('content-type') || ''
+      if (!remoteType.startsWith('image/')) return res.status(400).json({ error: 'URL does not point to an image' })
+
+      const arrayBuf = await resp.arrayBuffer()
+      fileBuffer = await sharp(Buffer.from(arrayBuf))
+        .resize({ width: 1200, withoutEnlargement: true })
+        .jpeg({ quality: 80 })
+        .toBuffer()
+    } else {
+      return res.status(400).json({ error: 'Provide an image file or imageUrl' })
+    }
+
+    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+
+    // Ensure bucket exists (create if missing)
+    const { data: buckets } = await supabaseAdmin.storage.listBuckets()
+    const bucketExists = (buckets || []).some(b => b.name === 'product-images')
+    if (!bucketExists) {
+      const { error: createErr } = await supabaseAdmin.storage.createBucket('product-images', {
+        public: true,
+        fileSizeLimit: 5 * 1024 * 1024,
+        allowedMimeTypes: ['image/jpeg', 'image/png', 'image/gif'],
+      })
+      if (createErr) {
+        console.error('Bucket create error:', createErr)
+        return res.status(500).json({ error: 'Failed to create storage bucket: ' + createErr.message })
+      }
+    }
+
+    const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+      .from('product-images')
+      .upload(fileName, fileBuffer, { contentType: 'image/jpeg' })
+    if (uploadError) {
+      console.error('Storage upload error:', uploadError)
+      return res.status(500).json({ error: 'Storage upload failed: ' + uploadError.message })
+    }
+
+    const { data } = supabaseAdmin.storage.from('product-images').getPublicUrl(fileName)
+    res.status(201).json({ url: data.publicUrl })
+  } catch (err) {
+    console.error('Image upload error:', err)
+    res.status(500).json({ error: 'Failed to upload image: ' + err.message })
+  }
+})
+
+// DELETE /api/admin/images/:filename
+router.delete('/images/:filename', async (req, res) => {
+  try {
+    const { error } = await supabaseAdmin.storage
+      .from('product-images')
+      .remove([req.params.filename])
+    if (error) throw error
+    res.json({ success: true })
+  } catch (err) {
+    console.error('Image delete error:', err)
+    res.status(500).json({ error: 'Failed to delete image' })
+  }
+})
+
+// ── Product Delete (with image cleanup) ────────────────────────────────────────
+
+function extractStorageFilename(url) {
+  if (!url) return null
+  // URLs look like: https://xxx.supabase.co/storage/v1/object/public/product-images/filename.ext
+  const match = url.match(/product-images\/([^?]+)/)
+  return match ? match[1] : null
+}
 
 export default router

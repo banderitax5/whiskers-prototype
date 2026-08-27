@@ -7,6 +7,7 @@
     "dev:local": "concurrently -n backend,frontend -c blue,green \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\""
   },
   "devDependencies": {
+    "@express-rate-limit/tsconfig": "^1.0.5",
     "concurrently": "^9.1.2"
   },
   "dependencies": {

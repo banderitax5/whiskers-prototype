@@ -123,6 +123,7 @@ function Navbar() {
     })
 
     return () => subscription.unsubscribe()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // closes the profile dropdown when clicking anywhere outside of it
