@@ -1,65 +1,32 @@
 // base URL for backend API calls - defaults to /api which gets proxied
-// to localhost:3001 by vite's dev server proxy config
+// to the backend by vite's dev server proxy config
 const apiBase = import.meta.env.VITE_API_BASE || '/api'
 
-// simple GET request to the backend - no auth needed
-// used for public stuff like health checks
-export async function apiGet(path) {
-  const response = await fetch(`${apiBase}${path}`)
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
+async function request(path, { method = 'GET', body, token } = {}) {
+  const headers = {}
+  if (token) headers.Authorization = `Bearer ${token}`
+  let payload
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json'
+    payload = JSON.stringify(body)
   }
-  return response.json()
+  const res = await fetch(`${apiBase}${path}`, { method, headers, body: payload })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || `HTTP ${res.status}`)
+  }
+  return data
 }
 
-// export async function apiPost(path, body) {
-//   const response = await fetch(`${apiBase}${path}`, {
-//     method: 'POST',
-//     headers: { 'Content-Type': 'application/json' },
-//     body: JSON.stringify(body),
-//   })
-//   const data = await response.json().catch(() => ({}))
-//   if (!response.ok) {
-//     throw new Error(data.error || `HTTP ${response.status}`)
-//   }
-//   return data
-// }
+// public (no auth)
+export const apiGet = (path) => request(path)
 
-// function getAuthHeaders(includeJson = false) {
-//   const token = localStorage.getItem('token')
-//   const headers = {}
-//   if (token) headers.Authorization = `Bearer ${token}`
-//   if (includeJson) headers['Content-Type'] = 'application/json'
-//   return headers
-// }
-
-// export async function apiGetAuth(path) {
-//   const response = await fetch(`${apiBase}${path}`, {
-//     headers: getAuthHeaders(),
-//   })
-//   const data = await response.json().catch(() => ({}))
-//   if (!response.ok) {
-//     throw new Error(data.error || `HTTP ${response.status}`)
-//   }
-//   return data
-// }
-
-// export async function apiPutAuth(path, body) {
-//   const response = await fetch(`${apiBase}${path}`, {
-//     method: 'PUT',
-//     headers: getAuthHeaders(true),
-//     body: JSON.stringify(body),
-//   })
-//   const data = await response.json().catch(() => ({}))
-//   if (!response.ok) {
-//     throw new Error(data.error || `HTTP ${response.status}`)
-//   }
-//   return data
-// }
-
-// export async function getHealth() {
-//   return apiGet('/health')
-// }
+// authed helpers - pass the current Supabase access token
+export const apiGetAuth = (path, token) => request(path, { token })
+export const apiPostAuth = (path, body, token) => request(path, { method: 'POST', body, token })
+export const apiPutAuth = (path, body, token) => request(path, { method: 'PUT', body, token })
+export const apiPatchAuth = (path, body, token) => request(path, { method: 'PATCH', body, token })
+export const apiDeleteAuth = (path, token) => request(path, { method: 'DELETE', token })
 
 // checks if the backend is running
 export async function getHealth() {

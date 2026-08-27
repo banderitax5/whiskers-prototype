@@ -1,7 +1,6 @@
 import { Outlet, useLocation } from 'react-router-dom'
 import Navbar from './Navbar.jsx'
 import NavLinks from './NavLinks.jsx'
-import Strip from './Strip.jsx'
 import Footer from './Footer.jsx'
 import FloatingNotification from './Toaster.jsx'
 
@@ -16,7 +15,6 @@ const showNavLinks = location.pathname !== '/profile' &&
 					 location.pathname !== '/pets'
 	return (
 		<div className="min-h-screen flex flex-col bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
-			<Strip />
 			<Navbar />
 			{showNavLinks && <NavLinks />}
 			<FloatingNotification />

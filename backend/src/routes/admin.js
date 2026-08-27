@@ -1,17 +1,349 @@
 import { Router } from 'express'
 import { supabaseAdmin } from '../config/supabase.js'
 import { authMiddleware, requireAdmin } from '../middleware/auth.js'
+import { decryptText } from '../utils/encryption.js'
 
 const router = Router()
 
-router.get('/stats', authMiddleware, requireAdmin, async (req, res) => {
+// every admin endpoint requires a valid session and the 'admin' role
+router.use(authMiddleware, requireAdmin)
+
+// shape used for customer rows so the frontend gets plaintext names/phones
+function formatProfile(u) {
+  return {
+    id: u.id,
+    firstName: decryptText(u.first_name),
+    lastName: decryptText(u.last_name),
+    phone: decryptText(u.phone),
+    role: u.role,
+  }
+}
+
+// GET /api/admin/stats - top-line numbers for the dashboard
+router.get('/stats', async (req, res) => {
   try {
-    const { count: userCount } = await supabaseAdmin
-      .from('profiles')
+    const [usersHead, productsHead, ordersHead, salesHead, paymentsHead] = await Promise.all([
+      supabaseAdmin.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'user'),
+      supabaseAdmin.from('product').select('*', { count: 'exact', head: true }),
+      supabaseAdmin.from('orders').select('*', { count: 'exact', head: true }),
+      supabaseAdmin.from('sales').select('total_amount, profit'),
+      supabaseAdmin.from('payment').select('amount'),
+    ])
+
+    const totalSales = (salesHead.data || []).reduce((s, r) => s + Number(r.total_amount || 0), 0)
+    const totalProfit = (salesHead.data || []).reduce((s, r) => s + Number(r.profit || 0), 0)
+    const totalRevenue = (paymentsHead.data || []).reduce((s, r) => s + Number(r.amount || 0), 0)
+
+    const { count: pendingOrders } = await supabaseAdmin
+      .from('orders')
       .select('*', { count: 'exact', head: true })
-    res.json({ totalUsers: userCount ?? 0 })
+      .eq('status', 'Pending')
+
+    res.json({
+      totalUsers: usersHead.count ?? 0,
+      totalProducts: productsHead.count ?? 0,
+      totalOrders: ordersHead.count ?? 0,
+      pendingOrders: pendingOrders ?? 0,
+      totalSales,
+      totalProfit,
+      totalRevenue,
+    })
   } catch (err) {
     console.error('Admin stats error:', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// GET /api/admin/customers - every regular user plus their latest feedback
+router.get('/customers', async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('profiles')
+      .select('id, first_name, last_name, phone, role, feedback(comments)')
+      .eq('role', 'user')
+      .order('first_name', { ascending: true })
+    if (error) throw error
+
+    const customers = (data || []).map((u) => ({
+      ...formatProfile(u),
+      feedback: u.feedback?.[0]?.comments || null,
+    }))
+    res.json({ items: customers })
+  } catch (err) {
+    console.error('Admin customers error:', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// GET /api/admin/products
+router.get('/products', async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('product')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (error) throw error
+    res.json({ items: data || [] })
+  } catch (err) {
+    console.error('Admin products list error:', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/admin/products
+router.post('/products', async (req, res) => {
+  const { prod_name, category, price, stock_quantity, image_url } = req.body ?? {}
+  if (!prod_name || !category || price == null) {
+    return res.status(400).json({ error: 'prod_name, category, and price are required' })
+  }
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('product')
+      .insert({
+        prod_name,
+        category,
+        price: Number(price),
+        stock_quantity: Number(stock_quantity || 0),
+        image_url: image_url || null,
+      })
+      .select()
+      .single()
+    if (error) throw error
+    res.status(201).json({ item: data })
+  } catch (err) {
+    console.error('Admin product create error:', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// PATCH /api/admin/products/:id
+router.patch('/products/:id', async (req, res) => {
+  const allowed = ['prod_name', 'category', 'price', 'stock_quantity', 'image_url']
+  const updates = {}
+  for (const key of allowed) {
+    if (req.body?.[key] !== undefined) updates[key] = req.body[key]
+  }
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ error: 'No updatable fields provided' })
+  }
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('product')
+      .update(updates)
+      .eq('prod_id', req.params.id)
+      .select()
+      .single()
+    if (error) throw error
+    res.json({ item: data })
+  } catch (err) {
+    console.error('Admin product update error:', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// DELETE /api/admin/products/:id
+router.delete('/products/:id', async (req, res) => {
+  try {
+    const { error } = await supabaseAdmin.from('product').delete().eq('prod_id', req.params.id)
+    if (error) throw error
+    res.json({ success: true })
+  } catch (err) {
+    console.error('Admin product delete error:', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// GET /api/admin/payments - all payments with the buyer's name pulled from the joined order -> profile
+router.get('/payments', async (req, res) => {
+  try {
+    // get all payments
+    const { data: payments, error: payErr } = await supabaseAdmin
+      .from('payment')
+      .select('payment_id, amount, method, payment_date, order_id')
+      .order('payment_date', { ascending: false })
+    if (payErr) throw payErr
+
+    // get all orders to look up user_id
+    const { data: orders } = await supabaseAdmin
+      .from('orders')
+      .select('order_id, id')
+
+    // get all profiles to look up names
+    const { data: profiles } = await supabaseAdmin
+      .from('profiles')
+      .select('id, first_name, last_name')
+
+    const orderMap = new Map((orders || []).map(o => [o.order_id, o.id]))
+    const profileMap = new Map((profiles || []).map(p => [p.id, p]))
+
+    const items = (payments || []).map((p) => {
+      const userId = orderMap.get(p.order_id)
+      const profile = profileMap.get(userId)
+      return {
+        payment_id: p.payment_id,
+        amount: p.amount,
+        method: p.method,
+        payment_date: p.payment_date,
+        firstName: decryptText(profile?.first_name),
+        lastName: decryptText(profile?.last_name),
+      }
+    })
+    res.json({ items })
+  } catch (err) {
+    console.error('Admin payments error:', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// GET /api/admin/orders
+// query: ?status=Pending|Shipped|... to filter
+// returns every order joined with its buyer and payment summary
+router.get('/orders', async (req, res) => {
+  try {
+    let query = supabaseAdmin
+      .from('orders')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (req.query.status) {
+      query = query.eq('status', String(req.query.status))
+    }
+
+    const { data: orders, error } = await query
+    if (error) throw error
+
+    // get profiles for the user names
+    const userIds = [...new Set((orders || []).map(o => o.id))]
+    const { data: profiles } = await supabaseAdmin
+      .from('profiles')
+      .select('id, first_name, last_name, phone')
+      .in('id', userIds)
+
+    const profileMap = new Map((profiles || []).map(p => [p.id, p]))
+
+    // get payments for these orders
+    const orderIds = (orders || []).map(o => o.order_id)
+    const { data: payments } = await supabaseAdmin
+      .from('payment')
+      .select('order_id, amount, method, payment_date')
+      .in('order_id', orderIds)
+
+    const paymentMap = new Map()
+    for (const pay of (payments || [])) {
+      if (!paymentMap.has(pay.order_id)) paymentMap.set(pay.order_id, [])
+      paymentMap.get(pay.order_id).push(pay)
+    }
+
+    const items = (orders || []).map((o) => {
+      const profile = profileMap.get(o.id)
+      const orderPayments = paymentMap.get(o.order_id) || []
+      return {
+        order_id: o.order_id,
+        user_id: o.id,
+        status: o.status,
+        total_amount: o.total_amount,
+        created_at: o.created_at,
+        firstName: decryptText(profile?.first_name),
+        lastName: decryptText(profile?.last_name),
+        phone: decryptText(profile?.phone),
+        payment: orderPayments[0] || null,
+      }
+    })
+    res.json({ items })
+  } catch (err) {
+    console.error('Admin orders list error:', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// PATCH /api/admin/orders/:id
+// body: { status }
+// updates the order's lifecycle status (Pending -> Shipped -> Delivered etc)
+router.patch('/orders/:id', async (req, res) => {
+  const { status } = req.body ?? {}
+  if (!status || typeof status !== 'string') {
+    return res.status(400).json({ error: 'status is required' })
+  }
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('orders')
+      .update({ status })
+      .eq('order_id', req.params.id)
+      .select('order_id, status, created_at')
+      .single()
+    if (error) throw error
+    res.json({ item: data })
+  } catch (err) {
+    console.error('Admin order update error:', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// GET /api/admin/orders/:id/items
+// returns the line items for one order, joined with the product row so the
+// admin sees the snapshot of what was actually bought
+router.get('/orders/:id/items', async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('order_details')
+      .select('orderdet_id, order_id, prod_id, quantity, subtotal, product:prod_id(prod_id, prod_name, image_url, price)')
+      .eq('order_id', req.params.id)
+    if (error) throw error
+    res.json({ items: data || [] })
+  } catch (err) {
+    console.error('Admin order items error:', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// PATCH /api/admin/order-items/:id
+// body: { quantity, subtotal? }
+// updates a single line item (used to fix mistakes or adjust qty)
+router.patch('/order-items/:id', async (req, res) => {
+  const updates = {}
+  if (req.body?.quantity !== undefined) {
+    const q = Number(req.body.quantity)
+    if (!Number.isFinite(q) || q < 1) {
+      return res.status(400).json({ error: 'quantity must be >= 1' })
+    }
+    updates.quantity = q
+  }
+  if (req.body?.subtotal !== undefined) {
+    const p = Number(req.body.subtotal)
+    if (!Number.isFinite(p) || p < 0) {
+      return res.status(400).json({ error: 'subtotal must be >= 0' })
+    }
+    updates.subtotal = p
+  }
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ error: 'quantity or subtotal is required' })
+  }
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('order_details')
+      .update(updates)
+      .eq('orderdet_id', req.params.id)
+      .select()
+      .single()
+    if (error) throw error
+    res.json({ item: data })
+  } catch (err) {
+    console.error('Admin order item update error:', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// DELETE /api/admin/order-items/:id
+router.delete('/order-items/:id', async (req, res) => {
+  try {
+    const { error } = await supabaseAdmin
+      .from('order_details')
+      .delete()
+      .eq('orderdet_id', req.params.id)
+    if (error) throw error
+    res.json({ success: true })
+  } catch (err) {
+    console.error('Admin order item delete error:', err)
     res.status(500).json({ error: 'Server error' })
   }
 })

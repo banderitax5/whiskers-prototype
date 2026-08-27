@@ -7,12 +7,19 @@ import { createPortal } from 'react-dom'
 // press Escape or click the dark backdrop to close it
 function ProductQuickViewDialog({ product, isOpen, onClose, onAddToCart, onBuyNow }) {
   const [qty, setQty] = useState(1)
-  const safePrice = Number(product?.price) || 0
+  // normalize field names so the dialog works with both API products and hardcoded ones
+  const p = product ? {
+    ...product,
+    name: product.name || product.prod_name,
+    image: product.image || product.image_url,
+    collection: product.collection || product.category,
+  } : null
+  const safePrice = Number(p?.price) || 0
 
   // reset quantity back to 1 every time a new product is opened
   useEffect(() => {
     if (isOpen) setQty(1)
-  }, [isOpen, product?.id])
+  }, [isOpen, p?.id])
 
   // when the dialog is open, listen for the Escape key and lock body scroll
   // cleanup removes the listener and unlocks scroll when the dialog closes
@@ -29,14 +36,12 @@ function ProductQuickViewDialog({ product, isOpen, onClose, onAddToCart, onBuyNo
     }
   }, [isOpen, onClose])
 
-  // placeholder preview thumbnails using the same image three times
-  // when real product galleries are added, this array will have different images
   const previews = useMemo(() => {
-    if (!product?.image) return []
-    return [product.image, product.image, product.image]
-  }, [product?.image])
+    if (!p?.image) return []
+    return [p.image, p.image, p.image]
+  }, [p?.image])
 
-  if (!isOpen || !product) return null
+  if (!isOpen || !p) return null
 
   function increase() { setQty((v) => v + 1) }
   function decrease() { setQty((v) => Math.max(1, v - 1)) }
@@ -71,27 +76,27 @@ function ProductQuickViewDialog({ product, isOpen, onClose, onAddToCart, onBuyNo
                   type="button"
                   className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 transition hover:border-[#0b2e59]"
                 >
-                  <img src={img} alt={`${product.name} preview ${idx + 1}`} className="h-full w-full object-contain p-1" />
+                  <img src={img} alt={`${p.name} preview ${idx + 1}`} className="h-full w-full object-contain p-1" />
                 </button>
               ))}
             </div>
             {/* main product image */}
             <div className="flex flex-1 items-center justify-center rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 p-4">
-              <img src={product.image} alt={product.name} className="max-h-[220px] w-full object-contain sm:max-h-[280px]" />
+              <img src={p.image} alt={p.name} className="max-h-[220px] w-full object-contain sm:max-h-[280px]" />
             </div>
           </div>
 
           {/* product details, price, description, quantity picker, and action buttons */}
           <div className="flex flex-col">
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white sm:text-2xl">{product.name}</h3>
-            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{product.brand || product.collection || 'Whiskers'}</p>
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white sm:text-2xl">{p.name}</h3>
+            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{p.brand || p.collection || 'Whiskers'}</p>
             <p className="mt-3 text-3xl font-bold text-[#e4406a]">PHP {safePrice.toFixed(2)}</p>
             <p className="text-sm text-gray-400 line-through">PHP {(safePrice * 1.12).toFixed(2)} (SRP)</p>
 
             <div className="mt-4">
               <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Description</p>
               <p className="mt-1 text-sm leading-relaxed text-gray-500 dark:text-gray-400">
-                {product.description || 'No description available for this product yet.'}
+                {p.description || 'No description available for this product yet.'}
               </p>
             </div>
 

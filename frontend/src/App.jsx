@@ -18,6 +18,7 @@ import AdminDashboard from './components/AdminDashboard.jsx'
 import AdminPayments from './components/AdminPayments.jsx'
 import AdminInventoryManagement from './components/AdminInventoryManagement.jsx'
 import AdminProductManagement from './components/AdminProductManagement.jsx'
+import AdminOrders from './components/AdminOrders.jsx'
 
 import supabase from './lib/supabase'
 import AdminCustomers from './components/AdminCustomers.jsx'
@@ -129,6 +130,7 @@ const router = createBrowserRouter([
       { path: 'products', element: <AdminProductManagement /> },
       { path: 'inventory', element: <AdminInventoryManagement /> },
       { path: 'customers', element: <AdminCustomers /> },
+      { path: 'orders', element: <AdminOrders /> },
       { path: 'payments', element: <AdminPayments /> },
     ],
   },

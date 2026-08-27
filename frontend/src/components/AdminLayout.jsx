@@ -7,6 +7,7 @@ import {
   BsClipboardData,
   BsPeople,
   BsCreditCard,
+  BsReceipt,
   BsArrowLeft,
   BsList,
   BsXLg,
@@ -56,11 +57,12 @@ function AdminLayout() {
     { to: "/admin/products", label: "Product Management", icon: <BsBoxSeam /> },
     { to: "/admin/inventory", label: "Inventory Management", icon: <BsClipboardData /> },
     { to: "/admin/customers", label: "Customers", icon: <BsPeople /> },
+    { to: "/admin/orders", label: "Orders", icon: <BsReceipt /> },
     { to: "/admin/payments", label: "Payments", icon: <BsCreditCard /> },
   ]
 
   return (
-    <div className="flex h-screen bg-gray-100">
+    <div className="flex h-screen bg-gray-50">
 
       {/* dark overlay that shows behind the sidebar on mobile when it's open */}
       {/* tapping it closes the sidebar */}
@@ -152,11 +154,10 @@ function AdminLayout() {
           </h1>
 
           <div className="flex items-center gap-3">
-            {/* search input hidden on very small screens */}
             <input
               type="text"
               placeholder="Search..."
-              className="hidden sm:block px-4 py-2 rounded-full border text-sm focus:outline-none focus:ring-1 focus:ring-yellow-600 bg-white"
+              className="hidden sm:block px-4 py-2 rounded-full border border-gray-200 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#0b2e59] bg-white"
             />
             <div className="w-8 h-8 bg-yellow-400 text-[#0b2e59] rounded-full flex items-center justify-center text-sm font-bold">
               {getInitial()}

@@ -1,85 +1,64 @@
 import React, { useEffect, useState } from 'react';
-import supabase from '../lib/supabase'
-// the main admin dashboard page that shows high level stats
-// the grid is responsive: 1 column on mobile, 2 on tablet, 3 on desktop
-// these are placeholder cards for now, will be replaced with real data later
+import supabase from '../lib/supabase';
+import { apiGetAuth } from '../lib/api';
+import { AdminPage, StatCard, ErrorBanner, EmptyState } from './adminTheme';
+import { BsBarChart } from 'react-icons/bs';
+
 function AdminDashboard() {
-  const [stats, setStats] = useState({
-    totalSales: 0,
-    totalOrders: 0,
-    pendingOrders: 0,
-    totalProfit: 0
-  });
+  const [stats, setStats] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetchDashboardData();
+    let cancelled = false;
+    async function load() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        const data = await apiGetAuth('/admin/stats', session.access_token);
+        if (!cancelled) setStats(data);
+      } catch (err) {
+        if (!cancelled) setError(err.message);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
   }, []);
 
-  async function fetchDashboardData() {
-    // 1. Fetch Total Sales & Profit from the 'sales' table
-    const { data: salesData } = await supabase
-      .from('sales')
-      .select('total_amount, profit');
-
-    // 2. Fetch Total Orders and filter for 'Pending' from the 'orders' table
-    const { data: ordersData } = await supabase
-      .from('orders')
-      .select('status');
-
-    if (salesData && ordersData) {
-      const totalSales = salesData.reduce((sum, item) => sum + (item.total_amount || 0), 0);
-      const totalProfit = salesData.reduce((sum, item) => sum + (item.profit || 0), 0);
-      const pending = ordersData.filter(order => order.status === 'Pending').length;
-
-      setStats({
-        totalSales,
-        totalProfit,
-        totalOrders: ordersData.length,
-        pendingOrders: pending
-      });
-    }
-  }
+  const cards = stats
+    ? [
+        { label: 'Total Sales', value: `PHP ${Number(stats.totalSales || 0).toLocaleString()}` },
+        { label: 'Total Profit', value: `PHP ${Number(stats.totalProfit || 0).toLocaleString()}` },
+        { label: 'Total Orders', value: stats.totalOrders ?? 0 },
+        { label: 'Pending Orders', value: stats.pendingOrders ?? 0 },
+        { label: 'Total Users', value: stats.totalUsers ?? 0 },
+        { label: 'Total Products', value: stats.totalProducts ?? 0 },
+        { label: 'Total Revenue', value: `PHP ${Number(stats.totalRevenue || 0).toLocaleString()}` },
+      ]
+    : [];
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-6 text-black uppercase tracking-wide">Data Analytics</h1>
+    <AdminPage title="Data Analytics" subtitle="A live look at how the store is performing.">
+      <ErrorBanner message={error} />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Total Sales Metric */}
-        <div className="bg-yellow-500 p-6 rounded-lg shadow-md flex flex-col justify-center">
-          <span className="text-xs font-semibold uppercase opacity-80">Total Sales</span>
-          <h2 className="text-3xl font-black">₱{stats.totalSales.toLocaleString()}</h2>
-        </div>
+      {!stats ? (
+        <div className="text-center text-gray-500 py-10">Loading analytics...</div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {cards.map((c) => <StatCard key={c.label} label={c.label} value={c.value} />)}
+          </div>
 
-        {/* Total Profit Metric (New addition based on your Sales table) */}
-        <div className="bg-yellow-500 p-6 rounded-lg shadow-md flex flex-col justify-center">
-          <span className="text-xs font-semibold uppercase opacity-80">Total Profit</span>
-          <h2 className="text-3xl font-black">₱{stats.totalProfit.toLocaleString()}</h2>
-        </div>
-
-        {/* Total Orders Metric */}
-        <div className="bg-yellow-500 p-6 rounded-lg shadow-md flex flex-col justify-center">
-          <span className="text-xs font-semibold uppercase opacity-80">Total Orders</span>
-          <h2 className="text-3xl font-black">{stats.totalOrders}</h2>
-        </div>
-
-        {/* Pending Orders Metric */}
-        <div className="bg-yellow-500 p-6 rounded-lg shadow-md flex flex-col justify-center">
-          <span className="text-xs font-semibold uppercase opacity-80">Pending Orders</span>
-          <h2 className="text-3xl font-black">{stats.pendingOrders}</h2>
-        </div>
-      </div>
-
-      {/* Placeholder for future Charts/Tables using the 'data_analytics' or 'report_type' info */}
-      <div className="mt-8 p-6 bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg text-center text-gray-500">
-        Detailed Analytics Charts (Linked to sales_id and report_date) will appear here.
-      </div>
-    </div>
+          <div className="mt-8 rounded-xl border border-gray-200 bg-gray-50">
+            <EmptyState
+              icon={<BsBarChart />}
+              title="Detailed Charts Coming Soon"
+              message="Sales trend, top products, and revenue by category will live here once enough data is collected."
+            />
+          </div>
+        </>
+      )}
+    </AdminPage>
   );
 }
-  )
-}
-
-export default AdminDashboard
 
 export default AdminDashboard;
