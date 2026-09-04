@@ -198,7 +198,7 @@ router.delete('/products/:id', async (req, res) => {
   }
 })
 
-// GET /api/admin/payments - all payments with the buyer's name pulled from the joined order -> profile
+// GET /api/admin/payments - all payments with the buyer's name and order status
 router.get('/payments', async (req, res) => {
   try {
     // get all payments
@@ -208,26 +208,28 @@ router.get('/payments', async (req, res) => {
       .order('payment_date', { ascending: false })
     if (payErr) throw payErr
 
-    // get all orders to look up user_id
+    // get all orders to look up user_id and status
     const { data: orders } = await supabaseAdmin
       .from('orders')
-      .select('order_id, id')
+      .select('order_id, id, status')
 
     // get all profiles to look up names
     const { data: profiles } = await supabaseAdmin
       .from('profiles')
       .select('id, first_name, last_name')
 
-    const orderMap = new Map((orders || []).map(o => [o.order_id, o.id]))
+    const orderMap = new Map((orders || []).map(o => [o.order_id, o]))
     const profileMap = new Map((profiles || []).map(p => [p.id, p]))
 
     const items = (payments || []).map((p) => {
-      const userId = orderMap.get(p.order_id)
-      const profile = profileMap.get(userId)
+      const order = orderMap.get(p.order_id)
+      const profile = order ? profileMap.get(order.id) : null
       return {
         payment_id: p.payment_id,
+        order_id: p.order_id,
         amount: p.amount,
         method: p.method,
+        status: order?.status || 'Unknown',
         payment_date: p.payment_date,
         firstName: decryptText(profile?.first_name),
         lastName: decryptText(profile?.last_name),
@@ -242,7 +244,7 @@ router.get('/payments', async (req, res) => {
 
 // GET /api/admin/orders
 // query: ?status=Pending|Shipped|... to filter
-// returns every order joined with its buyer and payment summary
+// returns every order joined with its buyer and line items
 router.get('/orders', async (req, res) => {
   try {
     let query = supabaseAdmin
@@ -261,37 +263,64 @@ router.get('/orders', async (req, res) => {
     const userIds = [...new Set((orders || []).map(o => o.id))]
     const { data: profiles } = await supabaseAdmin
       .from('profiles')
-      .select('id, first_name, last_name, phone')
+      .select('id, first_name, last_name')
       .in('id', userIds)
 
     const profileMap = new Map((profiles || []).map(p => [p.id, p]))
 
-    // get payments for these orders
+    // get line items for these orders
     const orderIds = (orders || []).map(o => o.order_id)
+    const { data: details, error: detailsErr } = await supabaseAdmin
+      .from('order_details')
+      .select('order_id, prod_id, quantity, subtotal')
+      .in('order_id', orderIds)
+    if (detailsErr) console.error('order_details fetch error:', detailsErr)
+
+    // get product names separately
+    const prodIds = [...new Set((details || []).map(d => d.prod_id).filter(Boolean))]
+    const { data: products, error: prodErr } = await supabaseAdmin
+      .from('product')
+      .select('prod_id, prod_name')
+      .in('prod_id', prodIds)
+    if (prodErr) console.error('product fetch error:', prodErr)
+    const prodMap = new Map((products || []).map(p => [p.prod_id, p.prod_name]))
+
+    const detailsMap = new Map()
+    for (const d of (details || [])) {
+      if (!detailsMap.has(d.order_id)) detailsMap.set(d.order_id, [])
+      detailsMap.get(d.order_id).push(d)
+    }
+
+    // get payment records
     const { data: payments } = await supabaseAdmin
       .from('payment')
       .select('order_id, amount, method, payment_date')
       .in('order_id', orderIds)
-
     const paymentMap = new Map()
-    for (const pay of (payments || [])) {
-      if (!paymentMap.has(pay.order_id)) paymentMap.set(pay.order_id, [])
-      paymentMap.get(pay.order_id).push(pay)
+    for (const p of (payments || [])) {
+      if (!paymentMap.has(p.order_id)) paymentMap.set(p.order_id, p)
     }
 
     const items = (orders || []).map((o) => {
       const profile = profileMap.get(o.id)
-      const orderPayments = paymentMap.get(o.order_id) || []
+      const orderItems = detailsMap.get(o.order_id) || []
       return {
         order_id: o.order_id,
         user_id: o.id,
         status: o.status,
         total_amount: o.total_amount,
         created_at: o.created_at,
+        customer_name: o.customer_name || '',
+        phone: o.phone || '',
+        address: o.address || '',
         firstName: decryptText(profile?.first_name),
         lastName: decryptText(profile?.last_name),
-        phone: decryptText(profile?.phone),
-        payment: orderPayments[0] || null,
+        items: orderItems.map(d => ({
+          name: prodMap.get(d.prod_id) || 'Unknown',
+          quantity: d.quantity,
+          subtotal: d.subtotal,
+        })),
+        payment: paymentMap.get(o.order_id) || null,
       }
     })
     res.json({ items })
@@ -389,6 +418,40 @@ router.delete('/order-items/:id', async (req, res) => {
     res.json({ success: true })
   } catch (err) {
     console.error('Admin order item delete error:', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// DELETE /api/admin/orders/:id
+// cascades: deletes order_details + payment rows first, then the order
+router.delete('/orders/:id', async (req, res) => {
+  const orderId = req.params.id
+  try {
+    // delete payment
+    await supabaseAdmin.from('payment').delete().eq('order_id', orderId)
+    // delete order_details
+    await supabaseAdmin.from('order_details').delete().eq('order_id', orderId)
+    // delete the order itself
+    const { error } = await supabaseAdmin.from('orders').delete().eq('order_id', orderId)
+    if (error) throw error
+    res.json({ success: true })
+  } catch (err) {
+    console.error('Admin order delete error:', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// DELETE /api/admin/payments/:id
+router.delete('/payments/:id', async (req, res) => {
+  try {
+    const { error } = await supabaseAdmin
+      .from('payment')
+      .delete()
+      .eq('payment_id', req.params.id)
+    if (error) throw error
+    res.json({ success: true })
+  } catch (err) {
+    console.error('Admin payment delete error:', err)
     res.status(500).json({ error: 'Server error' })
   }
 })

@@ -2,10 +2,12 @@ import { useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useShop } from '../context/ShopContext.jsx'
 
+const API_BASE = import.meta.env.VITE_API_BASE || '/api'
+
 function Checkout() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { cartItems, clearCart, pushNotification } = useShop()
+  const { cartItems, clearCart, pushNotification, session } = useShop()
 
   const selectedIds = useMemo(() => location.state?.selectedIds || [], [location.state?.selectedIds])
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
@@ -32,17 +34,59 @@ function Checkout() {
     postalCode: '',
     paymentMethod: 'gcash',
   })
+  const [submitting, setSubmitting] = useState(false)
 
   function onChange(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  function submitOrder(e) {
+  async function submitOrder(e) {
     e.preventDefault()
-    if (checkoutItems.length === 0) return
-    clearCart(selectedIds.length > 0 ? selectedIds : null)
-    pushNotification('Order placed successfully')
-    navigate('/menu')
+    if (checkoutItems.length === 0 || submitting) return
+
+    const token = session?.access_token
+    if (!token) {
+      pushNotification('Please sign in to place an order', 'error')
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      const res = await fetch(`${API_BASE}/orders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          items: checkoutItems.map((i) => ({
+            productId: i.id,
+            name: i.name,
+            price: i.price,
+            quantity: i.quantity,
+          })),
+          paymentMethod: form.paymentMethod,
+          shippingFee,
+          customerName: form.fullName,
+          phone: form.phone,
+          address: [form.addressLine1, form.addressLine2, form.city, form.province, form.postalCode].filter(Boolean).join(', '),
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to place order')
+      }
+
+      const { order_id } = await res.json()
+      clearCart(selectedIds.length > 0 ? selectedIds : null)
+      pushNotification('Order placed successfully!')
+      navigate('/orders', { state: { newOrderId: order_id } })
+    } catch (err) {
+      pushNotification(err.message, 'error')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const inputClass = "h-10 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 text-sm dark:text-gray-100"
@@ -84,10 +128,10 @@ function Checkout() {
 
           <button
             type="submit"
-            disabled={checkoutItems.length === 0}
+            disabled={checkoutItems.length === 0 || submitting}
             className="mt-5 h-10 rounded-md bg-[#0b2e59] px-5 text-sm font-semibold text-white hover:bg-[#15407a] disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            Place Order
+            {submitting ? 'Placing Order...' : 'Place Order'}
           </button>
         </form>
 

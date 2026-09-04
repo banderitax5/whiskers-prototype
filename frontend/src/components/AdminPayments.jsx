@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import supabase from '../lib/supabase';
-import { apiGetAuth } from '../lib/api';
-import { AdminPage, AdminTable, EmptyState, StatCard } from './adminTheme';
-import { BsCreditCard, BsSearch } from 'react-icons/bs';
+import { apiGetAuth, apiDeleteAuth } from '../lib/api';
+import { AdminPage, AdminTable, EmptyState, StatCard, ConfirmDialog } from './adminTheme';
+import { BsCreditCard, BsSearch, BsTrash } from 'react-icons/bs';
 import toast from 'react-hot-toast';
 
 const AdminPayments = () => {
@@ -14,6 +14,9 @@ const AdminPayments = () => {
   const [priceMax, setPriceMax] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [selected, setSelected] = useState(new Set());
+  const [bulkDeleteTarget, setBulkDeleteTarget] = useState(null);
   const PAGE_SIZE = 10;
 
   useEffect(() => {
@@ -44,6 +47,46 @@ const AdminPayments = () => {
     }
   }
 
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      await apiDeleteAuth(`/admin/payments/${deleteTarget.payment_id}`, session.access_token);
+      setPayments((prev) => prev.filter((p) => p.payment_id !== deleteTarget.payment_id));
+      toast.success('Payment record deleted');
+    } catch (err) { toast.error(err.message); }
+    finally { setDeleteTarget(null); }
+  }
+
+  function toggleSelect(id) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelected((prev) => {
+      if (prev.size === filteredPayments.length) return new Set();
+      return new Set(filteredPayments.map((p) => p.payment_id));
+    });
+  }
+
+  async function confirmBulkDelete() {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      await Promise.all(ids.map((id) => apiDeleteAuth(`/admin/payments/${id}`, session.access_token)));
+      setPayments((prev) => prev.filter((p) => !selected.has(p.payment_id)));
+      toast.success(`${ids.length} payment record${ids.length > 1 ? 's' : ''} deleted`);
+    } catch (err) { toast.error(err.message); }
+    finally { setSelected(new Set()); setBulkDeleteTarget(null); }
+  }
+
   const filteredPayments = useMemo(() => {
     let list = [...payments];
     const min = priceMin !== '' ? Number(priceMin) : null;
@@ -56,7 +99,8 @@ const AdminPayments = () => {
         const name = `${p.firstName || ''} ${p.lastName || ''}`.toLowerCase();
         const method = (p.method || '').toLowerCase();
         const id = String(p.payment_id || '').toLowerCase();
-        return name.includes(q) || method.includes(q) || id.includes(q);
+        const orderId = String(p.order_id || '').toLowerCase();
+        return name.includes(q) || method.includes(q) || id.includes(q) || orderId.includes(q);
       });
     }
 
@@ -79,6 +123,10 @@ const AdminPayments = () => {
           va = (a.method || '').toLowerCase();
           vb = (b.method || '').toLowerCase();
           break;
+        case 'status':
+          va = (a.status || '').toLowerCase();
+          vb = (b.status || '').toLowerCase();
+          break;
         default:
           va = a[sortKey] ?? '';
           vb = b[sortKey] ?? '';
@@ -93,8 +141,22 @@ const AdminPayments = () => {
   const totalRevenue = filteredPayments.reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
   const avgPayment = filteredPayments.length ? totalRevenue / filteredPayments.length : 0;
 
+  const allSelected = filteredPayments.length > 0 && selected.size === filteredPayments.length;
+
   const columns = [
+    { key: 'select', label: '', sortable: false,
+      render: (p) => (
+        <input
+          type="checkbox"
+          checked={selected.has(p.payment_id)}
+          onChange={() => toggleSelect(p.payment_id)}
+          onClick={(e) => e.stopPropagation()}
+          className="h-4 w-4 rounded border-gray-300 dark:border-[#1e3a5f] text-[#0b2e59] dark:text-yellow-500 focus:ring-[#0b2e59] cursor-pointer accent-[#0b2e59]"
+        />
+      ),
+    },
     { key: 'payment_id', label: 'Trans. ID', render: (p) => <span className="text-xs font-mono text-gray-500 dark:text-slate-400">{String(p.payment_id).slice(0, 8).toUpperCase()}</span> },
+    { key: 'order_id', label: 'Order ID', sortable: true, render: (p) => <span className="text-xs font-mono text-gray-500 dark:text-slate-400">{String(p.order_id).slice(0, 8).toUpperCase()}</span> },
     { key: 'customer', label: 'Customer', sortable: true,
       render: (p) => {
         const name = `${p.firstName || ''} ${p.lastName || ''}`.trim();
@@ -107,10 +169,25 @@ const AdminPayments = () => {
     { key: 'method', label: 'Method', sortable: true,
       render: (p) => <span className="px-3 py-1 rounded-full border border-gray-300 dark:border-[#1e3a5f] bg-white dark:bg-[#162d4a] text-gray-800 dark:text-slate-200 text-[10px] font-black uppercase tracking-widest">{p.method}</span>,
     },
+    { key: 'status', label: 'Status', sortable: true,
+      render: (p) => <span className="px-3 py-1 rounded-full border border-gray-300 dark:border-[#1e3a5f] bg-white dark:bg-[#162d4a] text-gray-800 dark:text-slate-200 text-[10px] font-black uppercase tracking-widest">{p.status}</span>,
+    },
     { key: 'payment_date', label: 'Date', sortable: true,
       render: (p) => <span className="text-sm text-gray-600 dark:text-slate-400 font-medium">
         {p.payment_date ? new Date(p.payment_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
       </span>,
+    },
+    { key: 'actions', label: '', sortable: false,
+      render: (p) => (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setDeleteTarget(p); }}
+          className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition"
+          title="Delete payment"
+        >
+          <BsTrash className="w-4 h-4" />
+        </button>
+      ),
     },
   ];
 
@@ -148,12 +225,30 @@ const AdminPayments = () => {
         )}
       </div>
 
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+          <span className="text-sm font-semibold text-red-700 dark:text-red-300">{selected.size} selected</span>
+          <button
+            onClick={toggleSelectAll}
+            className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest bg-white dark:bg-[#162d4a] border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition"
+          >
+            {allSelected ? 'Deselect All' : 'Select All'}
+          </button>
+          <button
+            onClick={() => setBulkDeleteTarget(true)}
+            className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest bg-red-600 text-white hover:bg-red-700 transition flex items-center gap-1.5"
+          >
+            <BsTrash className="w-3 h-3" /> Delete Selected
+          </button>
+        </div>
+      )}
+
       <AdminTable
         columns={columns}
         rows={filteredPayments}
         rowKey={(p) => p.payment_id}
         loading={loading}
-        colSpan={5}
+        colSpan={9}
         sortKey={sortKey}
         sortDir={sortDir}
         onSort={handleSort}
@@ -167,6 +262,28 @@ const AdminPayments = () => {
             message="Once a customer completes checkout, their transaction will appear here."
           />
         }
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete Payment"
+        message={`Are you sure you want to delete payment #${deleteTarget?.payment_id?.slice(0, 8).toUpperCase()}? This action cannot be undone.`}
+        confirmLabel="Delete Payment"
+        cancelLabel="Keep Payment"
+        danger
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={!!bulkDeleteTarget}
+        title="Delete Selected Payments"
+        message={`Are you sure you want to delete ${selected.size} payment record${selected.size > 1 ? 's' : ''}? This action cannot be undone.`}
+        confirmLabel={`Delete ${selected.size} Payment${selected.size > 1 ? 's' : ''}`}
+        cancelLabel="Keep Payments"
+        danger
+        onConfirm={confirmBulkDelete}
+        onCancel={() => setBulkDeleteTarget(null)}
       />
     </AdminPage>
   );

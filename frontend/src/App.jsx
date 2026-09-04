@@ -10,6 +10,7 @@ import Menu from './pages/Menu.jsx'
 import Profile from './pages/Profile.jsx'
 import Cart from './pages/Cart.jsx'
 import Checkout from './pages/Checkout.jsx'
+import UserOrders from './pages/UserOrders.jsx'
 import NotFound from './pages/NotFound.jsx'
 
 // ADMIN COMPONENTS
@@ -97,6 +98,14 @@ const router = createBrowserRouter([
       { path: 'menu', element: <Menu /> },
       { path: 'cart', element: <Cart /> },
       { path: 'checkout', element: <Checkout /> },
+      {
+        path: 'orders',
+        element: (
+          <RequireAuth>
+            <UserOrders />
+          </RequireAuth>
+        ),
+      },
       { path: 'about', element: <About /> },
       {
         path: 'pets',

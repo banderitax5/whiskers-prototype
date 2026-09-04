@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import supabase from '../lib/supabase';
-import { apiGetAuth, apiPatchAuth } from '../lib/api';
-import { AdminPage, AdminTable, EmptyState, StatCard, StatusPill } from './adminTheme';
-import { BsBoxSeam, BsSearch } from 'react-icons/bs';
+import { apiGetAuth, apiPatchAuth, apiDeleteAuth } from '../lib/api';
+import { AdminPage, AdminTable, EmptyState, StatCard, StatusPill, ConfirmDialog } from './adminTheme';
+import { BsBoxSeam, BsSearch, BsTrash } from 'react-icons/bs';
 import toast from 'react-hot-toast';
 
 const STATUS_KIND = {
@@ -23,6 +23,10 @@ const AdminOrders = () => {
   const [openDropdown, setOpenDropdown] = useState(null);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [viewingOrder, setViewingOrder] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [selected, setSelected] = useState(new Set());
+  const [bulkDeleteTarget, setBulkDeleteTarget] = useState(null);
   const PAGE_SIZE = 10;
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -62,6 +66,44 @@ const AdminOrders = () => {
     finally { setSavingId(null); }
   }
 
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    try {
+      const token = await getToken(); if (!token) return;
+      await apiDeleteAuth(`/admin/orders/${deleteTarget.order_id}`, token);
+      setAllOrders((prev) => prev.filter((o) => o.order_id !== deleteTarget.order_id));
+      toast.success('Order deleted');
+    } catch (err) { toast.error(err.message); }
+    finally { setDeleteTarget(null); }
+  }
+
+  function toggleSelect(id) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelected((prev) => {
+      if (prev.size === orders.length) return new Set();
+      return new Set(orders.map((o) => o.order_id));
+    });
+  }
+
+  async function confirmBulkDelete() {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    try {
+      const token = await getToken(); if (!token) return;
+      await Promise.all(ids.map((id) => apiDeleteAuth(`/admin/orders/${id}`, token)));
+      setAllOrders((prev) => prev.filter((o) => !selected.has(o.order_id)));
+      toast.success(`${ids.length} order${ids.length > 1 ? 's' : ''} deleted`);
+    } catch (err) { toast.error(err.message); }
+    finally { setSelected(new Set()); setBulkDeleteTarget(null); }
+  }
+
   function handleSort(key) {
     if (sortKey === key) {
       setSortDir((d) => d === 'asc' ? 'desc' : 'asc');
@@ -77,9 +119,8 @@ const AdminOrders = () => {
       const q = search.toLowerCase();
       list = list.filter((o) => {
         const name = `${o.firstName || ''} ${o.lastName || ''}`.toLowerCase();
-        const phone = (o.phone || '').toLowerCase();
         const id = String(o.order_id || '').toLowerCase();
-        return name.includes(q) || phone.includes(q) || id.includes(q);
+        return name.includes(q) || id.includes(q);
       });
     }
     list = [...list].sort((a, b) => {
@@ -120,25 +161,46 @@ const AdminOrders = () => {
   }, {});
   counts.All = allOrders.length;
 
+  const allSelected = orders.length > 0 && selected.size === orders.length;
+
   const columns = [
+    { key: 'select', label: '', sortable: false,
+      render: (o) => (
+        <input
+          type="checkbox"
+          checked={selected.has(o.order_id)}
+          onChange={() => toggleSelect(o.order_id)}
+          onClick={(e) => e.stopPropagation()}
+          className="h-4 w-4 rounded border-gray-300 dark:border-[#1e3a5f] text-[#0b2e59] dark:text-yellow-500 focus:ring-[#0b2e59] cursor-pointer accent-[#0b2e59]"
+        />
+      ),
+    },
     { key: 'id', label: 'Order ID', sortable: true, render: (o) => <span className="text-xs font-mono text-gray-500 dark:text-slate-400">{String(o.order_id).slice(0, 8).toUpperCase()}</span> },
-    { key: 'customer', label: 'Customer', sortable: true,
+    { key: 'customer', label: 'User Account', sortable: true,
       render: (o) => {
         const name = `${o.firstName || ''} ${o.lastName || ''}`.trim();
         return <span className="font-black uppercase text-sm tracking-wide text-gray-900 dark:text-slate-100">{name || 'Guest'}</span>;
       },
     },
-    { key: 'phone', label: 'Contact', render: (o) => <span className="text-sm text-gray-600 dark:text-slate-400">{o.phone || 'N/A'}</span> },
+    { key: 'details', label: 'Details', sortable: false,
+      render: (o) => {
+        const totalQty = (o.items || []).reduce((s, i) => s + (i.quantity || 0), 0);
+        return (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setViewingOrder(o); }}
+            className="px-3 py-1.5 rounded-lg bg-[#0b2e59] dark:bg-yellow-600 text-white dark:text-gray-900 text-[10px] font-black uppercase tracking-widest hover:bg-[#15407a] dark:hover:bg-yellow-500 transition flex items-center gap-1.5"
+          >
+            View Order
+            {totalQty > 0 && <span className="bg-white/20 dark:bg-black/20 px-1.5 py-0.5 rounded text-[9px]">{totalQty}</span>}
+          </button>
+        );
+      },
+    },
     { key: 'total', label: 'Total', sortable: true,
       render: (o) => o.total_amount != null
         ? <span className="font-black text-[#0b2e59] dark:text-yellow-200">PHP {Number(o.total_amount).toLocaleString()}</span>
         : <span className="text-gray-400 dark:text-slate-500">-</span>,
-    },
-    {
-      key: 'payment', label: 'Payment',
-      render: (o) => o.payment
-        ? <span className="px-3 py-1 rounded-lg border border-gray-200 dark:border-[#1e3a5f] bg-gray-50 dark:bg-[#162d4a] text-gray-700 dark:text-slate-300 text-[10px] font-black uppercase tracking-widest">{o.payment.method} - PHP {Number(o.payment.amount || 0).toLocaleString()}</span>
-        : <span className="text-gray-400 dark:text-slate-500 text-xs italic">Unpaid</span>,
     },
     { key: 'created_at', label: 'Placed', sortable: true,
       render: (o) => <span className="text-sm text-gray-500 dark:text-slate-400">{o.created_at ? new Date(o.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}</span>,
@@ -175,6 +237,18 @@ const AdminOrders = () => {
         </div>
       ),
     },
+    { key: 'actions', label: '', sortable: false,
+      render: (o) => (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setDeleteTarget(o); }}
+          className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition"
+          title="Delete order"
+        >
+          <BsTrash className="w-4 h-4" />
+        </button>
+      ),
+    },
   ];
 
   return (
@@ -192,7 +266,7 @@ const AdminOrders = () => {
           <input
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search by name, phone, or order ID..."
+            placeholder="Search by name or order ID..."
             className="w-full pl-10 pr-4 py-2 rounded-lg bg-white dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 text-sm focus:outline-none focus:border-[#0b2e59]"
           />
         </div>
@@ -214,12 +288,30 @@ const AdminOrders = () => {
         ))}
       </div>
 
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+          <span className="text-sm font-semibold text-red-700 dark:text-red-300">{selected.size} selected</span>
+          <button
+            onClick={toggleSelectAll}
+            className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest bg-white dark:bg-[#162d4a] border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition"
+          >
+            {allSelected ? 'Deselect All' : 'Select All'}
+          </button>
+          <button
+            onClick={() => setBulkDeleteTarget(true)}
+            className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest bg-red-600 text-white hover:bg-red-700 transition flex items-center gap-1.5"
+          >
+            <BsTrash className="w-3 h-3" /> Delete Selected
+          </button>
+        </div>
+      )}
+
       <AdminTable
         columns={columns}
         rows={orders}
         rowKey={(o) => o.order_id}
         loading={loading}
-        colSpan={7}
+        colSpan={8}
         sortKey={sortKey}
         sortDir={sortDir}
         onSort={handleSort}
@@ -235,6 +327,86 @@ const AdminOrders = () => {
               : 'Try a different status filter to see other orders.'}
           />
         }
+      />
+
+      {/* Order Detail Modal */}
+      {viewingOrder && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setViewingOrder(null)}>
+          <div className="bg-white dark:bg-[#0f2847] rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            {/* header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#1e3a5f]">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">Order Details</h3>
+                <p className="text-xs font-mono text-gray-500 dark:text-slate-400">#{String(viewingOrder.order_id).slice(0, 8).toUpperCase()}</p>
+              </div>
+              <button type="button" onClick={() => setViewingOrder(null)} className="h-8 w-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-[#1e3a5f] text-gray-500 dark:text-slate-400 transition">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {/* customer info */}
+              <div className="bg-gray-50 dark:bg-[#162d4a] rounded-lg p-3 space-y-2">
+                <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-slate-500">Customer Information</p>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div><span className="text-gray-500 dark:text-slate-400">Name: </span><span className="font-semibold text-gray-800 dark:text-slate-200">{viewingOrder.customer_name || viewingOrder.firstName || 'N/A'}</span></div>
+                  <div><span className="text-gray-500 dark:text-slate-400">Phone: </span><span className="font-semibold text-gray-800 dark:text-slate-200">{viewingOrder.phone || 'N/A'}</span></div>
+                  <div className="col-span-2"><span className="text-gray-500 dark:text-slate-400">Address: </span><span className="font-semibold text-gray-800 dark:text-slate-200">{viewingOrder.address || 'N/A'}</span></div>
+                </div>
+              </div>
+
+              {/* items */}
+              <div className="bg-gray-50 dark:bg-[#162d4a] rounded-lg p-3 space-y-2">
+                <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-slate-500">Items Ordered ({(viewingOrder.items || []).reduce((s, i) => s + (i.quantity || 0), 0)} total)</p>
+                <div className="space-y-1.5">
+                  {(viewingOrder.items || []).map((item, idx) => (
+                    <div key={idx} className="flex justify-between items-center text-sm">
+                      <span className="text-gray-800 dark:text-slate-200 truncate">{item.name}</span>
+                      <div className="flex items-center gap-3 shrink-0 ml-2">
+                        <span className="text-xs text-gray-500 dark:text-slate-400">x{item.quantity}</span>
+                        <span className="font-semibold text-gray-800 dark:text-slate-200">PHP {Number(item.subtotal).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {(!viewingOrder.items || viewingOrder.items.length === 0) && (
+                    <p className="text-xs text-gray-400 dark:text-slate-500 italic">No item details available</p>
+                  )}
+                </div>
+              </div>
+
+              {/* payment */}
+              <div className="bg-gray-50 dark:bg-[#162d4a] rounded-lg p-3 space-y-2">
+                <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-slate-500">Payment</p>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div><span className="text-gray-500 dark:text-slate-400">Method: </span><span className="font-semibold text-gray-800 dark:text-slate-200 uppercase">{viewingOrder.payment?.method || 'N/A'}</span></div>
+                  <div><span className="text-gray-500 dark:text-slate-400">Amount: </span><span className="font-bold text-[#0b2e59] dark:text-yellow-300">PHP {Number(viewingOrder.payment?.amount || viewingOrder.total_amount).toLocaleString()}</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete Order"
+        message={`Are you sure you want to delete order #${deleteTarget?.order_id?.slice(0, 8).toUpperCase()}? This will also remove all items and payment records. This action cannot be undone.`}
+        confirmLabel="Delete Order"
+        cancelLabel="Keep Order"
+        danger
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={!!bulkDeleteTarget}
+        title="Delete Selected Orders"
+        message={`Are you sure you want to delete ${selected.size} order${selected.size > 1 ? 's' : ''}? This will also remove all items and payment records. This action cannot be undone.`}
+        confirmLabel={`Delete ${selected.size} Order${selected.size > 1 ? 's' : ''}`}
+        cancelLabel="Keep Orders"
+        danger
+        onConfirm={confirmBulkDelete}
+        onCancel={() => setBulkDeleteTarget(null)}
       />
     </AdminPage>
   );
