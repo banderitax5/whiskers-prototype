@@ -102,7 +102,9 @@ function Cart() {
 
                   <div className="min-w-0 flex-1 sm:flex-initial">
                     <h3 className="truncate text-sm font-semibold text-gray-800 dark:text-gray-100">{item.name}</h3>
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{item.collection} {item.brand ? `· ${item.brand}` : ''}</p>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {item.collection} {item.brand ? `· ${item.brand}` : ''} {item.size ? `· ${item.size}` : ''}
+                    </p>
                     <p className="mt-1 text-base font-bold text-gray-900 dark:text-white">PHP {item.price.toFixed(2)}</p>
                   </div>
                 </div>

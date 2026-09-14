@@ -1,25 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { extractSizeLabel } from '../lib/productUtils.js'
 
 // full screen product dialog that pops up when you click on a product card
 // uses createPortal to render directly on document.body so it always covers
 // the entire viewport no matter where the component sits in the tree
 // press Escape or click the dark backdrop to close it
-function ProductQuickViewDialog({ product, isOpen, onClose, onAddToCart, onBuyNow }) {
+function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, onAddToCart, onBuyNow }) {
   const [qty, setQty] = useState(1)
-  // normalize field names so the dialog works with both API products and hardcoded ones
-  const p = product ? {
-    ...product,
-    name: product.name || product.prod_name,
-    image: product.image || product.image_url,
-    collection: product.collection || product.category,
-  } : null
-  const safePrice = Number(p?.price) || 0
+  const [selectedVariant, setSelectedVariant] = useState(null)
 
-  // reset quantity back to 1 every time a new product is opened
+  // reset state when dialog opens with a new product
+  // also resets if a different product card is clicked while dialog is already open
   useEffect(() => {
-    if (isOpen) setQty(1)
-  }, [isOpen, p?.id])
+    if (isOpen && product) {
+      setQty(1)
+      setSelectedVariant(product)
+    }
+  }, [isOpen, product])
 
   // when the dialog is open, listen for the Escape key and lock body scroll
   // cleanup removes the listener and unlocks scroll when the dialog closes
@@ -36,10 +34,31 @@ function ProductQuickViewDialog({ product, isOpen, onClose, onAddToCart, onBuyNo
     }
   }, [isOpen, onClose])
 
+  // use the selected variant for display, fall back to the product prop
+  const current = selectedVariant || product
+
+  // normalize field names so the dialog works with both API products and hardcoded ones
+  const p = current ? {
+    ...current,
+    name: current.name || current.prod_name,
+    image: current.image || current.image_url,
+    collection: current.collection || current.category,
+  } : null
+  const safePrice = Number(p?.price) || 0
+
   const previews = useMemo(() => {
     if (!p?.image) return []
     return [p.image, p.image, p.image]
   }, [p?.image])
+
+  // compute size labels from variants
+  const sizes = useMemo(() => {
+    if (!sizeVariants || sizeVariants.length === 0) return []
+    return sizeVariants.map((v) => ({
+      label: extractSizeLabel(v.prod_name || v.name) || 'Default',
+      product: v,
+    }))
+  }, [sizeVariants])
 
   if (!isOpen || !p) return null
 
@@ -100,6 +119,32 @@ function ProductQuickViewDialog({ product, isOpen, onClose, onAddToCart, onBuyNo
               </p>
             </div>
 
+            {/* size selector: only show when product has multiple size variants */}
+            {sizes.length > 0 && (
+              <div className="mt-4">
+                <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Available Sizes</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {sizes.map((size) => {
+                    const isActive = current.prod_id === size.product.prod_id
+                    return (
+                      <button
+                        key={size.product.prod_id}
+                        type="button"
+                        onClick={() => setSelectedVariant(size.product)}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium border transition ${
+                          isActive
+                            ? 'bg-[#0b2e59] text-white border-[#0b2e59]'
+                            : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:border-[#0b2e59] dark:hover:border-blue-400'
+                        }`}
+                      >
+                        {size.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* quantity stepper: minus button, current qty, plus button */}
             <div className="mt-5 flex items-center gap-1">
               <button type="button" onClick={decrease} className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 text-lg font-semibold text-gray-700 dark:text-gray-200 transition hover:bg-gray-100 dark:hover:bg-gray-700">-</button>
@@ -108,11 +153,12 @@ function ProductQuickViewDialog({ product, isOpen, onClose, onAddToCart, onBuyNo
             </div>
 
             {/* add to cart and buy now buttons side by side */}
+            {/* pass the currently selected variant (current) so the right size gets added */}
             <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-5 sm:gap-3">
-              <button type="button" onClick={() => onAddToCart(product, qty)} className="h-10 rounded-lg bg-yellow-400 text-xs font-bold text-gray-900 transition hover:bg-yellow-500 active:bg-yellow-600 sm:h-12 sm:text-sm">
+              <button type="button" onClick={() => onAddToCart(current, qty)} className="h-10 rounded-lg bg-yellow-400 text-xs font-bold text-gray-900 transition hover:bg-yellow-500 active:bg-yellow-600 sm:h-12 sm:text-sm">
                 Add to Cart
               </button>
-              <button type="button" onClick={() => onBuyNow(product, qty)} className="h-10 rounded-lg bg-[#0b2e59] text-xs font-bold text-white transition hover:bg-[#15407a] sm:h-12 sm:text-sm">
+              <button type="button" onClick={() => onBuyNow(current, qty)} className="h-10 rounded-lg bg-[#0b2e59] text-xs font-bold text-white transition hover:bg-[#15407a] sm:h-12 sm:text-sm">
                 Buy Now
               </button>
             </div>

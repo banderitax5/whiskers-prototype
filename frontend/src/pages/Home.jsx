@@ -1,15 +1,38 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useShop } from '../context/ShopContext.jsx'
 import ProductQuickViewDialog from '../components/ProductQuickViewDialog.jsx'
 import { apiGet } from '../lib/api.js'
+import { attachSizeVariants } from '../lib/productUtils.js'
+
+const CAROUSEL_SLIDES = [
+  { image: '/banner.png', alt: 'Whiskers Pet Shop' },
+  { image: '/categoryshop/dog.jpg', alt: 'Dog Food Collection' },
+  { image: '/categoryshop/cat.jpg', alt: 'Cat Food Collection' },
+  { image: '/categoryshop/fish.png', alt: 'Fish Supplies' },
+  { image: '/categoryshop/berd.jpg', alt: 'Bird Supplies' },
+]
 
 function Home() {
   const navigate = useNavigate()
   const { addToCart } = useShop()
   const [activeProduct, setActiveProduct] = useState(null)
+  const [activeSizeVariants, setActiveSizeVariants] = useState([])
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
+  const [currentSlide, setCurrentSlide] = useState(0)
+
+  // auto-rotate carousel
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentSlide((prev) => (prev + 1) % CAROUSEL_SLIDES.length)
+    }, 5000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const goToSlide = useCallback((idx) => setCurrentSlide(idx), [])
+  const prevSlide = useCallback(() => setCurrentSlide((p) => (p - 1 + CAROUSEL_SLIDES.length) % CAROUSEL_SLIDES.length), [])
+  const nextSlide = useCallback(() => setCurrentSlide((p) => (p + 1) % CAROUSEL_SLIDES.length), [])
 
   useEffect(() => {
     async function load() {
@@ -25,20 +48,16 @@ function Home() {
     load()
   }, [])
 
+  // enrich products with size variant info
+  const enrichedProducts = useMemo(() => attachSizeVariants(products), [products])
+
   // group products by category for display
-  const groupedByCategory = products.reduce((acc, product) => {
+  const groupedByCategory = enrichedProducts.reduce((acc, product) => {
     const cat = product.category || 'Other'
     if (!acc[cat]) acc[cat] = []
     acc[cat].push(product)
     return acc
   }, {})
-
-  const categoryTiles = [
-    { id: 'food', label: 'FOOD', image: '/categoryshop/dog.jpg' },
-    { id: 'vitamins', label: 'VITAMINS', image: '/categoryshop/cat.jpg' },
-    { id: 'accessories', label: 'ACCESSORIES', image: '/categoryshop/fish.png' },
-    { id: 'cages', label: 'CAGES', image: '/categoryshop/berd.jpg' },
-  ]
 
   function handleAddToCart(product, qty = 1) {
     addToCart({
@@ -48,6 +67,7 @@ function Home() {
       image: product.image_url || '',
       collection: product.category,
       brand: product.brand || '',
+      size: product.sizeLabel || '',
     }, qty)
   }
 
@@ -60,11 +80,7 @@ function Home() {
     return (
       <div className="space-y-6 sm:space-y-8">
         <section className="mx-auto max-w-7xl px-4 pt-2">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
-            {[1,2,3,4].map(i => (
-              <div key={i} className="h-24 sm:h-28 bg-gray-100 dark:bg-gray-800 rounded-lg animate-pulse" />
-            ))}
-          </div>
+          <div className="h-[250px] sm:h-[325px] bg-gray-100 dark:bg-gray-800 rounded-xl animate-pulse" />
         </section>
         {[1,2].map(i => (
           <div key={i} className="mx-auto max-w-7xl px-4">
@@ -82,21 +98,35 @@ function Home() {
 
   return (
     <div className="space-y-6 sm:space-y-8">
+      {/* hero carousel */}
       <section className="mx-auto max-w-7xl px-4 pt-2">
-        <h2 className="text-xl sm:text-2xl font-semibold text-gray-700 dark:text-gray-200 mb-3">Categories</h2>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
-          {categoryTiles.map((tile) => (
-            <button
-              key={tile.id}
-              type="button"
-              className="h-24 sm:h-28 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm px-3 sm:px-4 flex items-center justify-center gap-3 sm:gap-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+        <div className="relative overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-800 h-[250px] sm:h-[325px]">
+          {CAROUSEL_SLIDES.map((slide, idx) => (
+            <div
+              key={idx}
+              className={`absolute inset-0 transition-opacity duration-700 ease-in-out ${idx === currentSlide ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
             >
-              <img src={tile.image} alt={tile.label} className="h-12 w-12 sm:h-14 sm:w-14 object-cover" />
-              <span className="text-[11px] sm:text-xs font-semibold text-gray-700 dark:text-gray-200 tracking-wide">
-                {tile.label}
-              </span>
-            </button>
+              <img src={slide.image} alt={slide.alt} className="h-full w-full object-cover" />
+            </div>
           ))}
+          {/* prev/next arrows */}
+          <button type="button" onClick={prevSlide} className="absolute left-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-black/30 text-white flex items-center justify-center hover:bg-black/50 transition">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+          </button>
+          <button type="button" onClick={nextSlide} className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-black/30 text-white flex items-center justify-center hover:bg-black/50 transition">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+          </button>
+          {/* dots */}
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+            {CAROUSEL_SLIDES.map((_, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => goToSlide(idx)}
+                className={`h-1.5 rounded-full transition-all ${idx === currentSlide ? 'w-5 bg-white' : 'w-1.5 bg-white/50'}`}
+              />
+            ))}
+          </div>
         </div>
       </section>
 
@@ -112,9 +142,15 @@ function Home() {
                 key={product.prod_id}
                 role="button"
                 tabIndex={0}
-                onClick={() => setActiveProduct(product)}
+                onClick={() => {
+                  setActiveProduct(product)
+                  setActiveSizeVariants(product.sizeVariants || [])
+                }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') setActiveProduct(product)
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    setActiveProduct(product)
+                    setActiveSizeVariants(product.sizeVariants || [])
+                  }
                 }}
                 className="snap-start flex-shrink-0 w-44 sm:w-52 md:w-56 lg:w-60 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm overflow-hidden cursor-pointer"
               >
@@ -167,8 +203,9 @@ function Home() {
 
       <ProductQuickViewDialog
         product={activeProduct}
+        sizeVariants={activeSizeVariants}
         isOpen={Boolean(activeProduct)}
-        onClose={() => setActiveProduct(null)}
+        onClose={() => { setActiveProduct(null); setActiveSizeVariants([]) }}
         onAddToCart={(product, qty) => handleAddToCart(product, qty)}
         onBuyNow={(product, qty) => handleBuyNow(product, qty)}
       />

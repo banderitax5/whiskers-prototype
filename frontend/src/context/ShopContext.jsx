@@ -32,8 +32,15 @@ function normalizeDbItem(row) {
     image: row.image || '',
     collection: row.collection || '',
     brand: row.brand || '',
+    size: row.size || '',
     quantity: row.quantity,
   }
+}
+
+// creates a unique key for a cart item combining product id and size
+// this allows the same product with different sizes to be separate cart entries
+function cartItemKey(id, size) {
+  return `${id}__${size || ''}`
 }
 
 export function ShopProvider({ children }) {
@@ -136,13 +143,16 @@ export function ShopProvider({ children }) {
     }
 
     const qty = Math.max(1, Number(quantity) || 1)
+    const size = product.size || ''
+    const key = cartItemKey(product.id, size)
 
     // update the local cart right away so the user sees it instantly
+    // match by both product id and size so different sizes are separate entries
     setCartItems((prev) => {
-      const existing = prev.find((item) => item.id === product.id)
+      const existing = prev.find((item) => cartItemKey(item.id, item.size) === key)
       if (existing) {
         return prev.map((item) =>
-          item.id === product.id ? { ...item, quantity: item.quantity + qty } : item
+          cartItemKey(item.id, item.size) === key ? { ...item, quantity: item.quantity + qty } : item
         )
       }
       return [...prev, {
@@ -152,11 +162,13 @@ export function ShopProvider({ children }) {
         image: product.image || '',
         collection: product.collection || '',
         brand: product.brand || '',
+        size,
         quantity: qty,
       }]
     })
     setLastAddedAt(Date.now())
-    if (opts.notify) pushNotification(`${product.name} added to cart`, 'success')
+    const sizeLabel = size ? ` (${size})` : ''
+    if (opts.notify) pushNotification(`${product.name}${sizeLabel} added to cart`, 'success')
 
     // fire the POST to the backend so the database stays in sync
     try {
@@ -173,6 +185,7 @@ export function ShopProvider({ children }) {
           image: product.image,
           collection: product.collection,
           brand: product.brand,
+          size,
           quantity: qty,
         }),
       })

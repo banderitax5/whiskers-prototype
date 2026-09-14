@@ -4,6 +4,7 @@ export default function FloatingNotification() {
   return (
     <Toaster
       position="bottom-right"
+      containerStyle={{ zIndex: 99999 }}
       toastOptions={{
         duration: 4000,
         dismissible: true,

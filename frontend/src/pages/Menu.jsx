@@ -1,8 +1,9 @@
-import { useMemo, useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useMemo, useState, useEffect, useCallback } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useShop } from '../context/ShopContext.jsx'
 import ProductQuickViewDialog from '../components/ProductQuickViewDialog.jsx'
 import { apiGet } from '../lib/api.js'
+import { attachSizeVariants } from '../lib/productUtils.js'
 
 const PAGE_SIZES = [8, 16, 24, 36]
 const SORT_OPTIONS = [
@@ -12,8 +13,13 @@ const SORT_OPTIONS = [
   { value: 'price-desc', label: 'Price: High to Low' },
 ]
 
+function toggleArrayItem(arr, item) {
+  return arr.includes(item) ? arr.filter((v) => v !== item) : [...arr, item]
+}
+
 function Menu() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { addToCart } = useShop()
 
   const [products, setProducts] = useState([])
@@ -21,18 +27,34 @@ function Menu() {
   const [categories, setCategories] = useState([])
   const [brands, setBrands] = useState([])
 
+  // category and brand filters are now arrays for multi-select
+  const initialCategory = searchParams.get('category')
+    ? [searchParams.get('category')]
+    : []
   const [filters, setFilters] = useState({
     search: '',
-    category: 'all',
-    brand: 'all',
+    categories: initialCategory,
+    brands: [],
     maxPrice: 'all',
   })
   const [sortBy, setSortBy] = useState('name-asc')
   const [viewMode, setViewMode] = useState('grid')
   const [activeProduct, setActiveProduct] = useState(null)
+  const [activeSizeVariants, setActiveSizeVariants] = useState([])
   const [pageSize, setPageSize] = useState(8)
   const [currentPage, setCurrentPage] = useState(1)
   const [showFilters, setShowFilters] = useState(true)
+
+  // sync URL search params → filter state when navigating from nav links
+  useEffect(() => {
+    const cat = searchParams.get('category')
+    if (cat) {
+      setFilters((prev) => ({
+        ...prev,
+        categories: prev.categories.includes(cat) ? prev.categories : [...prev.categories, cat],
+      }))
+    }
+  }, [searchParams])
 
   useEffect(() => {
     async function load() {
@@ -54,25 +76,39 @@ function Menu() {
     load()
   }, [])
 
+  // enrich products with size variant info
+  const enrichedProducts = useMemo(() => attachSizeVariants(products), [products])
+
   function updateFilter(key, value) {
     setFilters((prev) => ({ ...prev, [key]: value }))
     setCurrentPage(1)
   }
 
+  const toggleCategory = useCallback((cat) => {
+    setFilters((prev) => ({ ...prev, categories: toggleArrayItem(prev.categories, cat) }))
+    setCurrentPage(1)
+  }, [])
+
+  const toggleBrand = useCallback((brand) => {
+    setFilters((prev) => ({ ...prev, brands: toggleArrayItem(prev.brands, brand) }))
+    setCurrentPage(1)
+  }, [])
+
   function resetFilters() {
-    setFilters({ search: '', category: 'all', brand: 'all', maxPrice: 'all' })
+    setFilters({ search: '', categories: [], brands: [], maxPrice: 'all' })
+    setSearchParams({})
     setCurrentPage(1)
   }
 
   // count how many filters are active
-  const activeFilterCount = [filters.category, filters.brand, filters.maxPrice].filter(v => v !== 'all').length + (filters.search ? 1 : 0)
+  const activeFilterCount = filters.categories.length + filters.brands.length + (filters.maxPrice !== 'all' ? 1 : 0) + (filters.search ? 1 : 0)
 
   const filteredProducts = useMemo(() => {
     const search = filters.search.trim().toLowerCase()
-    let result = products.filter((product) => {
+    let result = enrichedProducts.filter((product) => {
       const matchSearch = !search || product.prod_name.toLowerCase().includes(search)
-      const matchCategory = filters.category === 'all' || product.category === filters.category
-      const matchBrand = filters.brand === 'all' || product.brand?.toLowerCase() === filters.brand.toLowerCase()
+      const matchCategory = filters.categories.length === 0 || filters.categories.some((cat) => product.category?.toLowerCase().includes(cat.toLowerCase()))
+      const matchBrand = filters.brands.length === 0 || filters.brands.some((b) => product.brand?.toLowerCase() === b.toLowerCase())
       const matchPrice =
         filters.maxPrice === 'all' ||
         (filters.maxPrice === '300' && product.price <= 300) ||
@@ -92,7 +128,7 @@ function Menu() {
     })
 
     return result
-  }, [filters, products, sortBy])
+  }, [filters, enrichedProducts, sortBy])
 
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize))
   const safeCurrentPage = Math.min(currentPage, totalPages)
@@ -100,9 +136,6 @@ function Menu() {
     const start = (safeCurrentPage - 1) * pageSize
     return filteredProducts.slice(start, start + pageSize)
   }, [filteredProducts, safeCurrentPage, pageSize])
-
-  const rangeStart = filteredProducts.length > 0 ? (safeCurrentPage - 1) * pageSize + 1 : 0
-  const rangeEnd = Math.min(safeCurrentPage * pageSize, filteredProducts.length)
 
   function handleAddToCart(product, qty = 1) {
     addToCart({
@@ -112,6 +145,7 @@ function Menu() {
       image: product.image_url || '',
       collection: product.category,
       brand: product.brand || '',
+      size: product.sizeLabel || '',
     }, qty)
   }
 
@@ -229,18 +263,18 @@ function Menu() {
                   <button type="button" onClick={() => updateFilter('search', '')} className="hover:text-blue-900 dark:hover:text-blue-100">&times;</button>
                 </span>
               )}
-              {filters.category !== 'all' && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-medium px-2.5 py-1">
-                  {filters.category}
-                  <button type="button" onClick={() => updateFilter('category', 'all')} className="hover:text-blue-900 dark:hover:text-blue-100">&times;</button>
+              {filters.categories.map((cat) => (
+                <span key={cat} className="inline-flex items-center gap-1 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-medium px-2.5 py-1">
+                  {cat}
+                  <button type="button" onClick={() => toggleCategory(cat)} className="hover:text-blue-900 dark:hover:text-blue-100">&times;</button>
                 </span>
-              )}
-              {filters.brand !== 'all' && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-medium px-2.5 py-1">
-                  {filters.brand}
-                  <button type="button" onClick={() => updateFilter('brand', 'all')} className="hover:text-blue-900 dark:hover:text-blue-100">&times;</button>
+              ))}
+              {filters.brands.map((b) => (
+                <span key={b} className="inline-flex items-center gap-1 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-medium px-2.5 py-1">
+                  {b}
+                  <button type="button" onClick={() => toggleBrand(b)} className="hover:text-blue-900 dark:hover:text-blue-100">&times;</button>
                 </span>
-              )}
+              ))}
               {filters.maxPrice !== 'all' && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-medium px-2.5 py-1">
                   Under PHP {filters.maxPrice}
@@ -268,8 +302,16 @@ function Menu() {
                   key={product.prod_id}
                   role="button"
                   tabIndex={0}
-                  onClick={() => setActiveProduct(product)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveProduct(product) }}
+                  onClick={() => {
+                    setActiveProduct(product)
+                    setActiveSizeVariants(product.sizeVariants || [])
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      setActiveProduct(product)
+                      setActiveSizeVariants(product.sizeVariants || [])
+                    }
+                  }}
                   className={`group rounded-xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm hover:shadow-md transition cursor-pointer ${
                     viewMode === 'list' ? 'flex items-center gap-4 p-3' : 'overflow-hidden'
                   }`}
@@ -393,30 +435,58 @@ function Menu() {
                 </div>
               </div>
 
-              {/* category */}
+              {/* category checkboxes */}
               <div>
                 <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">Category</label>
-                <select
-                  value={filters.category}
-                  onChange={(e) => updateFilter('category', e.target.value)}
-                  className="h-10 w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 px-3 text-sm text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-[#0b2e59]/20 focus:border-[#0b2e59]/40 transition"
-                >
-                  <option value="all">All Categories</option>
-                  {categories.map((item) => (<option key={item} value={item}>{item}</option>))}
-                </select>
+                <div className="max-h-40 overflow-y-auto space-y-1 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 p-2">
+                  <label className="flex items-center gap-2 cursor-pointer px-1 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-600 transition">
+                    <input
+                      type="checkbox"
+                      checked={filters.categories.length === 0}
+                      onChange={() => updateFilter('categories', [])}
+                      className="h-4 w-4 rounded border-gray-300 text-[#0b2e59] focus:ring-[#0b2e59]"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-200">All</span>
+                  </label>
+                  {categories.map((cat) => (
+                    <label key={cat} className="flex items-center gap-2 cursor-pointer px-1 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-600 transition">
+                      <input
+                        type="checkbox"
+                        checked={filters.categories.includes(cat)}
+                        onChange={() => toggleCategory(cat)}
+                        className="h-4 w-4 rounded border-gray-300 text-[#0b2e59] focus:ring-[#0b2e59]"
+                      />
+                      <span className="text-sm text-gray-700 dark:text-gray-200 truncate">{cat}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
 
-              {/* brand */}
+              {/* brand checkboxes */}
               <div>
                 <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">Brand</label>
-                <select
-                  value={filters.brand}
-                  onChange={(e) => updateFilter('brand', e.target.value)}
-                  className="h-10 w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 px-3 text-sm text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-[#0b2e59]/20 focus:border-[#0b2e59]/40 transition"
-                >
-                  <option value="all">All Brands</option>
-                  {brands.map((item) => (<option key={item} value={item}>{item}</option>))}
-                </select>
+                <div className="max-h-40 overflow-y-auto space-y-1 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 p-2">
+                  <label className="flex items-center gap-2 cursor-pointer px-1 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-600 transition">
+                    <input
+                      type="checkbox"
+                      checked={filters.brands.length === 0}
+                      onChange={() => updateFilter('brands', [])}
+                      className="h-4 w-4 rounded border-gray-300 text-[#0b2e59] focus:ring-[#0b2e59]"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-200">All</span>
+                  </label>
+                  {brands.map((b) => (
+                    <label key={b} className="flex items-center gap-2 cursor-pointer px-1 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-600 transition">
+                      <input
+                        type="checkbox"
+                        checked={filters.brands.includes(b)}
+                        onChange={() => toggleBrand(b)}
+                        className="h-4 w-4 rounded border-gray-300 text-[#0b2e59] focus:ring-[#0b2e59]"
+                      />
+                      <span className="text-sm text-gray-700 dark:text-gray-200 truncate">{b}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
 
               {/* price */}
@@ -440,8 +510,9 @@ function Menu() {
 
       <ProductQuickViewDialog
         product={activeProduct}
+        sizeVariants={activeSizeVariants}
         isOpen={Boolean(activeProduct)}
-        onClose={() => setActiveProduct(null)}
+        onClose={() => { setActiveProduct(null); setActiveSizeVariants([]) }}
         onAddToCart={(product, qty) => handleAddToCart(product, qty)}
         onBuyNow={(product, qty) => handleBuyNow(product, qty)}
       />
