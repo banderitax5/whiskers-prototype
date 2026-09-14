@@ -15,8 +15,8 @@ function NavLinks() {
   ]
 
   const brands = [
-    { key: 'royal', image: '/brands/royal.png', label: 'Royal Canin' },
-    { key: 'aozi', image: '/brands/aozi.png', label: 'Aozi' },
+    { key: 'royal', image: '/brands/ROYAL.webp', label: 'Royal Canin' },
+    { key: 'aozi', image: '/brands/AOZI.png', label: 'Aozi' },
     { key: 'vitality', image: '/brands/vitality.png', label: 'Vitality' },
     { key: 'topbreed', image: '/brands/topbreed.png', label: 'Top Breed' },
     { key: 'special', image: '/brands/special.png', label: 'Special' },
@@ -55,7 +55,7 @@ function NavLinks() {
               aria-label={brand.label || 'Brand slot'}
             >
               {brand.image && (
-                <img src={brand.image} alt={brand.label} className="max-h-full max-w-full object-contain p-1" />
+                <img src={brand.image} alt={brand.label} className="h-full w-full object-cover p-0" />
               )}
             </Link>
           ))}
