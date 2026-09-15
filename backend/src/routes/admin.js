@@ -460,7 +460,11 @@ router.delete('/payments/:id', async (req, res) => {
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB
+    fieldNestingDepth: 10,
+    fieldArrayIndexLimit: 1000,
+  },
   fileFilter: (_req, file, cb) => {
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
     cb(null, allowed.includes(file.mimetype))
