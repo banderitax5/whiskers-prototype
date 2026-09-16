@@ -194,7 +194,7 @@ const AdminPayments = () => {
   return (
     <AdminPage title="Payment Transactions" subtitle="Every transaction that flowed through the store.">
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4 mb-6">
         <StatCard label="Total Revenue" value={`PHP ${totalRevenue.toLocaleString()}`} />
         <StatCard label="Transactions" value={filteredPayments.length} />
         <StatCard label="Avg. Payment" value={filteredPayments.length ? `PHP ${Math.round(avgPayment).toLocaleString()}` : 'PHP 0'} />
@@ -255,6 +255,23 @@ const AdminPayments = () => {
         page={page}
         pageSize={PAGE_SIZE}
         onPageChange={setPage}
+        renderMobileCard={(p) => (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-mono text-gray-400 dark:text-slate-500">#{String(p.payment_id).slice(0, 8).toUpperCase()}</span>
+              <span className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#162d4a] text-gray-800 dark:text-slate-200">{p.status}</span>
+            </div>
+            <div className="text-sm font-bold text-gray-900 dark:text-slate-100 truncate">{`${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Guest'}</div>
+            <div className="text-xs text-gray-500 dark:text-slate-400">
+              PHP {Number(p.amount || 0).toLocaleString()}
+              <span className="ml-1.5">· {p.method}</span>
+              {p.payment_date && <span className="ml-1.5">· {new Date(p.payment_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span>}
+            </div>
+            <div className="flex items-center gap-2 pt-1.5 mt-1.5 border-t border-gray-50 dark:border-[#1e3a5f]/40">
+              <button type="button" onClick={(e) => { e.stopPropagation(); setDeleteTarget(p); }} className="px-2.5 py-1 rounded text-red-400 text-[10px] font-bold">Delete</button>
+            </div>
+          </div>
+        )}
         empty={
           <EmptyState
             icon={<BsCreditCard />}

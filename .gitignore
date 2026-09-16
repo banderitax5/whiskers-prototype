@@ -31,3 +31,7 @@ dist-ssr
 !.env.example
 !backend/.env.example
 !frontend/.env.example
+
+# OpenCode
+.opencode/
+AGENTS.md

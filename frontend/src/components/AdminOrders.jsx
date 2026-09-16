@@ -254,7 +254,7 @@ const AdminOrders = () => {
   return (
     <AdminPage title="Order Management" subtitle="Track and move orders through their lifecycle.">
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-4 mb-6">
         <StatCard label="Orders in View" value={orders.length} />
         <StatCard label="Total Value" value={`PHP ${totalRevenue.toLocaleString()}`} />
         <StatCard label="Pending" value={counts.Pending || 0} />
@@ -318,6 +318,23 @@ const AdminOrders = () => {
         page={page}
         pageSize={PAGE_SIZE}
         onPageChange={setPage}
+        renderMobileCard={(o) => (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-mono text-gray-400 dark:text-slate-500">#{String(o.order_id).slice(0, 8).toUpperCase()}</span>
+              <StatusPill kind={STATUS_KIND[o.status] || 'neutral'}>{o.status}</StatusPill>
+            </div>
+            <div className="text-sm font-bold text-gray-900 dark:text-slate-100 truncate">{`${o.firstName || ''} ${o.lastName || ''}`.trim() || 'Guest'}</div>
+            <div className="text-xs text-gray-500 dark:text-slate-400">
+              {o.total_amount != null ? `PHP ${Number(o.total_amount).toLocaleString()}` : '-'}
+              {o.created_at && <span className="ml-1.5">· {new Date(o.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span>}
+            </div>
+            <div className="flex items-center gap-2 pt-1.5 mt-1.5 border-t border-gray-50 dark:border-[#1e3a5f]/40">
+              <button type="button" onClick={(e) => { e.stopPropagation(); setViewingOrder(o); }} className="px-2.5 py-1 rounded bg-[#0b2e59] text-white text-[10px] font-bold">View</button>
+              <button type="button" onClick={(e) => { e.stopPropagation(); setDeleteTarget(o); }} className="px-2.5 py-1 rounded text-red-400 text-[10px] font-bold">Delete</button>
+            </div>
+          </div>
+        )}
         empty={
           <EmptyState
             icon={<BsBoxSeam />}

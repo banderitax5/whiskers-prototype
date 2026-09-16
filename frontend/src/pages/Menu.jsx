@@ -48,11 +48,15 @@ function Menu() {
   // sync URL search params → filter state when navigating from nav links
   useEffect(() => {
     const cat = searchParams.get('category')
+    const q = searchParams.get('search')
     if (cat) {
       setFilters((prev) => ({
         ...prev,
         categories: prev.categories.includes(cat) ? prev.categories : [...prev.categories, cat],
       }))
+    }
+    if (q) {
+      setFilters((prev) => ({ ...prev, search: q }))
     }
   }, [searchParams])
 
@@ -294,7 +298,7 @@ function Menu() {
             </div>
           ) : (
             <div className={viewMode === 'grid'
-              ? 'grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3'
+              ? 'grid grid-cols-2 gap-2 sm:gap-4 md:grid-cols-3'
               : 'space-y-3'
             }>
               {paginatedProducts.map((product) => (
@@ -318,40 +322,40 @@ function Menu() {
                 >
                   {/* image */}
                   <div className={`flex items-center justify-center bg-gray-50 dark:bg-gray-700/50 ${
-                    viewMode === 'grid' ? 'h-32 sm:h-36' : 'h-16 w-16 flex-shrink-0 rounded-lg'
+                    viewMode === 'grid' ? 'h-24 sm:h-36' : 'h-16 w-16 flex-shrink-0 rounded-lg'
                   }`}>
                     {product.image_url ? (
-                      <img src={product.image_url} alt={product.prod_name} loading="lazy" className="max-h-full max-w-full object-contain p-2 group-hover:scale-105 transition" />
+                      <img src={product.image_url} alt={product.prod_name} loading="lazy" className="max-h-full max-w-full object-contain p-1.5 sm:p-2 group-hover:scale-105 transition" />
                     ) : (
-                      <svg className="h-10 w-10 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="h-8 w-8 sm:h-10 sm:w-10 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                       </svg>
                     )}
                   </div>
 
                   {/* info */}
-                  <div className={`${viewMode === 'grid' ? 'p-3 sm:p-4' : 'flex-1 min-w-0'}`}>
+                  <div className={`${viewMode === 'grid' ? 'p-2 sm:p-4' : 'flex-1 min-w-0'}`}>
                     {product.brand && (
-                      <span className="inline-block text-[10px] font-semibold text-[#0b2e59] dark:text-blue-400 uppercase tracking-wider mb-1">{product.brand}</span>
+                      <span className="inline-block text-[9px] sm:text-[10px] font-semibold text-[#0b2e59] dark:text-blue-400 uppercase tracking-wider mb-0.5 sm:mb-1">{product.brand}</span>
                     )}
-                    <h3 className={`font-semibold text-gray-800 dark:text-gray-100 leading-tight ${viewMode === 'grid' ? 'text-sm line-clamp-2 min-h-[2.5rem]' : 'text-sm truncate'}`}>
+                    <h3 className={`font-semibold text-gray-800 dark:text-gray-100 leading-tight ${viewMode === 'grid' ? 'text-xs sm:text-sm line-clamp-2 min-h-[2rem] sm:min-h-[2.5rem]' : 'text-sm truncate'}`}>
                       {product.prod_name}
                     </h3>
-                    <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500 truncate">{product.category}</p>
-                    <p className="mt-2 text-base font-bold text-gray-900 dark:text-white">PHP {product.price.toFixed(2)}</p>
+                    <p className="mt-0.5 sm:mt-1 text-[10px] sm:text-[11px] text-gray-400 dark:text-gray-500 truncate">{product.category}</p>
+                    <p className="mt-1 sm:mt-2 text-sm sm:text-base font-bold text-gray-900 dark:text-white">PHP {product.price.toFixed(2)}</p>
 
-                    <div className={`mt-3 flex gap-2 ${viewMode === 'list' ? 'flex-shrink-0' : ''}`}>
+                    <div className={`mt-2 sm:mt-3 flex gap-1.5 sm:gap-2 ${viewMode === 'list' ? 'flex-shrink-0' : ''}`}>
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); handleAddToCart(product) }}
-                        className="flex-1 h-9 rounded-lg bg-yellow-400 px-2 text-xs font-semibold text-gray-900 hover:bg-yellow-500 active:bg-yellow-600 transition"
+                        className="flex-1 h-8 sm:h-9 rounded-lg bg-yellow-400 px-1.5 sm:px-2 text-[10px] sm:text-xs font-semibold text-gray-900 hover:bg-yellow-500 active:bg-yellow-600 transition"
                       >
                         Add to Cart
                       </button>
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); handleBuyNow(product) }}
-                        className="flex-1 h-9 rounded-lg bg-[#0b2e59] px-2 text-xs font-semibold text-white hover:bg-[#15407a] active:bg-[#0a2347] transition"
+                        className="flex-1 h-8 sm:h-9 rounded-lg bg-[#0b2e59] px-1.5 sm:px-2 text-[10px] sm:text-xs font-semibold text-white hover:bg-[#15407a] active:bg-[#0a2347] transition"
                       >
                         Buy Now
                       </button>

@@ -124,7 +124,7 @@ const AdminCustomers = () => {
   return (
     <AdminPage title="Customer Management" subtitle="People who signed up to your store.">
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4 mb-6">
         <StatCard label="Total Registered" value={customers.length} />
         <StatCard label="With Feedback" value={customers.filter((c) => c.feedback).length} />
         <StatCard label="Search Results" value={filtered.length} />
@@ -149,6 +149,25 @@ const AdminCustomers = () => {
         page={page}
         pageSize={PAGE_SIZE}
         onPageChange={setPage}
+        renderMobileCard={(u) => (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-7 h-7 rounded-full bg-yellow-400 text-[#0b2e59] flex items-center justify-center font-black text-[10px] shrink-0">
+                  {(u.firstName?.[0] || u.lastName?.[0] || '?').toUpperCase()}
+                </div>
+                <span className="text-sm font-bold text-gray-900 dark:text-slate-100 truncate">
+                  {`${u.firstName || ''} ${u.lastName || ''}`.trim() || 'Unknown'}
+                </span>
+              </div>
+              <StatusPill kind={ROLE_KIND[u.role] || 'neutral'}>{u.role}</StatusPill>
+            </div>
+            <div className="text-xs text-gray-500 dark:text-slate-400 pl-9">
+              {u.phone || 'No phone'}
+              {u.feedback && <span className="ml-1.5">· Has feedback</span>}
+            </div>
+          </div>
+        )}
         empty={
           <EmptyState
             icon={<BsPeople />}

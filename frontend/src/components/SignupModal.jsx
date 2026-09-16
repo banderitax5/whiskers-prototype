@@ -1,29 +1,23 @@
 import React, { useState } from 'react'
+import { BsEye, BsEyeSlash } from 'react-icons/bs'
 import supabase from '../lib/supabase'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
-// the signup modal - shows up when the user clicks "Sign Up" in the navbar
-// signup now goes through our backend (/api/auth/signup) instead of directly to supabase
-// the backend handles everything: creates the auth user, encrypts the profile data,
-// and rate-limits signups (3 per hour per IP) to prevent spam accounts
 function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // sends all the signup data to our backend in one shot
-  // the backend creates the supabase auth user AND saves the encrypted profile
-  // then returns the session so we can set it locally with supabase.auth.setSession
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
     setLoading(true)
     try {
-      // hit our backend signup endpoint (rate-limited)
       const res = await fetch(`${API_BASE}/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -37,8 +31,6 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Sign up failed')
 
-      // take the session from the backend and set it in the supabase client
-      // this triggers onAuthStateChange in the Navbar so the UI updates
       const { error: setErr } = await supabase.auth.setSession({
         access_token: data.session.access_token,
         refresh_token: data.session.refresh_token,
@@ -59,36 +51,26 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-3 sm:p-4 z-[70]">
       <div className="bg-white dark:bg-gray-800 rounded-2xl overflow-hidden w-full max-w-lg sm:max-w-2xl lg:max-w-4xl flex flex-col md:flex-row shadow-xl animate-in fade-in duration-300">
-        {/* Left side - Image */}
         <div className="md:w-1/2 p-3 hidden md:flex items-center justify-center">
-          <img
-            src="login/cat.png"
-            alt="Happy cat"
-            className="w-full h-full object-cover rounded-lg"
-          />
+          <img src="login/cat.png" alt="Happy cat" className="w-full h-full object-cover rounded-lg" />
         </div>
 
-        {/* Right side - Signup form */}
         <div className="w-full md:w-1/2 p-6 sm:p-8 relative">
-          {/* Close button */}
           <button
             type="button"
             onClick={onClose}
-            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
 
-          {/* Logo */}
           <div className="flex justify-center mb-6 sm:mb-8">
             <img src="logo/logo-whiskers.png" alt="Whiskers" className="h-10 sm:h-12" />
           </div>
 
-          {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
-            {/* error banner - shows rate limit errors, supabase errors, etc. */}
             {error && (
               <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg" role="alert">
                 {error}
@@ -107,7 +89,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                   onChange={(e) => setFirstName(e.target.value)}
                   required
                   autoComplete="given-name"
-                  className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                 />
               </div>
 
@@ -123,7 +105,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                   onChange={(e) => setLastName(e.target.value)}
                   required
                   autoComplete="family-name"
-                  className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                 />
               </div>
             </div>
@@ -140,7 +122,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoComplete="email"
-                className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
               />
             </div>
 
@@ -148,22 +130,33 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
               <label htmlFor="signup-password" className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 PASSWORD
               </label>
-              <input
-                type="password"
-                id="signup-password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoComplete="new-password"
-                className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  id="signup-password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoComplete="new-password"
+                  className="w-full px-3 sm:px-4 py-2 pr-10 rounded-lg border border-gray-500 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  tabIndex={-1}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <BsEyeSlash className="h-4 w-4" /> : <BsEye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[#0039a6] hover:bg-[#0046cc] text-white font-semibold transition-colors mt-4 sm:mt-6 disabled:opacity-70 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[#0039a6] hover:bg-[#0046cc] active:scale-[0.98] text-white font-semibold transition-all duration-200 mt-4 sm:mt-6 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {loading ? 'Creating account…' : 'Sign Up'}
               {!loading && (
@@ -174,15 +167,11 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
             </button>
           </form>
 
-          {/* switches to the login modal - closes this one first then opens login */}
           <p className="mt-6 text-center text-xs sm:text-sm text-gray-600 dark:text-gray-400">
              Already have an account?{' '}
              <button
-               className="text-[#0039a6] hover:text-[#0046cc] font-semibold"
-               onClick={() => {
-                 onClose();
-                 onSwitchToLogin();
-               }}
+               className="text-[#0039a6] hover:text-[#0046cc] font-semibold transition-colors"
+               onClick={() => { onClose(); onSwitchToLogin() }}
              >
                Log in
              </button>

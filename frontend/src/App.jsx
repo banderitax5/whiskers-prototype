@@ -20,6 +20,7 @@ import AdminPayments from './components/AdminPayments.jsx'
 import AdminInventoryManagement from './components/AdminInventoryManagement.jsx'
 import AdminProductManagement from './components/AdminProductManagement.jsx'
 import AdminOrders from './components/AdminOrders.jsx'
+import AdminAuditLogs from './components/AdminAuditLogs.jsx'
 
 import supabase from './lib/supabase'
 import AdminCustomers from './components/AdminCustomers.jsx'
@@ -141,6 +142,7 @@ const router = createBrowserRouter([
       { path: 'customers', element: <AdminCustomers /> },
       { path: 'orders', element: <AdminOrders /> },
       { path: 'payments', element: <AdminPayments /> },
+      { path: 'audit-logs', element: <AdminAuditLogs /> },
     ],
   },
 

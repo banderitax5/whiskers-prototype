@@ -1,27 +1,21 @@
 import React, { useState } from 'react'
+import { BsEye, BsEyeSlash } from 'react-icons/bs'
 import supabase from '../lib/supabase'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
-// the login modal - pops up when the user clicks "Log In" in the navbar
-// login now goes through our backend (/api/auth/login) instead of directly to supabase
-// this way the backend's rate limiter actually protects against brute force attacks
-// (5 attempts per 15 minutes per IP, then you're locked out)
 function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // sends login to our backend which rate-limits it, then forwards to supabase
-  // if it works, we get back a session object and use supabase.auth.setSession
-  // to store it locally - this triggers onAuthStateChange in the Navbar
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
     setLoading(true)
     try {
-      // hit our backend login endpoint (rate-limited)
       const res = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -30,8 +24,6 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Login failed')
 
-      // take the session from the backend response and set it in the supabase client
-      // this makes supabase.auth.getSession() and onAuthStateChange work as expected
       const { error: setErr } = await supabase.auth.setSession({
         access_token: data.session.access_token,
         refresh_token: data.session.refresh_token,
@@ -52,36 +44,26 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-3 sm:p-4 z-[70]">
       <div className="bg-white dark:bg-gray-800 rounded-2xl overflow-hidden w-full max-w-lg sm:max-w-2xl lg:max-w-4xl flex flex-col md:flex-row shadow-xl animate-in fade-in duration-300">
-        {/* Left side - Image */}
         <div className="md:w-1/2 p-3 hidden md:flex items-center justify-center">
-          <img
-            src="login/dog.png"
-            alt="Happy dog"
-            className="w-full h-full object-cover rounded-lg"
-          />
+          <img src="login/dog.png" alt="Happy dog" className="w-full h-full object-cover rounded-lg" />
         </div>
 
-        {/* Right side - Login form */}
         <div className="w-full md:w-1/2 p-6 sm:p-8 relative">
-          {/* Close button */}
           <button
             type="button"
             onClick={onClose}
-            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
 
-          {/* Logo */}
           <div className="flex justify-center mb-6 sm:mb-8">
             <img src="logo/logo-whiskers.png" alt="Whiskers" className="h-10 sm:h-12" />
           </div>
 
-          {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
-            {/* shows up in red if login fails (wrong password, rate limited, etc.) */}
             {error && (
               <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg" role="alert">
                 {error}
@@ -99,7 +81,7 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoComplete="email"
-                className="w-full px-3 sm:px-4 py-2 rounded-lg border bg-white dark:bg-gray-700 border-gray-500 dark:border-gray-600 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 sm:px-4 py-2 rounded-lg border bg-white dark:bg-gray-700 border-gray-500 dark:border-gray-600 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
               />
             </div>
 
@@ -107,22 +89,33 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
               <label htmlFor="login-password" className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 PASSWORD
               </label>
-              <input
-                type="password"
-                id="login-password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-                className="w-full px-3 sm:px-4 py-2 rounded-lg border bg-white dark:bg-gray-700 border-gray-500 dark:border-gray-600 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  id="login-password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                  className="w-full px-3 sm:px-4 py-2 pr-10 rounded-lg border bg-white dark:bg-gray-700 border-gray-500 dark:border-gray-600 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  tabIndex={-1}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <BsEyeSlash className="h-4 w-4" /> : <BsEye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[#0039a6] hover:bg-[#0046cc] text-white font-semibold transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[#0039a6] hover:bg-[#0046cc] active:scale-[0.98] text-white font-semibold transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {loading ? 'Logging in…' : 'Login'}
               {!loading && (
@@ -133,15 +126,11 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
             </button>
           </form>
 
-          {/* switches to the signup modal - closes this one first then opens signup */}
           <p className="mt-6 text-center text-xs sm:text-sm text-gray-600 dark:text-gray-400">
              New customer?{' '}
              <button
-               className="text-[#0039a6] hover:text-[#0046cc] font-semibold"
-               onClick={() => {
-                 onClose();
-                 onSwitchToSignup();
-               }}
+               className="text-[#0039a6] hover:text-[#0046cc] font-semibold transition-colors"
+               onClick={() => { onClose(); onSwitchToSignup() }}
              >
                Create your account
              </button>

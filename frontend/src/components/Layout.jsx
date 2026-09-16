@@ -3,27 +3,35 @@ import Navbar from './Navbar.jsx'
 import NavLinks from './NavLinks.jsx'
 import Footer from './Footer.jsx'
 import FloatingNotification from './Toaster.jsx'
+import ScrollProgress from './ScrollProgress.jsx'
+import BackToTop from './BackToTop.jsx'
+import FloatingContact from './FloatingContact.jsx'
+import CookieBanner from './CookieBanner.jsx'
+import SkipToContent from './SkipToContent.jsx'
 
-
-// the layout wrapper - strip, navbar, nav links row, then main content and footer
-// Outlet is where the actual page content (Home, Profile, etc.) gets rendered
 function Layout() {
-const location = useLocation()
-const showNavLinks = location.pathname !== '/profile' && 
-					 location.pathname !== '/orders' && 
-					 location.pathname !== '/addresses' &&
-					 location.pathname !== '/pets'
-	return (
-		<div className="min-h-screen flex flex-col bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
-			<Navbar />
-			{showNavLinks && <NavLinks />}
-			<FloatingNotification />
-			<main className="flex-1 mx-auto w-full px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
-				<Outlet />
-			</main>
-			<Footer />
-		</div>
-	)
+  const location = useLocation()
+  const showNavLinks = location.pathname !== '/profile' &&
+                       location.pathname !== '/orders' &&
+                       location.pathname !== '/addresses' &&
+                       location.pathname !== '/pets'
+
+  return (
+    <div className="min-h-screen flex flex-col bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
+      <SkipToContent />
+      <ScrollProgress />
+      <Navbar />
+      {showNavLinks && <NavLinks />}
+      <FloatingNotification />
+      <main id="main-content" className="flex-1 px-3 sm:px-4 lg:mx-auto lg:max-w-7xl py-4 sm:py-6">
+        <Outlet />
+      </main>
+      <Footer />
+      <BackToTop />
+      <FloatingContact />
+      <CookieBanner />
+    </div>
+  )
 }
 
 export default Layout

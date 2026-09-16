@@ -101,6 +101,7 @@ router.patch('/customers/:id/role', async (req, res) => {
       .single()
     if (error) throw error
     res.json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'role_change', target: `user:${req.params.id}`, details: `role -> ${role}` })
   } catch (err) {
     console.error('Admin role update error:', err)
     res.status(500).json({ error: 'Server error' })
@@ -142,6 +143,7 @@ router.post('/products', async (req, res) => {
       .single()
     if (error) throw error
     res.status(201).json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'create', target: `product:${data.prod_id}`, details: prod_name })
   } catch (err) {
     console.error('Admin product create error:', err)
     res.status(500).json({ error: 'Server error' })
@@ -167,6 +169,7 @@ router.patch('/products/:id', async (req, res) => {
       .single()
     if (error) throw error
     res.json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'update', target: `product:${req.params.id}`, details: Object.keys(updates).join(', ') })
   } catch (err) {
     console.error('Admin product update error:', err)
     res.status(500).json({ error: 'Server error' })
@@ -192,6 +195,7 @@ router.delete('/products/:id', async (req, res) => {
     const { error } = await supabaseAdmin.from('product').delete().eq('prod_id', req.params.id)
     if (error) throw error
     res.json({ success: true })
+    logAudit({ adminEmail: req.userEmail, action: 'delete', target: `product:${req.params.id}` })
   } catch (err) {
     console.error('Admin product delete error:', err)
     res.status(500).json({ error: 'Server error' })
@@ -347,6 +351,7 @@ router.patch('/orders/:id', async (req, res) => {
       .single()
     if (error) throw error
     res.json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'status', target: `order:${req.params.id}`, details: `status -> ${status}` })
   } catch (err) {
     console.error('Admin order update error:', err)
     res.status(500).json({ error: 'Server error' })
@@ -435,6 +440,7 @@ router.delete('/orders/:id', async (req, res) => {
     const { error } = await supabaseAdmin.from('orders').delete().eq('order_id', orderId)
     if (error) throw error
     res.json({ success: true })
+    logAudit({ adminEmail: req.userEmail, action: 'delete', target: `order:${orderId}` })
   } catch (err) {
     console.error('Admin order delete error:', err)
     res.status(500).json({ error: 'Server error' })
@@ -450,11 +456,46 @@ router.delete('/payments/:id', async (req, res) => {
       .eq('payment_id', req.params.id)
     if (error) throw error
     res.json({ success: true })
+    logAudit({ adminEmail: req.userEmail, action: 'delete', target: `payment:${req.params.id}` })
   } catch (err) {
     console.error('Admin payment delete error:', err)
     res.status(500).json({ error: 'Server error' })
   }
 })
+
+// ── Audit Logs ────────────────────────────────────────────────────────────────
+
+// GET /api/admin/audit-logs
+// query: ?limit=100 (default 100, max 500)
+router.get('/audit-logs', async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500)
+    const { data, error } = await supabaseAdmin
+      .from('audit_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit)
+    if (error) throw error
+    res.json({ items: data || [] })
+  } catch (err) {
+    console.error('Admin audit logs error:', err)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// helper: insert an audit log record (called after admin actions)
+export async function logAudit({ adminEmail, action, target, details }) {
+  try {
+    await supabaseAdmin.from('audit_logs').insert({
+      admin_email: adminEmail || 'unknown',
+      action,
+      target: target || null,
+      details: details || null,
+    })
+  } catch (err) {
+    console.error('Audit log write failed:', err)
+  }
+}
 
 // ── Image Upload / Delete ──────────────────────────────────────────────────────
 

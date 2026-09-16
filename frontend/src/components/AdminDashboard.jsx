@@ -43,7 +43,7 @@ function AdminDashboard() {
         <div className="text-center text-gray-500 dark:text-slate-400 py-10">Loading analytics...</div>
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
             {cards.map((c) => <StatCard key={c.label} label={c.label} value={c.value} />)}
           </div>
 

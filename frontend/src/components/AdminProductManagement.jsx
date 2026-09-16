@@ -22,7 +22,13 @@ const AdminProductManagement = () => {
   const [page, setPage] = useState(1);
   const [isDragging, setIsDragging] = useState(false);
   const [urlInput, setUrlInput] = useState('');
+  const [mobileEditItem, setMobileEditItem] = useState(null);
+  const [mobileForm, setMobileForm] = useState({ prod_name: '', category: '', price: '', stock_quantity: '', image_url: '' });
+  const [mobileUploading, setMobileUploading] = useState(false);
+  const [mobileDragging, setMobileDragging] = useState(false);
+  const [mobileUrlInput, setMobileUrlInput] = useState('');
   const fileInputRef = useRef(null);
+  const mobileFileRef = useRef(null);
   const PAGE_SIZE = 10;
 
   useEffect(() => { fetchProducts(); }, []);
@@ -133,6 +139,62 @@ const AdminProductManagement = () => {
       setSortKey(key);
       setSortDir('asc');
     }
+  }
+
+  function openMobileEdit(item) {
+    setMobileEditItem(item);
+    setMobileForm({
+      prod_name: item.prod_name || '',
+      category: item.category || '',
+      price: String(item.price ?? ''),
+      stock_quantity: String(item.stock_quantity ?? ''),
+      image_url: item.image_url || '',
+    });
+  }
+
+  async function handleMobileUpload(file) {
+    if (!file) return;
+    try {
+      setMobileUploading(true);
+      const fd = new FormData();
+      fd.append('image', file);
+      const token = await getToken(); if (!token) return;
+      const { url } = await apiUploadAuth('/admin/images/upload', fd, token);
+      setMobileForm((f) => ({ ...f, image_url: url }));
+      toast.success('Image uploaded');
+    } catch (error) { toast.error('Upload failed: ' + error.message); }
+    finally { setMobileUploading(false); }
+  }
+
+  async function handleMobileUrlUpload() {
+    if (!mobileUrlInput.trim()) return;
+    try {
+      setMobileUploading(true);
+      const token = await getToken(); if (!token) return;
+      const { url } = await apiUploadAuth('/admin/images/upload', { imageUrl: mobileUrlInput.trim() }, token);
+      setMobileForm((f) => ({ ...f, image_url: url }));
+      setMobileUrlInput('');
+      toast.success('Image fetched');
+    } catch (error) { toast.error('Fetch failed: ' + error.message); }
+    finally { setMobileUploading(false); }
+  }
+
+  async function handleMobileSubmit(e) {
+    e.preventDefault();
+    if (!mobileEditItem) return;
+    try {
+      const token = await getToken(); if (!token) return;
+      await apiPatchAuth(`/admin/products/${mobileEditItem.prod_id}`, {
+        prod_name: mobileForm.prod_name,
+        category: mobileForm.category,
+        price: Number(mobileForm.price),
+        stock_quantity: Number(mobileForm.stock_quantity),
+        image_url: mobileForm.image_url,
+      }, token);
+      toast.success('Product updated');
+      setMobileEditItem(null);
+      await fetchProducts();
+    } catch (error) { toast.error(error.message); }
   }
 
   const categories = useMemo(() => {
@@ -324,6 +386,31 @@ const AdminProductManagement = () => {
         page={page}
         pageSize={PAGE_SIZE}
         onPageChange={setPage}
+        renderMobileCard={(item) => (
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-lg bg-gray-100 dark:bg-[#162d4a] overflow-hidden flex items-center justify-center shrink-0">
+                {item.image_url
+                  ? <img src={item.image_url} alt="" loading="lazy" className="w-full h-full object-cover" />
+                  : <span className="text-[8px] text-gray-400">N/A</span>}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-bold text-gray-900 dark:text-slate-100 truncate">{item.prod_name}</div>
+                <div className="text-xs text-gray-500 dark:text-slate-400">
+                  PHP {Number(item.price || 0).toLocaleString()}
+                  <span className="ml-1.5">· {item.category}</span>
+                </div>
+              </div>
+              <StatusPill kind={item.stock_quantity > 0 ? 'success' : 'danger'}>
+                {item.stock_quantity > 0 ? 'Active' : 'Out'}
+              </StatusPill>
+            </div>
+            <div className="flex items-center gap-1.5 pt-1.5 mt-1 border-t border-gray-50 dark:border-[#1e3a5f]/40">
+              <button onClick={() => openMobileEdit(item)} className="px-2 py-1 rounded bg-yellow-400 text-black text-[10px] font-bold">Edit</button>
+              <button onClick={() => setDeleteTarget(item)} className="px-2 py-1 rounded bg-red-600 text-white text-[10px] font-bold ml-auto">Delete</button>
+            </div>
+          </div>
+        )}
         empty={
           <EmptyState
             icon={<BsBoxSeam />}
@@ -332,6 +419,58 @@ const AdminProductManagement = () => {
           />
         }
       />
+
+      {/* Mobile Edit Dialog */}
+      {mobileEditItem && (
+        <dialog className="modal modal-open">
+          <div className="modal-box max-w-md bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] p-0 gap-0">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#1e3a5f]">
+              <h3 className="font-bold text-gray-900 dark:text-slate-100 text-sm">Edit Product</h3>
+              <button onClick={() => setMobileEditItem(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 text-lg leading-none">&times;</button>
+            </div>
+            <form onSubmit={handleMobileSubmit} className="p-4 space-y-3">
+              <input value={mobileForm.prod_name} onChange={(e) => setMobileForm({...mobileForm, prod_name: e.target.value})} placeholder="Product Name" className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
+              <input value={mobileForm.category} onChange={(e) => setMobileForm({...mobileForm, category: e.target.value})} placeholder="Category" className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
+              <div className="grid grid-cols-2 gap-3">
+                <input value={mobileForm.price} onChange={(e) => setMobileForm({...mobileForm, price: e.target.value})} type="number" placeholder="Price" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
+                <input value={mobileForm.stock_quantity} onChange={(e) => setMobileForm({...mobileForm, stock_quantity: e.target.value})} type="number" placeholder="Stock" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
+              </div>
+              <div
+                onClick={() => mobileFileRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); setMobileDragging(true); }}
+                onDragLeave={() => setMobileDragging(false)}
+                onDrop={(e) => { e.preventDefault(); setMobileDragging(false); if (e.dataTransfer.files[0]) handleMobileUpload(e.dataTransfer.files[0]); }}
+                className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed cursor-pointer transition ${
+                  mobileDragging
+                    ? 'border-[#facc15] bg-[#facc15]/10 text-[#0b2e59] dark:text-yellow-200'
+                    : 'border-gray-300 dark:border-[#1e3a5f] bg-gray-50 dark:bg-[#162d4a] text-gray-500 dark:text-slate-400 hover:border-[#0b2e59]'
+                }`}
+              >
+                {mobileUploading ? (
+                  <span className="inline-block w-4 h-4 border-2 border-[#0b2e59] border-t-transparent rounded-full animate-spin" />
+                ) : <BsUpload />}
+                <span className="text-xs">{mobileUploading ? 'Uploading...' : 'Upload image'}</span>
+                <input ref={mobileFileRef} type="file" accept="image/*" onChange={(e) => handleMobileUpload(e.target.files[0])} className="hidden" />
+              </div>
+              <div className="flex gap-2">
+                <input value={mobileUrlInput} onChange={(e) => setMobileUrlInput(e.target.value)} placeholder="Or paste image URL..." className="flex-1 px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
+                <button type="button" onClick={handleMobileUrlUpload} disabled={mobileUploading || !mobileUrlInput.trim()} className="px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border border-gray-200 dark:border-[#1e3a5f] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#162d4a] disabled:opacity-30 disabled:cursor-not-allowed transition">Fetch</button>
+              </div>
+              {mobileForm.image_url && (
+                <div className="flex items-center gap-3">
+                  <img src={mobileForm.image_url} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-gray-200 dark:border-[#1e3a5f]" />
+                  <button type="button" onClick={() => setMobileForm((f) => ({ ...f, image_url: '' }))} className="text-[10px] text-red-500 hover:text-red-600 font-black uppercase tracking-widest">Remove</button>
+                </div>
+              )}
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setMobileEditItem(null)} className="flex-1 px-4 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest border border-gray-200 dark:border-[#1e3a5f] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#162d4a] transition">Cancel</button>
+                <button type="submit" disabled={mobileUploading} className="flex-1 px-4 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest bg-[#0b2e59] text-white hover:bg-[#1a4275] disabled:opacity-50 transition">Save</button>
+              </div>
+            </form>
+          </div>
+          <form method="dialog" className="modal-backdrop"><button onClick={() => setMobileEditItem(null)}>close</button></form>
+        </dialog>
+      )}
 
       <ConfirmDialog
         open={!!deleteTarget}
