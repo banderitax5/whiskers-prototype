@@ -33,7 +33,7 @@ function Layout() {
       <Navbar />
       {showNavLinks && <NavLinks />}
       <FloatingNotification />
-      <main id="main-content" className="flex-1 px-3 sm:px-4 lg:mx-auto lg:max-w-7xl py-4 sm:py-6">
+      <main id="main-content" className="flex-1 px-3 sm:px-4 py-4 sm:py-6">
         <Outlet />
       </main>
       <Footer />

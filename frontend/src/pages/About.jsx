@@ -56,7 +56,7 @@ function FaqItem({ item }) {
 
 function About() {
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 lg:mx-auto lg:max-w-7xl">
       <div className="space-y-3">
         <h1 className="text-xl sm:text-2xl font-bold">About Whiskers</h1>
         <p className="text-sm sm:text-base text-gray-700 dark:text-gray-300 leading-relaxed">

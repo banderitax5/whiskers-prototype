@@ -63,7 +63,7 @@ function Pets() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6">
+    <div className="lg:mx-auto lg:max-w-7xl py-6">
       <header className="mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight dark:text-white">
           My Pets &amp; Food Recommendations

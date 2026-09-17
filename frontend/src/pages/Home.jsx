@@ -75,7 +75,7 @@ function Home() {
 
   if (loading) {
     return (
-      <div className="space-y-6 sm:space-y-8">
+    <div className="space-y-6 sm:space-y-8">
         <section className="pt-2">
           <div className="h-[200px] sm:h-[250px] md:h-[325px] bg-gray-200 dark:bg-gray-800 rounded-xl animate-pulse" />
         </section>
@@ -101,7 +101,7 @@ function Home() {
   }
 
   return (
-    <div className="space-y-6 sm:space-y-8">
+    <div className="space-y-6 sm:space-y-8 lg:mx-auto lg:max-w-7xl">
       <section className="pt-2">
         <div className="relative overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-800 h-[200px] sm:h-[250px] md:h-[325px]">
           {CAROUSEL_SLIDES.map((slide, idx) => (

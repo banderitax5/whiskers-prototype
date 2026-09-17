@@ -4,7 +4,7 @@ import { Link } from "react-router-dom"
 function Footer() {
   return (
     <footer className="bg-gray-100 dark:bg-[#031730] py-8 sm:py-10">
-      <div className="px-4 sm:px-4 lg:mx-auto lg:max-w-7xl">
+      <div className="px-3 sm:px-4 lg:mx-auto lg:max-w-7xl">
         <div className="grid grid-cols-1 gap-8 sm:grid-cols-3">
           <nav>
             <h6 className="mb-3 text-sm font-bold uppercase tracking-wider text-gray-800 dark:text-white">

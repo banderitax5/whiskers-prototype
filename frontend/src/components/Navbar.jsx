@@ -21,6 +21,7 @@ function Navbar() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [theme, setTheme] = useState('light')
   const [isCartPinging, setIsCartPinging] = useState(false)
+  const [mobileSearch, setMobileSearch] = useState('')
   const { cartCount, lastAddedAt, setOpenLoginFn } = useShop()
 
   const getInitial = () => {
@@ -133,10 +134,19 @@ function Navbar() {
     applyTheme(theme === 'dark' ? 'light' : 'dark')
   }
 
+  function handleMobileSearch(e) {
+    e.preventDefault()
+    if (mobileSearch.trim()) {
+      navigate(`/menu?search=${encodeURIComponent(mobileSearch.trim())}`)
+      setMobileSearch('')
+      setMobileMenuOpen(false)
+    }
+  }
+
   return (
     <header className="bg-[#0b2e59] dark:bg-gray-900 shadow-md sticky top-0 z-[9999]">
-      <div className="px-3 sm:px-4 py-2.5 sm:py-3 flex justify-center">
-        <div className="flex items-center gap-2 sm:gap-3 w-full lg:max-w-7xl">
+      <div className="px-3 sm:px-4 py-2.5 sm:py-3 lg:mx-auto lg:max-w-7xl">
+        <div className="flex items-center gap-2 sm:gap-3 w-full">
 
           <Link to="/" className="flex items-center gap-2 shrink-0">
             <img src="logo/logo-whiskers.png" alt="Whiskers" className="h-10 sm:h-12 w-auto" />
@@ -144,70 +154,70 @@ function Navbar() {
 
           <SearchSuggestions className="flex-1 hidden md:flex" />
 
-          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+          {/* Mobile search */}
+          <form onSubmit={handleMobileSearch} className="flex-1 md:hidden">
+            <div className="relative">
+              <input
+                type="text"
+                value={mobileSearch}
+                onChange={(e) => setMobileSearch(e.target.value)}
+                placeholder="Search products..."
+                className="w-full h-9 rounded-full bg-white/10 pl-9 pr-3 text-sm text-white placeholder-white/50 outline-none focus:bg-white/20 transition"
+              />
+              <BsSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-white/50 w-3.5 h-3.5" />
+            </div>
+          </form>
 
-          <button
-            type="button"
-            onClick={() => { const q = prompt('Search products:'); if (q?.trim()) navigate(`/menu?search=${encodeURIComponent(q.trim())}`) }}
-            className="md:hidden w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 dark:bg-white/5 dark:hover:bg-white/10 transition"
-            aria-label="Search"
-          >
-            <BsSearch className="text-white w-4 h-4 sm:w-5 sm:h-5" />
-          </button>
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
 
           <NavLink to="/chat" className="hidden sm:flex w-9 h-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 dark:bg-white/5 dark:hover:bg-white/10 transition">
             <BsMessenger className="text-white w-5 h-5" />
           </NavLink>
 
-          {user ? (
-            <div className="relative" ref={dropdownRef}>
-              <button
-                onClick={() => setIsDropdownOpen((v) => !v)}
-                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-yellow-400 text-[#0b2e59] dark:bg-yellow-300 dark:text-gray-900 flex items-center justify-center font-bold hover:ring-2 hover:ring-yellow-300/50 transition-all duration-200"
-              >
-                {getInitial()}
-              </button>
+          {/* Desktop: user dropdown */}
+          <div className="hidden sm:block relative" ref={dropdownRef}>
+            {user ? (
+              <>
+                <button
+                  onClick={() => setIsDropdownOpen((v) => !v)}
+                  className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-yellow-400 text-[#0b2e59] dark:bg-yellow-300 dark:text-gray-900 flex items-center justify-center font-bold hover:ring-2 hover:ring-yellow-300/50 transition-all duration-200"
+                >
+                  {getInitial()}
+                </button>
+                {isDropdownOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-44 bg-white dark:bg-gray-800 rounded-xl shadow-xl border dark:border-gray-700 z-[9999] overflow-hidden">
+                    <Link to="/profile" className="block px-4 py-2.5 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">Profile</Link>
+                    <Link to="/orders" className="block px-4 py-2.5 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">Orders</Link>
+                    <Link to="/pets" className="block px-4 py-2.5 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">Pets</Link>
+                    {isAdmin && (
+                      <Link to="/admin" className="block px-4 py-2.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">Admin Panel</Link>
+                    )}
+                    <button onClick={handleLogout} className="w-full text-left px-4 py-2.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">Logout</button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => setIsDropdownOpen((v) => !v)}
+                  className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-yellow-400 text-[#0b2e59] dark:bg-yellow-300 dark:text-gray-900 flex items-center justify-center font-bold hover:ring-2 hover:ring-yellow-300/50 transition-all duration-200"
+                >
+                  <FaUser className="text-white w-5 h-5" />
+                </button>
+                {isDropdownOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-44 bg-white dark:bg-gray-800 rounded-xl shadow-xl border dark:border-gray-700 z-[9999] overflow-hidden">
+                    <button onClick={() => { setIsLoginOpen(true); setIsDropdownOpen(false) }} className="w-full text-left px-4 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 transition-colors">Sign In</button>
+                    <button onClick={() => { setIsSignupOpen(true); setIsDropdownOpen(false) }} className="w-full text-left px-4 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 transition-colors">Sign Up</button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
 
-              {isDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-44 bg-white dark:bg-gray-800 rounded-xl shadow-xl border dark:border-gray-700 z-[9999] overflow-hidden">
-                  <Link to="/profile" className="block px-4 py-2.5 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">Profile</Link>
-                  <Link to="/orders" className="block px-4 py-2.5 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">Orders</Link>
-                  <Link to="/pets" className="block px-4 py-2.5 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">Pets</Link>
-                  {isAdmin && (
-                    <Link to="/admin" className="block px-4 py-2.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">
-                      Admin Panel
-                    </Link>
-                  )}
-                  <button
-                    onClick={handleLogout}
-                    className="w-full text-left px-4 py-2.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
-                  >
-                    Logout
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="relative" ref={dropdownRef}>
-              <button
-                onClick={() => setIsDropdownOpen((v) => !v)}
-                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-yellow-400 text-[#0b2e59] dark:bg-yellow-300 dark:text-gray-900 flex items-center justify-center font-bold hover:ring-2 hover:ring-yellow-300/50 transition-all duration-200"
-              >
-                <FaUser className="text-white w-5 h-5" />
-              </button>
-
-              {isDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-44 bg-white dark:bg-gray-800 rounded-xl shadow-xl border dark:border-gray-700 z-[9999] overflow-hidden">
-                  <button onClick={() => { setIsLoginOpen(true); setIsDropdownOpen(false) }} className="w-full text-left px-4 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 transition-colors">Sign In</button>
-                  <button onClick={() => { setIsSignupOpen(true); setIsDropdownOpen(false) }} className="w-full text-left px-4 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 transition-colors">Sign Up</button>
-                </div>
-              )}
-            </div>
-          )}
-
+          {/* Desktop: cart */}
           <NavLink
             to="/cart"
-            className="relative w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 dark:bg-white/5 dark:hover:bg-white/10 transition"
+            className="hidden sm:flex relative w-9 h-9 sm:w-10 sm:h-10 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 dark:bg-white/5 dark:hover:bg-white/10 transition"
           >
             <BsCartFill className="text-white w-4 h-4 sm:w-5 sm:h-5" />
             {cartCount > 0 && (
@@ -222,10 +232,11 @@ function Navbar() {
             )}
           </NavLink>
 
+          {/* Desktop: theme toggle */}
           <button
             type="button"
             onClick={toggleTheme}
-            className={`relative flex h-7 w-14 sm:h-8 sm:w-16 items-center rounded-full p-1 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-yellow-300/70 ${theme === 'dark' ? 'bg-slate-600' : 'bg-yellow-300'}`}
+            className={`hidden sm:flex relative h-7 w-14 sm:h-8 sm:w-16 items-center rounded-full p-1 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-yellow-300/70 ${theme === 'dark' ? 'bg-slate-600' : 'bg-yellow-300'}`}
           >
             <span
               className={`flex h-5 w-5 sm:h-6 sm:w-6 items-center justify-center rounded-full bg-white shadow-md transition-transform duration-300 ${theme === 'dark' ? 'translate-x-7 sm:translate-x-8' : 'translate-x-0'}`}
@@ -237,6 +248,7 @@ function Navbar() {
             </span>
           </button>
 
+          {/* Mobile: hamburger */}
           <button
             type="button"
             onClick={() => setMobileMenuOpen((v) => !v)}
@@ -249,16 +261,32 @@ function Navbar() {
         </div>
       </div>
 
+      {/* Mobile menu */}
       {mobileMenuOpen && (
         <div className="sm:hidden border-t border-white/10 bg-[#0b2e59] dark:bg-gray-900 px-4 py-3 space-y-1">
-          <Link to="/menu" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium">Menu</Link>
-          <Link to="/menu?category=Cats" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium">Cats</Link>
-          <Link to="/menu?category=Dogs" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium">Dogs</Link>
-          <Link to="/menu?category=Fish" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium">Fish</Link>
-          <Link to="/menu?category=Treats" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium">Treats</Link>
-          <Link to="/menu?category=Wet Food" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium">Wet Food</Link>
-          <Link to="/pets" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium">Pet Recommendation</Link>
-          <Link to="/about" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium">About</Link>
+          <NavLink to="/cart" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2 px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium">
+            <BsCartFill className="w-4 h-4" />
+            Cart {cartCount > 0 && <span className="text-yellow-300">({cartCount})</span>}
+          </NavLink>
+
+          <div className="flex items-center gap-2 px-3 py-2 text-white/90 text-sm font-medium">
+            <span>Theme</span>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className={`relative flex h-6 w-11 items-center rounded-full p-0.5 transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-600' : 'bg-yellow-300'}`}
+            >
+              <span
+                className={`flex h-5 w-5 items-center justify-center rounded-full bg-white shadow-md transition-transform duration-300 ${theme === 'dark' ? 'translate-x-5' : 'translate-x-0'}`}
+              >
+                {theme === 'dark'
+                  ? <BsMoonStarsFill className="h-2.5 w-2.5 text-slate-700" />
+                  : <BsSunFill className="h-2.5 w-2.5 text-yellow-500" />
+                }
+              </span>
+            </button>
+          </div>
+
           {!user && (
             <div className="pt-2 border-t border-white/10 space-y-1">
               <button onClick={() => { setIsLoginOpen(true); setMobileMenuOpen(false) }} className="w-full text-left px-3 py-2 rounded-lg text-yellow-300 hover:bg-white/10 transition text-sm font-medium">Sign In</button>
@@ -269,6 +297,9 @@ function Navbar() {
             <div className="pt-2 border-t border-white/10 space-y-1">
               <Link to="/profile" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium">Profile</Link>
               <Link to="/orders" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium">Orders</Link>
+              {isAdmin && (
+                <Link to="/admin" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 rounded-lg text-red-400 hover:bg-white/10 transition text-sm font-medium">Admin Panel</Link>
+              )}
               <button onClick={handleLogout} className="w-full text-left px-3 py-2 rounded-lg text-red-400 hover:bg-white/10 transition text-sm font-medium">Logout</button>
             </div>
           )}

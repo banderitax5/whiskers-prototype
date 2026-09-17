@@ -37,7 +37,7 @@ function Cart() {
   const btnBase = "h-9 rounded-lg px-3 text-xs font-semibold transition-colors"
 
   return (
-    <div className="w-full py-5 sm:py-8">
+    <div className="w-full lg:mx-auto lg:max-w-7xl py-5 sm:py-8">
       <div className="mb-5 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl sm:text-3xl font-bold text-[#0b2e59] dark:text-white">Your Cart</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400">{cartItems.length} item type{cartItems.length !== 1 && 's'} in cart</p>

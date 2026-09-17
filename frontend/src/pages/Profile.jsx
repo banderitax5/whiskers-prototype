@@ -137,8 +137,19 @@ function Profile() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center py-12 text-gray-600 dark:text-gray-300">
-        Loading profile...
+      <div className="max-w-2xl mx-auto py-4 sm:py-6 px-3 sm:px-4 bg-white dark:bg-gray-900 min-h-screen">
+        <div className="mb-5 sm:mb-8">
+          <div className="h-8 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+        </div>
+        <div className="space-y-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="space-y-1.5">
+              <div className="h-4 w-20 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+              <div className="h-10 w-full bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse" />
+            </div>
+          ))}
+          <div className="h-10 w-32 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse mt-4" />
+        </div>
       </div>
     )
   }
@@ -150,7 +161,7 @@ function Profile() {
     'block text-sm font-medium text-gray-600 mb-1.5 dark:text-gray-300'
 
   return (
-    <div className="max-w-2xl mx-auto py-4 sm:py-6 px-3 sm:px-4 bg-white dark:bg-gray-900 min-h-screen">
+    <div className="max-w-2xl mx-auto py-4 sm:py-6 bg-white dark:bg-gray-900 min-h-screen">
 
       <div className="mb-5 sm:mb-8">
         <h1 className="text-xl sm:text-3xl font-bold text-[#0b2e59] dark:text-yellow-300 tracking-tight">

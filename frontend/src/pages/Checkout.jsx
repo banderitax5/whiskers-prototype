@@ -115,7 +115,7 @@ function Checkout() {
   const inputClass = "h-10 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 text-sm dark:text-gray-100"
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-5 sm:py-6">
+    <div className="lg:mx-auto lg:max-w-7xl py-5 sm:py-6">
       <h1 className="mb-4 text-2xl font-bold text-[#0b2e59] dark:text-white">Order Delivery Details</h1>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
