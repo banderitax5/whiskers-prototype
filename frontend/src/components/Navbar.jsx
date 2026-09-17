@@ -1,10 +1,11 @@
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
-import { BsCartFill, BsMessenger, BsSunFill, BsMoonStarsFill, BsSearch, BsList, BsXLg } from 'react-icons/bs'
+import { BsCartFill, BsMessenger, BsSunFill, BsMoonStarsFill, BsList, BsXLg } from 'react-icons/bs'
 import { FaUser } from "react-icons/fa";
 import LoginModal from './LoginModal'
 import SignupModal from './SignupModal'
 import SearchSuggestions from './SearchSuggestions'
+import MobileSearch from './MobileSearch'
 import supabase from '../lib/supabase'
 import { useShop } from '../context/ShopContext.jsx'
 
@@ -21,7 +22,6 @@ function Navbar() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [theme, setTheme] = useState('light')
   const [isCartPinging, setIsCartPinging] = useState(false)
-  const [mobileSearch, setMobileSearch] = useState('')
   const { cartCount, lastAddedAt, setOpenLoginFn } = useShop()
 
   const getInitial = () => {
@@ -134,15 +134,6 @@ function Navbar() {
     applyTheme(theme === 'dark' ? 'light' : 'dark')
   }
 
-  function handleMobileSearch(e) {
-    e.preventDefault()
-    if (mobileSearch.trim()) {
-      navigate(`/menu?search=${encodeURIComponent(mobileSearch.trim())}`)
-      setMobileSearch('')
-      setMobileMenuOpen(false)
-    }
-  }
-
   return (
     <header className="bg-[#0b2e59] dark:bg-gray-900 shadow-md sticky top-0 z-[9999]">
       <div className="px-3 sm:px-4 py-2.5 sm:py-3 lg:mx-auto lg:max-w-7xl">
@@ -152,21 +143,8 @@ function Navbar() {
             <img src="logo/logo-whiskers.png" alt="Whiskers" className="h-10 sm:h-12 w-auto" />
           </Link>
 
-          <SearchSuggestions className="flex-1 hidden md:flex" />
-
-          {/* Mobile search */}
-          <form onSubmit={handleMobileSearch} className="flex-1 md:hidden">
-            <div className="relative">
-              <input
-                type="text"
-                value={mobileSearch}
-                onChange={(e) => setMobileSearch(e.target.value)}
-                placeholder="Search products..."
-                className="w-full h-9 rounded-full bg-white/10 pl-9 pr-3 text-sm text-white placeholder-white/50 outline-none focus:bg-white/20 transition"
-              />
-              <BsSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-white/50 w-3.5 h-3.5" />
-            </div>
-          </form>
+          <SearchSuggestions className="flex-1" />
+          <MobileSearch />
 
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
 
