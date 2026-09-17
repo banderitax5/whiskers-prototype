@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { BsEye, BsEyeSlash } from 'react-icons/bs'
 import supabase from '../lib/supabase'
+import { trackEvent } from '../lib/appEvents.js'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -9,11 +10,24 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({})
   const [loading, setLoading] = useState(false)
+
+  function validate() {
+    const errs = {}
+    if (!email.trim()) errs.email = 'Email is required.'
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errs.email = 'Enter a valid email address.'
+    if (!password) errs.password = 'Password is required.'
+    else if (password.length < 6) errs.password = 'Password must be at least 6 characters.'
+    return errs
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
+    const errs = validate()
+    setFieldErrors(errs)
+    if (Object.keys(errs).length > 0) return
     setLoading(true)
     try {
       const res = await fetch(`${API_BASE}/auth/login`, {
@@ -31,6 +45,7 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
       if (setErr) throw setErr
 
       onLoginSuccess?.()
+      trackEvent('login')
       onClose()
     } catch (err) {
       setError(err.message || 'Login failed')
@@ -78,11 +93,12 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
                 id="login-email"
                 placeholder="Enter your email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => { setEmail(e.target.value); setFieldErrors(p => ({ ...p, email: '' })) }}
                 required
                 autoComplete="email"
                 className="w-full px-3 sm:px-4 py-2 rounded-lg border bg-white dark:bg-gray-700 border-gray-500 dark:border-gray-600 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
               />
+              {fieldErrors.email && <p className="text-xs text-red-500 mt-1">{fieldErrors.email}</p>}
             </div>
 
             <div>
@@ -110,6 +126,7 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
                   {showPassword ? <BsEyeSlash className="h-4 w-4" /> : <BsEye className="h-4 w-4" />}
                 </button>
               </div>
+              {fieldErrors.password && <p className="text-xs text-red-500 mt-1">{fieldErrors.password}</p>}
             </div>
 
             <button

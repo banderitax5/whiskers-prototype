@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Navbar from './Navbar.jsx'
 import NavLinks from './NavLinks.jsx'
@@ -8,9 +9,18 @@ import BackToTop from './BackToTop.jsx'
 import FloatingContact from './FloatingContact.jsx'
 import CookieBanner from './CookieBanner.jsx'
 import SkipToContent from './SkipToContent.jsx'
+import { captureUtmParams, trackEvent } from '../lib/appEvents.js'
 
 function Layout() {
   const location = useLocation()
+
+  // capture UTM params once on first load
+  useEffect(() => { captureUtmParams() }, [])
+
+  // track page views on route change
+  useEffect(() => {
+    trackEvent('page_view', { path: location.pathname })
+  }, [location.pathname])
   const showNavLinks = location.pathname !== '/profile' &&
                        location.pathname !== '/orders' &&
                        location.pathname !== '/addresses' &&

@@ -32,16 +32,22 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: 'autoUpdate',
         manifest: {
-          name: 'PetConnect',
-          short_name: 'PetConnect',
+          name: 'Whiskers - Pet Food & Supplies',
+          short_name: 'Whiskers',
+          description: 'Personalized pet food recommendations based on your pet\'s health profile',
           start_url: '/',
           display: 'standalone',
           background_color: '#ffffff',
-          theme_color: '#3b82f6',
+          theme_color: '#0b2e59',
+          categories: ['shopping', 'pets'],
           icons: [
-            { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-            { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+            { src: '/logo/logo-whiskers.png', sizes: '192x192', type: 'image/png' },
+            { src: '/logo/logo-whiskers.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
           ],
+        },
+        workbox: {
+          navigateFallback: '/offline.html',
+          navigateFallbackDenylist: [/^\/api/],
         },
       }),
       {

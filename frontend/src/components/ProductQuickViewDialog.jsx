@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { extractSizeLabel } from '../lib/productUtils.js'
+import { trackEvent } from '../lib/appEvents.js'
 
 // full screen product dialog that pops up when you click on a product card
 // uses createPortal to render directly on document.body so it always covers
@@ -16,6 +17,7 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
     if (isOpen && product) {
       setQty(1)
       setSelectedVariant(product)
+      trackEvent('product_view', { product_id: product.id, name: product.name })
     }
   }, [isOpen, product])
 

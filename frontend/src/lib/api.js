@@ -42,10 +42,3 @@ export async function apiUploadAuth(path, body, token) {
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
   return data
 }
-
-// checks if the backend is running
-export async function getHealth() {
-  return apiGet('/health')
-}
-
-

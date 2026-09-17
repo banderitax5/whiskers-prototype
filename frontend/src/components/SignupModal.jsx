@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { BsEye, BsEyeSlash } from 'react-icons/bs'
 import supabase from '../lib/supabase'
+import { trackEvent } from '../lib/appEvents.js'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -11,11 +12,28 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({})
   const [loading, setLoading] = useState(false)
+
+  function validate() {
+    const errs = {}
+    if (!firstName.trim()) errs.firstName = 'First name is required.'
+    else if (firstName.trim().length < 2) errs.firstName = 'First name must be at least 2 characters.'
+    if (!lastName.trim()) errs.lastName = 'Last name is required.'
+    else if (lastName.trim().length < 2) errs.lastName = 'Last name must be at least 2 characters.'
+    if (!email.trim()) errs.email = 'Email is required.'
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errs.email = 'Enter a valid email address.'
+    if (!password) errs.password = 'Password is required.'
+    else if (password.length < 6) errs.password = 'Password must be at least 6 characters.'
+    return errs
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
+    const errs = validate()
+    setFieldErrors(errs)
+    if (Object.keys(errs).length > 0) return
     setLoading(true)
     try {
       const res = await fetch(`${API_BASE}/auth/signup`, {
@@ -38,6 +56,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
       if (setErr) throw setErr
 
       onSignupSuccess?.()
+      trackEvent('signup')
       onClose()
     } catch (err) {
       setError(err.message || 'Sign up failed')
@@ -86,11 +105,12 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                   id="signup-firstName"
                   placeholder="Enter your first name"
                   value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
+                  onChange={(e) => { setFirstName(e.target.value); setFieldErrors(p => ({ ...p, firstName: '' })) }}
                   required
                   autoComplete="given-name"
                   className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                 />
+                {fieldErrors.firstName && <p className="text-xs text-red-500 mt-1">{fieldErrors.firstName}</p>}
               </div>
 
               <div>
@@ -102,11 +122,12 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                   id="signup-lastName"
                   placeholder="Enter your last name"
                   value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
+                  onChange={(e) => { setLastName(e.target.value); setFieldErrors(p => ({ ...p, lastName: '' })) }}
                   required
                   autoComplete="family-name"
                   className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                 />
+                {fieldErrors.lastName && <p className="text-xs text-red-500 mt-1">{fieldErrors.lastName}</p>}
               </div>
             </div>
 
@@ -119,11 +140,12 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                 id="signup-email"
                 placeholder="Enter your email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => { setEmail(e.target.value); setFieldErrors(p => ({ ...p, email: '' })) }}
                 required
                 autoComplete="email"
                 className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
               />
+              {fieldErrors.email && <p className="text-xs text-red-500 mt-1">{fieldErrors.email}</p>}
             </div>
 
             <div>
@@ -151,6 +173,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                   {showPassword ? <BsEyeSlash className="h-4 w-4" /> : <BsEye className="h-4 w-4" />}
                 </button>
               </div>
+              {fieldErrors.password && <p className="text-xs text-red-500 mt-1">{fieldErrors.password}</p>}
             </div>
 
             <button

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useShop } from '../context/ShopContext.jsx'
+import { trackEvent } from '../lib/appEvents.js'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -35,14 +36,35 @@ function Checkout() {
     paymentMethod: 'gcash',
   })
   const [submitting, setSubmitting] = useState(false)
+  const [fieldErrors, setFieldErrors] = useState({})
 
   function onChange(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }))
+    if (fieldErrors[key]) setFieldErrors((prev) => ({ ...prev, [key]: '' }))
+  }
+
+  function validate() {
+    const errs = {}
+    if (!form.fullName.trim()) errs.fullName = 'Full name is required.'
+    else if (form.fullName.trim().length < 2) errs.fullName = 'Name must be at least 2 characters.'
+    const digits = form.phone.replace(/[^0-9]/g, '')
+    if (!digits) errs.phone = 'Phone number is required.'
+    else if (digits.length < 11) errs.phone = 'Phone must have at least 11 digits.'
+    if (!form.addressLine1.trim()) errs.addressLine1 = 'Address is required.'
+    if (!form.city.trim()) errs.city = 'City is required.'
+    if (!form.province.trim()) errs.province = 'Province is required.'
+    if (!form.postalCode.trim()) errs.postalCode = 'Postal code is required.'
+    else if (!/^[0-9]{4}$/.test(form.postalCode.trim())) errs.postalCode = 'Postal code must be exactly 4 digits.'
+    return errs
   }
 
   async function submitOrder(e) {
     e.preventDefault()
     if (checkoutItems.length === 0 || submitting) return
+
+    const errs = validate()
+    setFieldErrors(errs)
+    if (Object.keys(errs).length > 0) return
 
     const token = session?.access_token
     if (!token) {
@@ -81,6 +103,7 @@ function Checkout() {
       const { order_id } = await res.json()
       clearCart(selectedIds.length > 0 ? selectedIds : null)
       pushNotification('Order placed successfully!')
+      trackEvent('checkout_complete', { order_id, total, items: checkoutItems.length })
       navigate('/orders', { state: { newOrderId: order_id } })
     } catch (err) {
       pushNotification(err.message, 'error')
@@ -99,16 +122,34 @@ function Checkout() {
         <form onSubmit={submitOrder} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shadow-sm">
           <h2 className="mb-3 text-lg font-semibold text-gray-800 dark:text-gray-100">Delivery Information</h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <input required value={form.fullName} onChange={(e) => onChange('fullName', e.target.value)} placeholder="Full Name" className={inputClass} />
-            <input required value={form.phone} onChange={(e) => onChange('phone', e.target.value)} placeholder="Phone Number" className={inputClass} />
+            <div>
+              <input required value={form.fullName} onChange={(e) => onChange('fullName', e.target.value)} placeholder="Full Name" className={inputClass} />
+              {fieldErrors.fullName && <p className="text-xs text-red-500 mt-1">{fieldErrors.fullName}</p>}
+            </div>
+            <div>
+              <input required value={form.phone} onChange={(e) => onChange('phone', e.target.value)} placeholder="Phone Number" className={inputClass} />
+              {fieldErrors.phone && <p className="text-xs text-red-500 mt-1">{fieldErrors.phone}</p>}
+            </div>
           </div>
           <div className="mt-3 space-y-3">
-            <input required value={form.addressLine1} onChange={(e) => onChange('addressLine1', e.target.value)} placeholder="Address Line 1" className={`${inputClass} w-full`} />
+            <div>
+              <input required value={form.addressLine1} onChange={(e) => onChange('addressLine1', e.target.value)} placeholder="Address Line 1" className={`${inputClass} w-full`} />
+              {fieldErrors.addressLine1 && <p className="text-xs text-red-500 mt-1">{fieldErrors.addressLine1}</p>}
+            </div>
             <input value={form.addressLine2} onChange={(e) => onChange('addressLine2', e.target.value)} placeholder="Address Line 2 (optional)" className={`${inputClass} w-full`} />
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <input required value={form.city} onChange={(e) => onChange('city', e.target.value)} placeholder="City" className={inputClass} />
-              <input required value={form.province} onChange={(e) => onChange('province', e.target.value)} placeholder="Province" className={inputClass} />
-              <input required value={form.postalCode} onChange={(e) => onChange('postalCode', e.target.value)} placeholder="Postal Code" className={inputClass} />
+              <div>
+                <input required value={form.city} onChange={(e) => onChange('city', e.target.value)} placeholder="City" className={inputClass} />
+                {fieldErrors.city && <p className="text-xs text-red-500 mt-1">{fieldErrors.city}</p>}
+              </div>
+              <div>
+                <input required value={form.province} onChange={(e) => onChange('province', e.target.value)} placeholder="Province" className={inputClass} />
+                {fieldErrors.province && <p className="text-xs text-red-500 mt-1">{fieldErrors.province}</p>}
+              </div>
+              <div>
+                <input required value={form.postalCode} onChange={(e) => onChange('postalCode', e.target.value)} placeholder="Postal Code" className={inputClass} />
+                {fieldErrors.postalCode && <p className="text-xs text-red-500 mt-1">{fieldErrors.postalCode}</p>}
+              </div>
             </div>
           </div>
 

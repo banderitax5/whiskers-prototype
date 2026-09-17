@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { authMiddleware } from '../middleware/auth.js'
-import { supabaseAdmin } from '../config/supabase.js'
+import { orderLimiter } from '../middleware/rateLimiter.js'
+import logger from '../utils/logger.js'
 
 const router = Router()
 
@@ -8,7 +9,7 @@ router.use(authMiddleware)
 
 // POST /api/orders — create a new order from cart items
 // body: { items, paymentMethod, shippingFee, customerName, phone, address }
-router.post('/', async (req, res) => {
+router.post('/', orderLimiter, async (req, res) => {
   const { items, paymentMethod, shippingFee = 75, customerName, phone, address } = req.body ?? {}
 
   if (!Array.isArray(items) || items.length === 0) {
@@ -19,101 +20,91 @@ router.post('/', async (req, res) => {
   }
 
   try {
-    const totalAmount = items.reduce((sum, i) => sum + Number(i.price) * Number(i.quantity), 0) + shippingFee
-
-    // resolve product IDs — fall back to name lookup if productId is missing
-    const resolvedItems = await Promise.all(items.map(async (i) => {
-      if (i.productId) return i
-      const { data: match } = await supabaseAdmin
-        .from('product')
-        .select('prod_id')
-        .ilike('prod_name', i.name)
-        .limit(1)
-        .maybeSingle()
-      return { ...i, productId: match?.prod_id || null }
-    }))
-
-    const firstProductId = resolvedItems[0]?.productId
-    if (!firstProductId) {
-      return res.status(400).json({ error: 'Could not resolve product IDs. Please re-add items to your cart.' })
+    // fetch actual prices from the DB — never trust client-sent prices
+    const productIds = items.map(i => i.productId).filter(Boolean)
+    if (productIds.length === 0) {
+      return res.status(400).json({ error: 'No valid product IDs provided.' })
     }
 
-    // create the order row (prod_id and orderDate are legacy but required by the table)
-    const { data: order, error: orderErr } = await supabaseAdmin
-      .from('orders')
-      .insert({
-        id: req.userId,
-        prod_id: firstProductId,
-        orderDate: new Date().toISOString(),
-        status: 'Pending',
-        total_amount: totalAmount,
-        customer_name: customerName || '',
-        phone: phone || '',
-        address: address || '',
-      })
-      .select('order_id')
-      .single()
-    if (orderErr) {
-      console.error('Supabase orders insert error:', JSON.stringify(orderErr))
-      throw orderErr
-    }
+    const { data: dbProducts, error: prodErr } = await req.db
+      .from('product')
+      .select('prod_id, price')
+      .in('prod_id', productIds)
+    if (prodErr) throw prodErr
 
-    // create order_details for each line item (skip items without resolved product IDs)
-    const details = resolvedItems
-      .filter((i) => i.productId)
-      .map((i) => ({
-        order_id: order.order_id,
-        prod_id: i.productId,
-        quantity: Number(i.quantity),
-        subtotal: Number(i.price) * Number(i.quantity),
-      }))
-    if (details.length > 0) {
-      const { error: detErr } = await supabaseAdmin
-        .from('order_details')
-        .insert(details)
-      if (detErr) {
-        console.error('Supabase order_details insert error:', JSON.stringify(detErr))
-        throw detErr
+    const priceMap = new Map((dbProducts || []).map(p => [p.prod_id, Number(p.price)]))
+
+    // validate every item exists and compute the real total
+    let totalAmount = Number(shippingFee) || 0
+    const validatedItems = []
+    for (const item of items) {
+      const dbPrice = priceMap.get(item.productId)
+      if (dbPrice == null) {
+        return res.status(400).json({ error: `Product ${item.productId} not found.` })
       }
+      const qty = Math.max(1, Number(item.quantity) || 1)
+      const subtotal = dbPrice * qty
+      totalAmount += subtotal
+      validatedItems.push({ ...item, productId: item.productId, price: dbPrice, quantity: qty, subtotal })
     }
 
-    // create the payment record
-    const { error: payErr } = await supabaseAdmin
-      .from('payment')
-      .insert({
-        order_id: order.order_id,
+    // insert order + details + payment, clean up on partial failure
+    let orderId = null
+    try {
+      const { data: order, error: orderErr } = await req.db
+        .from('orders')
+        .insert({
+          id: req.userId,
+          prod_id: validatedItems[0].productId,
+          orderDate: new Date().toISOString(),
+          status: 'Pending',
+          total_amount: totalAmount,
+          customer_name: customerName || '',
+          phone: phone || '',
+          address: address || '',
+        })
+        .select('order_id')
+        .single()
+      if (orderErr) throw orderErr
+      orderId = order.order_id
+
+      const details = validatedItems.map(i => ({
+        order_id: orderId,
+        prod_id: i.productId,
+        quantity: i.quantity,
+        subtotal: i.subtotal,
+      }))
+      const { error: detErr } = await req.db.from('order_details').insert(details)
+      if (detErr) throw detErr
+
+      const { error: payErr } = await req.db.from('payment').insert({
+        order_id: orderId,
         amount: totalAmount,
         method: paymentMethod,
       })
-    if (payErr) {
-      console.error('Supabase payment insert error:', JSON.stringify(payErr))
-      throw payErr
+      if (payErr) throw payErr
+    } catch (innerErr) {
+      // partial failure — clean up any rows that were created
+      logger.error({ err: innerErr }, 'Order creation failed, cleaning up')
+      if (orderId) {
+        await req.db.from('payment').delete().eq('order_id', orderId)
+        await req.db.from('order_details').delete().eq('order_id', orderId)
+        await req.db.from('orders').delete().eq('order_id', orderId)
+      }
+      throw innerErr
     }
 
-    // clear the purchased products from the cart
-    const productIds = items.map((i) => i.productId).filter(Boolean)
+    // clear purchased items from the cart
     if (productIds.length > 0) {
-      await supabaseAdmin
+      await req.db
         .from('cart_items')
         .delete()
-        .eq('user_id', req.userId)
         .in('product_id', productIds)
     }
 
-    // also clear any cart items with null product_id that match by name
-    const itemNames = items.map((i) => i.name).filter(Boolean)
-    if (itemNames.length > 0) {
-      await supabaseAdmin
-        .from('cart_items')
-        .delete()
-        .eq('user_id', req.userId)
-        .is('product_id', null)
-        .in('name', itemNames)
-    }
-
-    res.status(201).json({ order_id: order.order_id, status: 'Pending', total_amount: totalAmount })
+    res.status(201).json({ order_id: orderId, status: 'Pending', total_amount: totalAmount })
   } catch (err) {
-    console.error('Order creation error:', err)
+    logger.error({ err }, 'Order creation error')
     res.status(500).json({ error: 'Failed to create order' })
   }
 })
@@ -121,23 +112,22 @@ router.post('/', async (req, res) => {
 // GET /api/orders — return the logged-in user's order history
 router.get('/', async (req, res) => {
   try {
-    const { data: orders, error } = await supabaseAdmin
+    const { data: orders, error } = await req.db
       .from('orders')
       .select('order_id, status, total_amount, created_at, customer_name, phone, address')
-      .eq('id', req.userId)
       .order('created_at', { ascending: false })
     if (error) throw error
 
     const orderIds = (orders || []).map((o) => o.order_id)
 
-    const { data: details, error: detailsErr } = await supabaseAdmin
+    const { data: details, error: detailsErr } = await req.db
       .from('order_details')
       .select('order_id, prod_id, quantity, subtotal')
       .in('order_id', orderIds)
-    if (detailsErr) console.error('order_details fetch error:', detailsErr)
+    if (detailsErr) logger.error({ err: detailsErr }, 'order_details fetch error')
 
     const prodIds = [...new Set((details || []).map(d => d.prod_id).filter(Boolean))]
-    const { data: products } = await supabaseAdmin
+    const { data: products } = await req.db
       .from('product')
       .select('prod_id, prod_name, image_url')
       .in('prod_id', prodIds)
@@ -149,7 +139,7 @@ router.get('/', async (req, res) => {
       detailsMap.get(d.order_id).push(d)
     }
 
-    const { data: payments } = await supabaseAdmin
+    const { data: payments } = await req.db
       .from('payment')
       .select('order_id, amount, method, payment_date')
       .in('order_id', orderIds)
@@ -181,7 +171,7 @@ router.get('/', async (req, res) => {
 
     res.json({ items })
   } catch (err) {
-    console.error('Orders list error:', err)
+    logger.error({ err }, 'Orders list error')
     res.status(500).json({ error: 'Failed to load orders' })
   }
 })

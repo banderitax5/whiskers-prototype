@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { supabaseAuth, supabaseAdmin } from '../config/supabase.js'
 import { encryptText } from '../utils/encryption.js'
 import { loginLimiter, signupLimiter } from '../middleware/rateLimiter.js'
+import logger from '../utils/logger.js'
 
 const router = Router()
 
@@ -18,10 +19,12 @@ router.post('/login', loginLimiter, async (req, res) => {
       email: email.trim(),
       password,
     })
-    if (error) return res.status(401).json({ error: error.message })
+    if (error) {
+      return res.status(401).json({ error: 'Invalid email or password.' })
+    }
     res.json({ session: data.session })
   } catch (err) {
-    console.error('Login error:', err)
+    logger.error({ err }, 'Login error')
     res.status(500).json({ error: 'Server error' })
   }
 })
@@ -44,48 +47,66 @@ router.post('/signup', signupLimiter, async (req, res) => {
         },
       },
     })
-    if (authError) throw authError
-    if (!data.session) {
-      return res.status(400).json({ error: 'Signup failed, no session returned' })
+    if (authError) {
+      // map known Supabase errors to safe messages, hide internals
+      const msg = authError.message
+      if (msg.includes('already registered')) {
+        return res.status(409).json({ error: 'An account with this email already exists.' })
+      }
+      if (msg.includes('Password should')) {
+        return res.status(400).json({ error: 'Password does not meet requirements.' })
+      }
+      return res.status(400).json({ error: 'Signup failed. Please try again.' })
+    }
+    if (!data.session || !data.user) {
+      return res.status(400).json({ error: 'Signup failed. Please try again.' })
     }
 
     const userId = data.user.id
     const userEmail = data.user.email
 
-    // wait a bit for the db trigger to finish creating the profile row
-    await new Promise(r => setTimeout(r, 500))
+    // wait for the db trigger to finish creating the profile row (retry up to 5 times)
+    let profileRow = null
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await new Promise(r => setTimeout(r, 300 * (attempt + 1)))
+      const { data: row } = await supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .eq('id', userId)
+        .maybeSingle()
+      if (row) { profileRow = row; break }
+    }
 
     // update the profile with encrypted info for security
-    const { data: updated } = await supabaseAdmin
-      .from('profiles')
-      .update({
-        email: encryptText(userEmail),
-        first_name: encryptText(firstName?.trim()),
-        last_name: encryptText(lastName?.trim()),
-        role: 'user',
-      })
-      .eq('id', userId)
-      .select()
+    const profileData = {
+      email: encryptText(userEmail),
+      first_name: encryptText(firstName?.trim()),
+      last_name: encryptText(lastName?.trim()),
+      role: 'user',
+    }
 
-    // if update fails we try to upsert instead just to be sure
-    if (!updated || updated.length === 0) {
-      console.log('Profile update returned 0 rows, falling back to upsert')
+    if (profileRow) {
+      const { data: updated } = await supabaseAdmin
+        .from('profiles')
+        .update(profileData)
+        .eq('id', userId)
+        .select()
+      if (!updated || updated.length === 0) {
+        logger.warn({ userId }, 'Profile update returned 0 rows')
+      }
+    } else {
+      // trigger didn't create the row — upsert it directly
+      logger.warn({ userId }, 'Profile row not found after retries, upserting')
       const { error: upsertError } = await supabaseAdmin
         .from('profiles')
-        .upsert({
-          id: userId,
-          email: encryptText(userEmail),
-          first_name: encryptText(firstName?.trim()),
-          last_name: encryptText(lastName?.trim()),
-          role: 'user',
-        }, { onConflict: 'id' })
-      if (upsertError) console.error('Profile upsert failed:', upsertError.message)
+        .upsert({ id: userId, ...profileData }, { onConflict: 'id' })
+      if (upsertError) logger.error({ err: upsertError }, 'Profile upsert failed')
     }
 
     res.status(201).json({ session: data.session })
   } catch (err) {
-    console.error('Signup error:', err)
-    res.status(500).json({ error: err.message || 'Server error' })
+    logger.error({ err }, 'Signup error')
+    res.status(500).json({ error: 'Server error' })
   }
 })
 

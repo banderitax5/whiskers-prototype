@@ -1,29 +1,29 @@
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Suspense, lazy } from 'react'
 import Layout from './components/Layout.jsx'
 
-// USER PAGES
-import Home from './pages/Home.jsx'
-import About from './pages/About.jsx'
-import Pets from './pages/Pets.jsx'
-import Menu from './pages/Menu.jsx'
-import Profile from './pages/Profile.jsx'
-import Cart from './pages/Cart.jsx'
-import Checkout from './pages/Checkout.jsx'
-import UserOrders from './pages/UserOrders.jsx'
-import NotFound from './pages/NotFound.jsx'
+// USER PAGES (lazy loaded — chunks split per page)
+const Home = lazy(() => import('./pages/Home.jsx'))
+const About = lazy(() => import('./pages/About.jsx'))
+const Pets = lazy(() => import('./pages/Pets.jsx'))
+const Menu = lazy(() => import('./pages/Menu.jsx'))
+const Profile = lazy(() => import('./pages/Profile.jsx'))
+const Cart = lazy(() => import('./pages/Cart.jsx'))
+const Checkout = lazy(() => import('./pages/Checkout.jsx'))
+const UserOrders = lazy(() => import('./pages/UserOrders.jsx'))
+const NotFound = lazy(() => import('./pages/NotFound.jsx'))
 
-// ADMIN COMPONENTS
-import AdminLayout from './components/AdminLayout.jsx'
-import AdminDashboard from './components/AdminDashboard.jsx'
-import AdminPayments from './components/AdminPayments.jsx'
-import AdminInventoryManagement from './components/AdminInventoryManagement.jsx'
-import AdminProductManagement from './components/AdminProductManagement.jsx'
-import AdminOrders from './components/AdminOrders.jsx'
-import AdminAuditLogs from './components/AdminAuditLogs.jsx'
+// ADMIN COMPONENTS (lazy loaded — only fetched when admin visits /admin)
+const AdminLayout = lazy(() => import('./components/AdminLayout.jsx'))
+const AdminDashboard = lazy(() => import('./components/AdminDashboard.jsx'))
+const AdminPayments = lazy(() => import('./components/AdminPayments.jsx'))
+const AdminInventoryManagement = lazy(() => import('./components/AdminInventoryManagement.jsx'))
+const AdminProductManagement = lazy(() => import('./components/AdminProductManagement.jsx'))
+const AdminOrders = lazy(() => import('./components/AdminOrders.jsx'))
+const AdminAuditLogs = lazy(() => import('./components/AdminAuditLogs.jsx'))
+const AdminCustomers = lazy(() => import('./components/AdminCustomers.jsx'))
 
 import supabase from './lib/supabase'
-import AdminCustomers from './components/AdminCustomers.jsx'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -150,7 +150,17 @@ const router = createBrowserRouter([
 ])
 
 function App() {
-  return <RouterProvider router={router} />
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-screen">
+          <span className="loading loading-spinner loading-lg"></span>
+        </div>
+      }
+    >
+      <RouterProvider router={router} />
+    </Suspense>
+  )
 }
 
 export default App

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { BsSearch, BsX } from 'react-icons/bs'
 import { apiGet } from '../lib/api'
+import { trackEvent } from '../lib/appEvents.js'
 
 export default function SearchModal({ isOpen, onClose }) {
   const navigate = useNavigate()
@@ -28,6 +29,7 @@ export default function SearchModal({ isOpen, onClose }) {
       try {
         const res = await apiGet(`/products?search=${encodeURIComponent(query.trim())}&pageSize=10`)
         setResults(res.items || [])
+        trackEvent('search', { query: query.trim(), results: (res.items || []).length })
       } catch {
         setResults([])
       } finally {

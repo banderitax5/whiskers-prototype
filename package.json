@@ -4,7 +4,8 @@
   "description": "Root scripts to run frontend, backend, and optional tunnel in one terminal",
   "scripts": {
     "dev": "concurrently -n backend,frontend,tunnel -c blue,green,magenta \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\" \"cloudflared tunnel --url http://localhost:5173\"",
-    "dev:local": "concurrently -n backend,frontend -c blue,green \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\""
+    "dev:local": "concurrently -n backend,frontend -c blue,green \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "doctor": "npx react-doctor@latest"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

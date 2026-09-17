@@ -1,14 +1,28 @@
 import { Router } from 'express'
 import multer from 'multer'
 import sharp from 'sharp'
+import fs from 'fs'
+import path from 'path'
+import os from 'os'
+import { URL } from 'url'
 import { supabaseAdmin } from '../config/supabase.js'
 import { authMiddleware, requireAdmin } from '../middleware/auth.js'
 import { decryptText } from '../utils/encryption.js'
+import logger from '../utils/logger.js'
 
 const router = Router()
 
 // every admin endpoint requires a valid session and the 'admin' role
 router.use(authMiddleware, requireAdmin)
+
+// parses pagination params: ?page=1&pageSize=20
+function parsePagination(query) {
+  const page = Math.max(1, parseInt(query.page) || 1)
+  const pageSize = Math.min(100, Math.max(1, parseInt(query.pageSize) || 20))
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+  return { page, pageSize, from, to }
+}
 
 // shape used for customer rows so the frontend gets plaintext names/phones
 function formatProfile(u) {
@@ -24,54 +38,207 @@ function formatProfile(u) {
 // GET /api/admin/stats - top-line numbers for the dashboard
 router.get('/stats', async (req, res) => {
   try {
-    const [usersHead, productsHead, ordersHead, salesHead, paymentsHead] = await Promise.all([
+    const [usersHead, productsHead, ordersHead, pendingHead, salesData, paymentData] = await Promise.all([
       supabaseAdmin.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'user'),
       supabaseAdmin.from('product').select('*', { count: 'exact', head: true }),
       supabaseAdmin.from('orders').select('*', { count: 'exact', head: true }),
+      supabaseAdmin.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'Pending'),
       supabaseAdmin.from('sales').select('total_amount, profit'),
       supabaseAdmin.from('payment').select('amount'),
     ])
 
-    const totalSales = (salesHead.data || []).reduce((s, r) => s + Number(r.total_amount || 0), 0)
-    const totalProfit = (salesHead.data || []).reduce((s, r) => s + Number(r.profit || 0), 0)
-    const totalRevenue = (paymentsHead.data || []).reduce((s, r) => s + Number(r.amount || 0), 0)
-
-    const { count: pendingOrders } = await supabaseAdmin
-      .from('orders')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'Pending')
+    const totalSales = (salesData.data || []).reduce((s, r) => s + Number(r.total_amount || 0), 0)
+    const totalProfit = (salesData.data || []).reduce((s, r) => s + Number(r.profit || 0), 0)
+    const totalRevenue = (paymentData.data || []).reduce((s, r) => s + Number(r.amount || 0), 0)
 
     res.json({
       totalUsers: usersHead.count ?? 0,
       totalProducts: productsHead.count ?? 0,
       totalOrders: ordersHead.count ?? 0,
-      pendingOrders: pendingOrders ?? 0,
+      pendingOrders: pendingHead.count ?? 0,
       totalSales,
       totalProfit,
       totalRevenue,
     })
   } catch (err) {
-    console.error('Admin stats error:', err)
+    logger.error({ err }, 'Admin stats error')
     res.status(500).json({ error: 'Server error' })
   }
 })
 
-// GET /api/admin/customers - every regular user plus their latest feedback
+// GET /api/admin/analytics - event data for charts
+router.get('/analytics', async (req, res) => {
+  try {
+    const days = Math.min(90, Math.max(1, parseInt(req.query.days) || 30))
+    const since = new Date(Date.now() - days * 86400000).toISOString()
+
+    const { data: events, error } = await supabaseAdmin
+      .from('events')
+      .select('event_type, page, metadata, created_at')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(5000)
+    if (error) throw error
+
+    // traffic by source (utm_source)
+    const sourceCounts = {}
+    for (const e of events || []) {
+      const src = e.metadata?.utm_source || 'direct'
+      sourceCounts[src] = (sourceCounts[src] || 0) + 1
+    }
+
+    // campaign performance (utm_campaign)
+    const campaignCounts = {}
+    for (const e of events || []) {
+      const camp = e.metadata?.utm_campaign || null
+      if (camp) campaignCounts[camp] = (campaignCounts[camp] || 0) + 1
+    }
+
+    // conversion funnel
+    const funnel = { page_view: 0, product_view: 0, add_to_cart: 0, checkout_complete: 0 }
+    for (const e of events || []) {
+      if (funnel[e.event_type] !== undefined) funnel[e.event_type]++
+    }
+
+    // daily page views
+    const dailyViews = {}
+    for (const e of events || []) {
+      if (e.event_type === 'page_view') {
+        const day = e.created_at.slice(0, 10)
+        dailyViews[day] = (dailyViews[day] || 0) + 1
+      }
+    }
+
+    // top searched queries
+    const searchCounts = {}
+    for (const e of events || []) {
+      if (e.event_type === 'search' && e.metadata?.query) {
+        const q = e.metadata.query.toLowerCase()
+        searchCounts[q] = (searchCounts[q] || 0) + 1
+      }
+    }
+    const topSearches = Object.entries(searchCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([query, count]) => ({ query, count }))
+
+    res.json({
+      totalEvents: (events || []).length,
+      sources: Object.entries(sourceCounts).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count })),
+      campaigns: Object.entries(campaignCounts).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count })),
+      funnel,
+      dailyViews: Object.entries(dailyViews).sort((a, b) => a[0].localeCompare(b[0])).map(([date, count]) => ({ date, count })),
+      topSearches,
+    })
+  } catch (err) {
+    logger.error({ err }, 'Admin analytics error')
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// GET /api/admin/sales-analytics - sales data for charts
+router.get('/sales-analytics', async (req, res) => {
+  try {
+    const days = Math.min(90, Math.max(1, parseInt(req.query.days) || 30))
+    const since = new Date(Date.now() - days * 86400000).toISOString()
+
+    const [ordersRes, paymentsRes, detailsRes] = await Promise.all([
+      supabaseAdmin.from('orders')
+        .select('order_id, total_amount, status, created_at')
+        .gte('created_at', since)
+        .order('created_at', { ascending: false }),
+      supabaseAdmin.from('payment')
+        .select('order_id, amount, method, payment_date')
+        .gte('payment_date', since),
+      supabaseAdmin.from('order_details')
+        .select('order_id, prod_id, quantity, subtotal')
+    ])
+
+    const orders = ordersRes.data || []
+    const payments = paymentsRes.data || []
+    const details = detailsRes.data || []
+
+    // daily revenue
+    const dailyRevenue = {}
+    for (const p of payments) {
+      const day = (p.payment_date || '').slice(0, 10)
+      if (day) dailyRevenue[day] = (dailyRevenue[day] || 0) + Number(p.amount || 0)
+    }
+
+    // revenue by payment method
+    const methodRevenue = {}
+    for (const p of payments) {
+      const m = p.method || 'unknown'
+      methodRevenue[m] = (methodRevenue[m] || 0) + Number(p.amount || 0)
+    }
+
+    // top selling products by quantity
+    const prodQty = {}
+    const prodRevenue = {}
+    for (const d of details) {
+      if (!d.prod_id) continue
+      prodQty[d.prod_id] = (prodQty[d.prod_id] || 0) + Number(d.quantity || 0)
+      prodRevenue[d.prod_id] = (prodRevenue[d.prod_id] || 0) + Number(d.subtotal || 0)
+    }
+
+    // resolve product names
+    const topProdIds = Object.entries(prodQty).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([id]) => id)
+    let prodMap = {}
+    if (topProdIds.length > 0) {
+      const { data: prods } = await supabaseAdmin.from('product').select('prod_id, prod_name').in('prod_id', topProdIds)
+      prodMap = Object.fromEntries((prods || []).map(p => [p.prod_id, p.prod_name]))
+    }
+
+    // order status breakdown
+    const statusCounts = {}
+    for (const o of orders) {
+      const s = o.status || 'unknown'
+      statusCounts[s] = (statusCounts[s] || 0) + 1
+    }
+
+    res.json({
+      totalRevenue: payments.reduce((s, p) => s + Number(p.amount || 0), 0),
+      totalOrders: orders.length,
+      dailyRevenue: Object.entries(dailyRevenue)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([date, amount]) => ({ date, amount: Math.round(amount * 100) / 100 })),
+      methodRevenue: Object.entries(methodRevenue)
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, amount]) => ({ name, amount: Math.round(amount * 100) / 100 })),
+      topProducts: topProdIds.map(id => ({
+        name: prodMap[id] || `Product #${id}`,
+        quantity: prodQty[id],
+        revenue: Math.round((prodRevenue[id] || 0) * 100) / 100,
+      })),
+      statusCounts: Object.entries(statusCounts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([status, count]) => ({ status, count })),
+    })
+  } catch (err) {
+    logger.error({ err }, 'Sales analytics error')
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// GET /api/admin/customers - paginated user list with feedback
 router.get('/customers', async (req, res) => {
   try {
-    const { data, error } = await supabaseAdmin
+    const { page, pageSize, from, to } = parsePagination(req.query)
+
+    const { data, error, count } = await supabaseAdmin
       .from('profiles')
-      .select('id, first_name, last_name, phone, role, feedback(comments)')
+      .select('id, first_name, last_name, phone, role, feedback(comments)', { count: 'exact' })
       .order('first_name', { ascending: true })
+      .range(from, to)
     if (error) throw error
 
     const customers = (data || []).map((u) => ({
       ...formatProfile(u),
       feedback: u.feedback?.[0]?.comments || null,
     }))
-    res.json({ items: customers })
+    res.json({ items: customers, page, pageSize, total: count ?? 0 })
   } catch (err) {
-    console.error('Admin customers error:', err)
+    logger.error({ err }, 'Admin customers error')
     res.status(500).json({ error: 'Server error' })
   }
 })
@@ -103,22 +270,25 @@ router.patch('/customers/:id/role', async (req, res) => {
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'role_change', target: `user:${req.params.id}`, details: `role -> ${role}` })
   } catch (err) {
-    console.error('Admin role update error:', err)
+    logger.error({ err }, 'Admin role update error')
     res.status(500).json({ error: 'Server error' })
   }
 })
 
-// GET /api/admin/products
+// GET /api/admin/products - paginated product list
 router.get('/products', async (req, res) => {
   try {
-    const { data, error } = await supabaseAdmin
+    const { page, pageSize, from, to } = parsePagination(req.query)
+
+    const { data, error, count } = await supabaseAdmin
       .from('product')
-      .select('*')
+      .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
+      .range(from, to)
     if (error) throw error
-    res.json({ items: data || [] })
+    res.json({ items: data || [], page, pageSize, total: count ?? 0 })
   } catch (err) {
-    console.error('Admin products list error:', err)
+    logger.error({ err }, 'Admin products list error')
     res.status(500).json({ error: 'Server error' })
   }
 })
@@ -145,7 +315,7 @@ router.post('/products', async (req, res) => {
     res.status(201).json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'create', target: `product:${data.prod_id}`, details: prod_name })
   } catch (err) {
-    console.error('Admin product create error:', err)
+    logger.error({ err }, 'Admin product create error')
     res.status(500).json({ error: 'Server error' })
   }
 })
@@ -171,7 +341,7 @@ router.patch('/products/:id', async (req, res) => {
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'update', target: `product:${req.params.id}`, details: Object.keys(updates).join(', ') })
   } catch (err) {
-    console.error('Admin product update error:', err)
+    logger.error({ err }, 'Admin product update error')
     res.status(500).json({ error: 'Server error' })
   }
 })
@@ -197,35 +367,44 @@ router.delete('/products/:id', async (req, res) => {
     res.json({ success: true })
     logAudit({ adminEmail: req.userEmail, action: 'delete', target: `product:${req.params.id}` })
   } catch (err) {
-    console.error('Admin product delete error:', err)
+    logger.error({ err }, 'Admin product delete error')
     res.status(500).json({ error: 'Server error' })
   }
 })
 
-// GET /api/admin/payments - all payments with the buyer's name and order status
+// GET /api/admin/payments - paginated payments with buyer name and order status
 router.get('/payments', async (req, res) => {
   try {
-    // get all payments
-    const { data: payments, error: payErr } = await supabaseAdmin
+    const { page, pageSize, from, to } = parsePagination(req.query)
+
+    const { data: payments, error: payErr, count } = await supabaseAdmin
       .from('payment')
-      .select('payment_id, amount, method, payment_date, order_id')
+      .select('payment_id, amount, method, payment_date, order_id', { count: 'exact' })
       .order('payment_date', { ascending: false })
+      .range(from, to)
     if (payErr) throw payErr
 
-    // get all orders to look up user_id and status
+    if (!payments || payments.length === 0) {
+      return res.json({ items: [], page, pageSize, total: count ?? 0 })
+    }
+
+    // batch-fetch only the orders and profiles we need for this page
+    const orderIds = payments.map(p => p.order_id)
     const { data: orders } = await supabaseAdmin
       .from('orders')
       .select('order_id, id, status')
+      .in('order_id', orderIds)
 
-    // get all profiles to look up names
+    const userIds = [...new Set((orders || []).map(o => o.id))]
     const { data: profiles } = await supabaseAdmin
       .from('profiles')
       .select('id, first_name, last_name')
+      .in('id', userIds)
 
     const orderMap = new Map((orders || []).map(o => [o.order_id, o]))
     const profileMap = new Map((profiles || []).map(p => [p.id, p]))
 
-    const items = (payments || []).map((p) => {
+    const items = payments.map((p) => {
       const order = orderMap.get(p.order_id)
       const profile = order ? profileMap.get(order.id) : null
       return {
@@ -239,73 +418,66 @@ router.get('/payments', async (req, res) => {
         lastName: decryptText(profile?.last_name),
       }
     })
-    res.json({ items })
+    res.json({ items, page, pageSize, total: count ?? 0 })
   } catch (err) {
-    console.error('Admin payments error:', err)
+    logger.error({ err }, 'Admin payments error')
     res.status(500).json({ error: 'Server error' })
   }
 })
 
-// GET /api/admin/orders
+// GET /api/admin/orders - paginated order list with buyer and line items
 // query: ?status=Pending|Shipped|... to filter
-// returns every order joined with its buyer and line items
 router.get('/orders', async (req, res) => {
   try {
+    const { page, pageSize, from, to } = parsePagination(req.query)
+
     let query = supabaseAdmin
       .from('orders')
-      .select('*')
+      .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
+      .range(from, to)
 
     if (req.query.status) {
       query = query.eq('status', String(req.query.status))
     }
 
-    const { data: orders, error } = await query
+    const { data: orders, error, count } = await query
     if (error) throw error
 
-    // get profiles for the user names
-    const userIds = [...new Set((orders || []).map(o => o.id))]
-    const { data: profiles } = await supabaseAdmin
-      .from('profiles')
-      .select('id, first_name, last_name')
-      .in('id', userIds)
+    if (!orders || orders.length === 0) {
+      return res.json({ items: [], page, pageSize, total: count ?? 0 })
+    }
 
-    const profileMap = new Map((profiles || []).map(p => [p.id, p]))
+    // batch-fetch only the related data for this page
+    const userIds = [...new Set(orders.map(o => o.id))]
+    const orderIds = orders.map(o => o.order_id)
 
-    // get line items for these orders
-    const orderIds = (orders || []).map(o => o.order_id)
-    const { data: details, error: detailsErr } = await supabaseAdmin
-      .from('order_details')
-      .select('order_id, prod_id, quantity, subtotal')
-      .in('order_id', orderIds)
-    if (detailsErr) console.error('order_details fetch error:', detailsErr)
+    const [profilesRes, detailsRes, paymentsRes] = await Promise.all([
+      supabaseAdmin.from('profiles').select('id, first_name, last_name').in('id', userIds),
+      supabaseAdmin.from('order_details').select('order_id, prod_id, quantity, subtotal').in('order_id', orderIds),
+      supabaseAdmin.from('payment').select('order_id, amount, method, payment_date').in('order_id', orderIds),
+    ])
 
-    // get product names separately
-    const prodIds = [...new Set((details || []).map(d => d.prod_id).filter(Boolean))]
-    const { data: products, error: prodErr } = await supabaseAdmin
-      .from('product')
-      .select('prod_id, prod_name')
-      .in('prod_id', prodIds)
-    if (prodErr) console.error('product fetch error:', prodErr)
-    const prodMap = new Map((products || []).map(p => [p.prod_id, p.prod_name]))
+    const profileMap = new Map((profilesRes.data || []).map(p => [p.id, p]))
+
+    const prodIds = [...new Set((detailsRes.data || []).map(d => d.prod_id).filter(Boolean))]
+    const productsRes = prodIds.length > 0
+      ? await supabaseAdmin.from('product').select('prod_id, prod_name').in('prod_id', prodIds)
+      : { data: [] }
+    const prodMap = new Map((productsRes.data || []).map(p => [p.prod_id, p.prod_name]))
 
     const detailsMap = new Map()
-    for (const d of (details || [])) {
+    for (const d of (detailsRes.data || [])) {
       if (!detailsMap.has(d.order_id)) detailsMap.set(d.order_id, [])
       detailsMap.get(d.order_id).push(d)
     }
 
-    // get payment records
-    const { data: payments } = await supabaseAdmin
-      .from('payment')
-      .select('order_id, amount, method, payment_date')
-      .in('order_id', orderIds)
     const paymentMap = new Map()
-    for (const p of (payments || [])) {
+    for (const p of (paymentsRes.data || [])) {
       if (!paymentMap.has(p.order_id)) paymentMap.set(p.order_id, p)
     }
 
-    const items = (orders || []).map((o) => {
+    const items = orders.map((o) => {
       const profile = profileMap.get(o.id)
       const orderItems = detailsMap.get(o.order_id) || []
       return {
@@ -327,9 +499,9 @@ router.get('/orders', async (req, res) => {
         payment: paymentMap.get(o.order_id) || null,
       }
     })
-    res.json({ items })
+    res.json({ items, page, pageSize, total: count ?? 0 })
   } catch (err) {
-    console.error('Admin orders list error:', err)
+    logger.error({ err }, 'Admin orders list error')
     res.status(500).json({ error: 'Server error' })
   }
 })
@@ -353,7 +525,7 @@ router.patch('/orders/:id', async (req, res) => {
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'status', target: `order:${req.params.id}`, details: `status -> ${status}` })
   } catch (err) {
-    console.error('Admin order update error:', err)
+    logger.error({ err }, 'Admin order update error')
     res.status(500).json({ error: 'Server error' })
   }
 })
@@ -370,7 +542,7 @@ router.get('/orders/:id/items', async (req, res) => {
     if (error) throw error
     res.json({ items: data || [] })
   } catch (err) {
-    console.error('Admin order items error:', err)
+    logger.error({ err }, 'Admin order items error')
     res.status(500).json({ error: 'Server error' })
   }
 })
@@ -407,7 +579,7 @@ router.patch('/order-items/:id', async (req, res) => {
     if (error) throw error
     res.json({ item: data })
   } catch (err) {
-    console.error('Admin order item update error:', err)
+    logger.error({ err }, 'Admin order item update error')
     res.status(500).json({ error: 'Server error' })
   }
 })
@@ -422,7 +594,7 @@ router.delete('/order-items/:id', async (req, res) => {
     if (error) throw error
     res.json({ success: true })
   } catch (err) {
-    console.error('Admin order item delete error:', err)
+    logger.error({ err }, 'Admin order item delete error')
     res.status(500).json({ error: 'Server error' })
   }
 })
@@ -442,7 +614,7 @@ router.delete('/orders/:id', async (req, res) => {
     res.json({ success: true })
     logAudit({ adminEmail: req.userEmail, action: 'delete', target: `order:${orderId}` })
   } catch (err) {
-    console.error('Admin order delete error:', err)
+    logger.error({ err }, 'Admin order delete error')
     res.status(500).json({ error: 'Server error' })
   }
 })
@@ -458,7 +630,7 @@ router.delete('/payments/:id', async (req, res) => {
     res.json({ success: true })
     logAudit({ adminEmail: req.userEmail, action: 'delete', target: `payment:${req.params.id}` })
   } catch (err) {
-    console.error('Admin payment delete error:', err)
+    logger.error({ err }, 'Admin payment delete error')
     res.status(500).json({ error: 'Server error' })
   }
 })
@@ -478,7 +650,7 @@ router.get('/audit-logs', async (req, res) => {
     if (error) throw error
     res.json({ items: data || [] })
   } catch (err) {
-    console.error('Admin audit logs error:', err)
+    logger.error({ err }, 'Admin audit logs error')
     res.status(500).json({ error: 'Server error' })
   }
 })
@@ -493,14 +665,23 @@ export async function logAudit({ adminEmail, action, target, details }) {
       details: details || null,
     })
   } catch (err) {
-    console.error('Audit log write failed:', err)
+    logger.error({ err }, 'Audit log write failed')
   }
 }
 
 // ── Image Upload / Delete ──────────────────────────────────────────────────────
 
+const TEMP_DIR = path.join(os.tmpdir(), 'petconnect-uploads')
+fs.mkdirSync(TEMP_DIR, { recursive: true })
+
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, TEMP_DIR),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname) || '.jpg'
+      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`)
+    },
+  }),
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB
     fieldNestingDepth: 10,
@@ -514,20 +695,42 @@ const upload = multer({
 
 const ALLOWED_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' }
 
+// blocks SSRF by rejecting URLs that point to private/internal networks
+function isSafeUrl(urlStr) {
+  try {
+    const parsed = new URL(urlStr)
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false
+    const hostname = parsed.hostname.toLowerCase()
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]') return false
+    if (hostname.endsWith('.local') || hostname.endsWith('.internal')) return false
+    // block private IP ranges
+    if (/^10\./.test(hostname) || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) || /^192\.168\./.test(hostname)) return false
+    // block cloud metadata endpoints
+    if (hostname === '169.254.169.254' || hostname === 'metadata.google.internal') return false
+    return true
+  } catch {
+    return false
+  }
+}
+
 // POST /api/admin/images/upload
 // Accepts multipart file (field: "image") OR JSON { imageUrl }
 router.post('/images/upload', upload.single('image'), async (req, res) => {
+  let tempPath = req.file?.path
   try {
     let fileBuffer
     let ext = 'jpg'
 
     if (req.file) {
-      fileBuffer = await sharp(req.file.buffer)
+      fileBuffer = await sharp(req.file.path)
         .resize({ width: 1200, withoutEnlargement: true })
         .jpeg({ quality: 80 })
         .toBuffer()
     } else if (req.body?.imageUrl) {
-      const resp = await fetch(req.body.imageUrl)
+      if (!isSafeUrl(req.body.imageUrl)) {
+        return res.status(400).json({ error: 'URL is not allowed (private/internal addresses are blocked)' })
+      }
+      const resp = await fetch(req.body.imageUrl, { signal: AbortSignal.timeout(10_000) })
       if (!resp.ok) return res.status(400).json({ error: 'Failed to fetch image from URL' })
 
       const remoteType = resp.headers.get('content-type') || ''
@@ -554,7 +757,7 @@ router.post('/images/upload', upload.single('image'), async (req, res) => {
         allowedMimeTypes: ['image/jpeg', 'image/png', 'image/gif'],
       })
       if (createErr) {
-        console.error('Bucket create error:', createErr)
+        logger.error({ err: createErr }, 'Bucket create error')
         return res.status(500).json({ error: 'Failed to create storage bucket: ' + createErr.message })
       }
     }
@@ -563,15 +766,19 @@ router.post('/images/upload', upload.single('image'), async (req, res) => {
       .from('product-images')
       .upload(fileName, fileBuffer, { contentType: 'image/jpeg' })
     if (uploadError) {
-      console.error('Storage upload error:', uploadError)
+      logger.error({ err: uploadError }, 'Storage upload error')
       return res.status(500).json({ error: 'Storage upload failed: ' + uploadError.message })
     }
 
     const { data } = supabaseAdmin.storage.from('product-images').getPublicUrl(fileName)
     res.status(201).json({ url: data.publicUrl })
   } catch (err) {
-    console.error('Image upload error:', err)
+    logger.error({ err }, 'Image upload error')
     res.status(500).json({ error: 'Failed to upload image: ' + err.message })
+  } finally {
+    if (tempPath) {
+      fs.unlink(tempPath, () => {})
+    }
   }
 })
 
@@ -584,7 +791,7 @@ router.delete('/images/:filename', async (req, res) => {
     if (error) throw error
     res.json({ success: true })
   } catch (err) {
-    console.error('Image delete error:', err)
+    logger.error({ err }, 'Image delete error')
     res.status(500).json({ error: 'Failed to delete image' })
   }
 })
