@@ -7,7 +7,7 @@ function NavLinks() {
     { label: 'Cats', to: '/menu?category=Cats' },
     { label: 'Dogs', to: '/menu?category=Dogs' },
     { label: 'Fish', to: '/menu?category=Fish' },
-    { label: 'Treats', to: '/menu?category=Treats' },
+    { label: 'Dry Food', to: '/menu?category=Dogs - DRY' },
     { label: 'Wet Food', to: '/menu?category=Wet Food' },
     { label: 'Pet Recommendation', to: '/pets' },
   ]

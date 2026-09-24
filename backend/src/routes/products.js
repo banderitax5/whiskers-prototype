@@ -36,7 +36,7 @@ router.get('/', async (req, res) => {
     } = req.query
 
     const pg = Math.max(1, parseInt(page) || 1)
-    const ps = Math.min(100, Math.max(1, parseInt(pageSize) || 50))
+    const ps = Math.min(1000, Math.max(1, parseInt(pageSize) || 50))
     const from = (pg - 1) * ps
     const to = from + ps - 1
 

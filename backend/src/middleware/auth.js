@@ -23,7 +23,7 @@ export async function authMiddleware(req, res, next) {
     { global: { headers: { Authorization: `Bearer ${token}` } } }
   )
 
-  const { data: profile } = await supabaseAdmin
+  const { data: profile } = await req.db
     .from('profiles')
     .select('role')
     .eq('id', user.id)

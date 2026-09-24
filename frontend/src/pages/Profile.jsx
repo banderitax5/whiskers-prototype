@@ -71,7 +71,20 @@ function Profile() {
     if (!profile.province) errors.province = 'Province is required.'
     if (profile.province && !profile.city) errors.city = 'City is required.'
     setFieldErrors(errors)
-    return Object.values(errors).some(Boolean)
+    return errors
+  }
+
+  // ordered list of field names for scroll-to-first-error
+  const FIELD_ORDER = ['firstName', 'lastName', 'phone', 'addressLine1', 'province', 'city', 'postalCode']
+
+  function scrollToFirstError(errors) {
+    const first = FIELD_ORDER.find(k => errors[k])
+    if (!first) return
+    const el = document.querySelector(`[data-field="${first}"]`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      if (typeof el.focus === 'function') el.focus({ preventScroll: true })
+    }
   }
 
   const philippinesData = {
@@ -100,8 +113,11 @@ function Profile() {
     e.preventDefault()
     if (!profile) return
 
-    if (validateAll()) {
+    const errors = validateAll()
+    const hasErrors = Object.values(errors).some(Boolean)
+    if (hasErrors) {
       toast.error('Please fix the errors before saving.')
+      scrollToFirstError(errors)
       return
     }
 
@@ -186,6 +202,7 @@ function Profile() {
               <div>
                 <label className={labelClass}>First Name</label>
                 <input
+                  data-field="firstName"
                   className={`${inputClass} ${fieldErrors.firstName ? 'border-red-500' : ''}`}
                   value={profile?.firstName ?? ''}
                   onChange={(e)=>{
@@ -199,6 +216,7 @@ function Profile() {
               <div>
                 <label className={labelClass}>Last Name</label>
                 <input
+                  data-field="lastName"
                   className={`${inputClass} ${fieldErrors.lastName ? 'border-red-500' : ''}`}
                   value={profile?.lastName ?? ''}
                   onChange={(e)=>{
@@ -223,6 +241,7 @@ function Profile() {
             <label className={labelClass}>Phone</label>
             <input
               type="tel"
+              data-field="phone"
               className={`${inputClass} ${fieldErrors.phone ? 'border-red-500' : ''}`}
               placeholder="e.g. 09XX XXX XXXX"
               maxLength={20}
@@ -246,11 +265,17 @@ function Profile() {
             <div>
               <label className={labelClass}>Address Line 1</label>
               <input
-                className={inputClass}
+                data-field="addressLine1"
+                className={`${inputClass} ${fieldErrors.addressLine1 ? 'border-red-500' : ''}`}
                 placeholder="e.g. 123 Main St, Block 5"
                 value={profile?.addressLine1 ?? ''}
-                onChange={(e)=>setProfile(p=>({...p,addressLine1:e.target.value}))}
+                onChange={(e)=>{
+                  const value = e.target.value
+                  setProfile(p=>({...p,addressLine1:value}))
+                  setFieldErrors(p=>({...p,addressLine1:validateAddress(value)}))
+                }}
               />
+              {fieldErrors.addressLine1 && <p className="text-red-500 text-xs mt-1">{fieldErrors.addressLine1}</p>}
             </div>
 
             <div>
@@ -268,26 +293,38 @@ function Profile() {
               <div>
                 <label className={labelClass}>Province / State</label>
                 <select
-                  className={inputClass}
+                  data-field="province"
+                  className={`${inputClass} ${fieldErrors.province ? 'border-red-500' : ''}`}
                   value={profile?.province ?? ''}
-                  onChange={(e)=>setProfile(p=>({...p,province:e.target.value,city:''}))}
+                  onChange={(e)=>{
+                    const value = e.target.value
+                    setProfile(p=>({...p,province:value,city:''}))
+                    setFieldErrors(p=>({...p,province:value?'':'Province is required.',city:''}))
+                  }}
                 >
                   <option value="">Select Province</option>
                   {Object.keys(philippinesData).map(p=><option key={p}>{p}</option>)}
                 </select>
+                {fieldErrors.province && <p className="text-red-500 text-xs mt-1">{fieldErrors.province}</p>}
               </div>
 
               <div>
                 <label className={labelClass}>City</label>
                 <select
-                  className={inputClass}
+                  data-field="city"
+                  className={`${inputClass} ${fieldErrors.city ? 'border-red-500' : ''}`}
                   value={profile?.city ?? ''}
-                  onChange={(e)=>setProfile(p=>({...p,city:e.target.value}))}
+                  onChange={(e)=>{
+                    const value = e.target.value
+                    setProfile(p=>({...p,city:value}))
+                    setFieldErrors(p=>({...p,city:value?'':'City is required.'}))
+                  }}
                   disabled={!profile?.province}
                 >
                   <option value="">Select City</option>
                   {(philippinesData[profile?.province]||[]).map(c=><option key={c}>{c}</option>)}
                 </select>
+                {fieldErrors.city && <p className="text-red-500 text-xs mt-1">{fieldErrors.city}</p>}
               </div>
             </div>
 
@@ -295,7 +332,8 @@ function Profile() {
             <div>
               <label className={labelClass}>Postal Code</label>
               <input
-                className={inputClass}
+                data-field="postalCode"
+                className={`${inputClass} ${fieldErrors.postalCode ? 'border-red-500' : ''}`}
                 placeholder="e.g. 1101"
                 value={profile?.postalCode ?? ''}
                 onChange={(e)=>{
