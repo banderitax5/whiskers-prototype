@@ -17,6 +17,13 @@ import eventsRoutes from './src/routes/events.js'
 
 const app = express()
 app.disable('x-powered-by')
+
+// set TRUST_PROXY=1 when running behind cloudflared / a reverse proxy so
+// rate limits and logs key on the real client IP instead of the proxy's
+if (process.env.TRUST_PROXY) {
+  app.set('trust proxy', Number(process.env.TRUST_PROXY) || 1)
+}
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -38,7 +45,7 @@ app.use(helmet({
   xFrameOptions: { action: 'sameorigin' },
 }))
 app.use(cors({ origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/] }))
-app.use(express.json())
+app.use(express.json({ limit: '100kb' }))
 
 app.get('/api/me/role', authMiddleware, (req, res) => {
   res.json({ role: req.userRole })
@@ -54,6 +61,28 @@ app.use('/api/events', eventsRoutes)
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', uptime: process.uptime() })
+})
+
+// JSON body that fails to parse arrives here with err.type = 'entity.parse.failed'
+app.use((err, _req, res, next) => {
+  if (err?.type === 'entity.parse.failed' || err instanceof SyntaxError) {
+    return res.status(400).json({ error: 'Invalid JSON body' })
+  }
+  if (err?.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Request body too large' })
+  }
+  next(err)
+})
+
+// anything unmatched is a JSON 404, not Express's HTML page
+app.use((_req, res) => {
+  res.status(404).json({ error: 'Not found' })
+})
+
+// final handler: log once, respond with a generic message — never a stack trace
+app.use((err, _req, res, _next) => {
+  logger.error({ err }, 'Unhandled error')
+  res.status(err.status || 500).json({ error: 'Internal server error' })
 })
 
 const PORT = process.env.PORT || 4141

@@ -3,10 +3,12 @@ services:
     build:
       context: ./backend
     container_name: petconnect-backend
+    environment:
+      NODE_ENV: production
     env_file:
       - ./backend/.env
     ports:
-      - "4141:4141"
+      - "127.0.0.1:4141:4141"
     restart: unless-stopped
 
   frontend:

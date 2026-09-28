@@ -4,6 +4,8 @@ import sharp from 'sharp'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
+import net from 'net'
+import dns from 'dns/promises'
 import { URL } from 'url'
 import { supabaseAdmin } from '../config/supabase.js'
 import { authMiddleware, requireAdmin } from '../middleware/auth.js'
@@ -695,22 +697,57 @@ const upload = multer({
 
 const ALLOWED_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' }
 
-// blocks SSRF by rejecting URLs that point to private/internal networks
-function isSafeUrl(urlStr) {
+// blocks loopback, private, link-local, CGNAT, multicast and IPv6 ULA ranges
+function isPrivateIp(ip) {
+  if (net.isIPv4(ip)) {
+    const [a, b] = ip.split('.').map(Number)
+    if (a === 0 || a === 10 || a === 127) return true
+    if (a === 100 && b >= 64 && b <= 127) return true
+    if (a === 169 && b === 254) return true
+    if (a === 172 && b >= 16 && b <= 31) return true
+    if (a === 192 && (b === 168 || b === 0)) return true
+    if (a === 198 && (b === 18 || b === 19)) return true
+    if (a >= 224) return true
+    return false
+  }
+  if (net.isIPv6(ip)) {
+    const h = ip.toLowerCase()
+    if (h === '::' || h === '::1') return true
+    if (h.startsWith('fc') || h.startsWith('fd')) return true
+    if (/^fe[89ab]/.test(h)) return true
+    if (h.startsWith('::ffff:')) return isPrivateIp(h.slice(7))
+    return false
+  }
+  return true
+}
+
+// blocks SSRF by rejecting URLs that point to private/internal networks —
+// checks the literal hostname AND whatever the domain resolves to, since a
+// public-looking domain can still point at 169.254.169.254
+async function isSafeUrl(urlStr) {
+  let parsed
   try {
-    const parsed = new URL(urlStr)
-    if (!['http:', 'https:'].includes(parsed.protocol)) return false
-    const hostname = parsed.hostname.toLowerCase()
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]') return false
-    if (hostname.endsWith('.local') || hostname.endsWith('.internal')) return false
-    // block private IP ranges
-    if (/^10\./.test(hostname) || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) || /^192\.168\./.test(hostname)) return false
-    // block cloud metadata endpoints
-    if (hostname === '169.254.169.254' || hostname === 'metadata.google.internal') return false
-    return true
+    parsed = new URL(urlStr)
   } catch {
     return false
   }
+  if (!['http:', 'https:'].includes(parsed.protocol)) return false
+
+  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  if (hostname === 'localhost' || hostname.endsWith('.local') || hostname.endsWith('.internal')) return false
+  if (hostname === 'metadata.google.internal') return false
+
+  let addresses
+  if (net.isIP(hostname)) {
+    addresses = [hostname]
+  } else {
+    try {
+      addresses = (await dns.lookup(hostname, { all: true })).map((a) => a.address)
+    } catch {
+      return false
+    }
+  }
+  return addresses.length > 0 && addresses.every((addr) => !isPrivateIp(addr))
 }
 
 // POST /api/admin/images/upload
@@ -727,16 +764,25 @@ router.post('/images/upload', upload.single('image'), async (req, res) => {
         .jpeg({ quality: 80 })
         .toBuffer()
     } else if (req.body?.imageUrl) {
-      if (!isSafeUrl(req.body.imageUrl)) {
+      if (!(await isSafeUrl(req.body.imageUrl))) {
         return res.status(400).json({ error: 'URL is not allowed (private/internal addresses are blocked)' })
       }
-      const resp = await fetch(req.body.imageUrl, { signal: AbortSignal.timeout(10_000) })
+      // manual so a redirect can never bounce us onto an internal address
+      const resp = await fetch(req.body.imageUrl, { redirect: 'manual', signal: AbortSignal.timeout(10_000) })
+      if (resp.status >= 300 && resp.status < 400) {
+        return res.status(400).json({ error: 'Redirects are not allowed' })
+      }
       if (!resp.ok) return res.status(400).json({ error: 'Failed to fetch image from URL' })
 
       const remoteType = resp.headers.get('content-type') || ''
       if (!remoteType.startsWith('image/')) return res.status(400).json({ error: 'URL does not point to an image' })
 
+      const declared = Number(resp.headers.get('content-length') || 0)
+      if (declared > 5 * 1024 * 1024) return res.status(400).json({ error: 'Image exceeds the 5MB limit' })
       const arrayBuf = await resp.arrayBuffer()
+      if (arrayBuf.byteLength > 5 * 1024 * 1024) {
+        return res.status(400).json({ error: 'Image exceeds the 5MB limit' })
+      }
       fileBuffer = await sharp(Buffer.from(arrayBuf))
         .resize({ width: 1200, withoutEnlargement: true })
         .jpeg({ quality: 80 })

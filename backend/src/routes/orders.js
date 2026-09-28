@@ -10,7 +10,7 @@ router.use(authMiddleware)
 // POST /api/orders — create a new order from cart items
 // body: { items, paymentMethod, shippingFee, customerName, phone, address }
 router.post('/', orderLimiter, async (req, res) => {
-  const { items, paymentMethod, shippingFee = 75, customerName, phone, address } = req.body ?? {}
+  const { items, paymentMethod, shippingFee, customerName, phone, address } = req.body ?? {}
 
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'At least one item is required' })
@@ -18,6 +18,11 @@ router.post('/', orderLimiter, async (req, res) => {
   if (!paymentMethod) {
     return res.status(400).json({ error: 'paymentMethod is required' })
   }
+
+  // shipping fee is client-supplied for display — clamp it so a tampered
+  // request can't produce a zero or negative order total
+  const fee = Number(shippingFee)
+  const shipping = Number.isFinite(fee) && fee >= 0 ? Math.min(fee, 1000) : 75
 
   try {
     // fetch actual prices from the DB — never trust client-sent prices
@@ -35,7 +40,7 @@ router.post('/', orderLimiter, async (req, res) => {
     const priceMap = new Map((dbProducts || []).map(p => [p.prod_id, Number(p.price)]))
 
     // validate every item exists and compute the real total
-    let totalAmount = Number(shippingFee) || 0
+    let totalAmount = shipping
     const validatedItems = []
     for (const item of items) {
       const dbPrice = priceMap.get(item.productId)

@@ -30,11 +30,17 @@ export function decryptText(value) {
   if (typeof value !== 'string' || !value.startsWith(ENC_PREFIX)) {
     return value
   }
-  const raw = Buffer.from(value.slice(ENC_PREFIX.length), 'base64')
-  const iv = raw.subarray(0, GCM_IV_LENGTH)
-  const tag = raw.subarray(GCM_IV_LENGTH, GCM_IV_LENGTH + GCM_TAG_LENGTH)
-  const ciphertext = raw.subarray(GCM_IV_LENGTH + GCM_TAG_LENGTH)
-  const decipher = crypto.createDecipheriv('aes-256-gcm', ENCRYPTION_KEY, iv)
-  decipher.setAuthTag(tag)
-  return decipher.update(ciphertext, undefined, 'utf8') + decipher.final('utf8')
+  try {
+    const raw = Buffer.from(value.slice(ENC_PREFIX.length), 'base64')
+    const iv = raw.subarray(0, GCM_IV_LENGTH)
+    const tag = raw.subarray(GCM_IV_LENGTH, GCM_IV_LENGTH + GCM_TAG_LENGTH)
+    const ciphertext = raw.subarray(GCM_IV_LENGTH + GCM_TAG_LENGTH)
+    const decipher = crypto.createDecipheriv('aes-256-gcm', ENCRYPTION_KEY, iv)
+    decipher.setAuthTag(tag)
+    return decipher.update(ciphertext, undefined, 'utf8') + decipher.final('utf8')
+  } catch {
+    // row encrypted under an older key or corrupted — return empty instead of
+    // taking down the whole endpoint (and log nothing: values are PII)
+    return ''
+  }
 }
