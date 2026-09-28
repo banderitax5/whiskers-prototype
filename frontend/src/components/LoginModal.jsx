@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { BsEye, BsEyeSlash } from 'react-icons/bs'
 import supabase from '../lib/supabase'
 import { trackEvent } from '../lib/appEvents.js'
@@ -6,20 +6,64 @@ import { trackEvent } from '../lib/appEvents.js'
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
 function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
+  const [view, setView] = useState('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
   const [loading, setLoading] = useState(false)
+  const [forgotLoading, setForgotLoading] = useState(false)
+  const [forgotError, setForgotError] = useState('')
+  const [forgotSent, setForgotSent] = useState(false)
+
+  useEffect(() => {
+    if (!isOpen) {
+      setView('login')
+      setError('')
+      setForgotError('')
+      setForgotSent(false)
+    }
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return
+    function onKey(e) {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isOpen, onClose])
 
   function validate() {
     const errs = {}
     if (!email.trim()) errs.email = 'Email is required.'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errs.email = 'Enter a valid email address.'
     if (!password) errs.password = 'Password is required.'
-    else if (password.length < 6) errs.password = 'Password must be at least 6 characters.'
     return errs
+  }
+
+  async function handleForgot(e) {
+    e.preventDefault()
+    setForgotError('')
+    if (!email.trim()) {
+      setForgotError('Enter your email address.')
+      return
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setForgotError('Enter a valid email address.')
+      return
+    }
+    setForgotLoading(true)
+    const { error: sendErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/reset`,
+    })
+    setForgotLoading(false)
+    if (sendErr) {
+      setForgotError(sendErr.message || 'Could not send the reset email. Try again in a moment.')
+      return
+    }
+    setForgotSent(true)
   }
 
   async function handleSubmit(e) {
@@ -78,9 +122,70 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
             <img src="logo/logo-whiskers.png" alt="Whiskers" className="h-10 sm:h-12" />
           </div>
 
+          {view === 'forgot' ? (
+            forgotSent ? (
+              <div className="space-y-4">
+                <p className="text-sm text-green-700 bg-green-50 dark:bg-green-900 dark:text-green-200 px-3 py-2 rounded-lg" role="status">
+                  If an account exists for that email, a reset link is on its way. Check your inbox and spam folder. The link expires soon.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setView('login')}
+                  className="w-full px-4 py-3 rounded-lg bg-[#0039a6] hover:bg-[#0046cc] active:scale-[0.98] text-white font-semibold transition-all duration-200"
+                >
+                  Back to login
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleForgot} className="space-y-4 sm:space-y-6">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Reset your password</h2>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                    Enter the email you signed up with and we will send you a link to set a new password.
+                  </p>
+                </div>
+                {forgotError && (
+                  <p className="text-sm text-red-700 bg-red-50 dark:bg-red-900 dark:text-red-200 px-3 py-2 rounded-lg" role="alert">
+                    {forgotError}
+                  </p>
+                )}
+                <div>
+                  <label htmlFor="forgot-email" className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    EMAIL
+                  </label>
+                  <input
+                    type="email"
+                    id="forgot-email"
+                    placeholder="Enter your email"
+                    value={email}
+                    onChange={(e) => { setEmail(e.target.value); setForgotError('') }}
+                    required
+                    autoComplete="email"
+                    className="w-full px-3 sm:px-4 py-2 rounded-lg border bg-white dark:bg-gray-700 border-gray-500 dark:border-gray-600 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={forgotLoading}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-[#0039a6] hover:bg-[#0046cc] active:scale-[0.98] text-white font-semibold transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed"
+                >
+                  {forgotLoading ? 'Sending…' : 'Send reset link'}
+                </button>
+                <p className="text-center text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+                  <button
+                    type="button"
+                    onClick={() => setView('login')}
+                    className="text-[#0039a6] hover:text-[#0046cc] font-semibold transition-colors"
+                  >
+                    Back to login
+                  </button>
+                </p>
+              </form>
+            )
+          ) : (
           <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
             {error && (
-              <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg" role="alert">
+              <p className="text-sm text-red-700 bg-red-50 dark:bg-red-900 dark:text-red-200 px-3 py-2 rounded-lg" role="alert">
                 {error}
               </p>
             )}
@@ -98,7 +203,7 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
                 autoComplete="email"
                 className="w-full px-3 sm:px-4 py-2 rounded-lg border bg-white dark:bg-gray-700 border-gray-500 dark:border-gray-600 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
               />
-              {fieldErrors.email && <p className="text-xs text-red-500 mt-1">{fieldErrors.email}</p>}
+              {fieldErrors.email && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{fieldErrors.email}</p>}
             </div>
 
             <div>
@@ -120,13 +225,22 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                  tabIndex={-1}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? <BsEyeSlash className="h-4 w-4" /> : <BsEye className="h-4 w-4" />}
                 </button>
               </div>
-              {fieldErrors.password && <p className="text-xs text-red-500 mt-1">{fieldErrors.password}</p>}
+              {fieldErrors.password && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{fieldErrors.password}</p>}
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => { setView('forgot'); setError(''); setForgotError('') }}
+                className="text-xs sm:text-sm text-[#0039a6] hover:text-[#0046cc] font-semibold transition-colors"
+              >
+                Forgot password?
+              </button>
             </div>
 
             <button
@@ -142,6 +256,7 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
               )}
             </button>
           </form>
+          )}
 
           <p className="mt-6 text-center text-xs sm:text-sm text-gray-600 dark:text-gray-400">
              New customer?{' '}

@@ -11,6 +11,7 @@ const Profile = lazy(() => import('./pages/Profile.jsx'))
 const Cart = lazy(() => import('./pages/Cart.jsx'))
 const Checkout = lazy(() => import('./pages/Checkout.jsx'))
 const UserOrders = lazy(() => import('./pages/UserOrders.jsx'))
+const ResetPassword = lazy(() => import('./pages/ResetPassword.jsx'))
 const NotFound = lazy(() => import('./pages/NotFound.jsx'))
 
 // ADMIN COMPONENTS (lazy loaded — only fetched when admin visits /admin)
@@ -124,6 +125,7 @@ const router = createBrowserRouter([
           </RequireAuth>
         ),
       },
+      { path: 'reset', element: <ResetPassword /> },
     ],
   },
 

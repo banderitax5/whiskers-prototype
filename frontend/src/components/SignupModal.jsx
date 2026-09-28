@@ -24,7 +24,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
     if (!email.trim()) errs.email = 'Email is required.'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errs.email = 'Enter a valid email address.'
     if (!password) errs.password = 'Password is required.'
-    else if (password.length < 6) errs.password = 'Password must be at least 6 characters.'
+    else if (password.length < 8) errs.password = 'Password must be at least 8 characters.'
     return errs
   }
 
