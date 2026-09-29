@@ -1,10 +1,21 @@
 import { Router } from 'express'
 import { supabaseAuth, supabaseAdmin } from '../config/supabase.js'
 import { encryptText } from '../utils/encryption.js'
-import { loginLimiter, signupLimiter } from '../middleware/rateLimiter.js'
+import { loginLimiter, signupLimiter, stepUpLimiter } from '../middleware/rateLimiter.js'
+import { authMiddleware } from '../middleware/auth.js'
+import { signStepUpToken, getStepUpTtlSeconds } from '../utils/stepUp.js'
+import { logAudit } from './admin.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
+
+// letters (incl. accented/Latin-extended), spaces, hyphens, apostrophes
+const NAME_RE = /^[A-Za-zÀ-ÖØ-öø-ÿÑñ' -]+$/
+
+function isValidName(value) {
+  const name = (value || '').trim()
+  return name.length >= 2 && name.length <= 50 && NAME_RE.test(name)
+}
 
 // login route with rate limiter to prevent spam
 router.post('/login', loginLimiter, async (req, res) => {
@@ -34,6 +45,16 @@ router.post('/signup', signupLimiter, async (req, res) => {
   const { email, password, firstName, lastName } = req.body ?? {}
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password are required' })
+  }
+  // server-side checks so the API can't be bypassed by skipping the form
+  if (!isValidName(firstName)) {
+    return res.status(400).json({ error: 'Enter a valid first name (2-50 letters, spaces, hyphens or apostrophes).' })
+  }
+  if (!isValidName(lastName)) {
+    return res.status(400).json({ error: 'Enter a valid last name (2-50 letters, spaces, hyphens or apostrophes).' })
+  }
+  if (String(password).length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters.' })
   }
   try {
     // create the auth user first
@@ -106,6 +127,31 @@ router.post('/signup', signupLimiter, async (req, res) => {
     res.status(201).json({ session: data.session })
   } catch (err) {
     logger.error({ err }, 'Signup error')
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// step-up verification: re-checks the password before sensitive admin actions
+// and issues a short-lived token bound to this user
+router.post('/step-up', authMiddleware, stepUpLimiter, async (req, res) => {
+  const { password } = req.body ?? {}
+  if (!password) {
+    return res.status(400).json({ error: 'Password is required' })
+  }
+  try {
+    const { error } = await supabaseAuth.auth.signInWithPassword({
+      email: req.userEmail,
+      password,
+    })
+    if (error) {
+      logAudit({ adminEmail: req.userEmail, action: 'stepup_failed', target: `user:${req.userId}` })
+      return res.status(401).json({ error: 'Incorrect password.' })
+    }
+    const ttl = getStepUpTtlSeconds()
+    logAudit({ adminEmail: req.userEmail, action: 'stepup_verified', target: `user:${req.userId}` })
+    res.json({ stepUpToken: signStepUpToken(req.userId, ttl), expiresAt: new Date(Date.now() + ttl * 1000).toISOString() })
+  } catch (err) {
+    logger.error({ err }, 'Step-up error')
     res.status(500).json({ error: 'Server error' })
   }
 })

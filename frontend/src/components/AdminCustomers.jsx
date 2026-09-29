@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import supabase from '../lib/supabase';
-import { apiGetAuth, apiPatchAuth } from '../lib/api';
-import { AdminPage, AdminTable, EmptyState, StatCard, StatusPill } from './adminTheme';
-import { BsPeople, BsSearch } from 'react-icons/bs';
+import { apiGetAuth, apiPatchAuth, apiDeleteAuth } from '../lib/api';
+import { AdminPage, AdminTable, EmptyState, StatCard, StatusPill, ConfirmDialog } from './adminTheme';
+import { BsPeople, BsSearch, BsTrash } from 'react-icons/bs';
 import toast from 'react-hot-toast';
 
 const ROLES = ['user', 'admin'];
@@ -14,6 +14,8 @@ const AdminCustomers = () => {
   const [search, setSearch] = useState('');
   const [savingId, setSavingId] = useState(null);
   const [openDropdown, setOpenDropdown] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [currentUserId, setCurrentUserId] = useState(null);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
 
@@ -24,8 +26,14 @@ const AdminCustomers = () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
-        const { items } = await apiGetAuth('/admin/customers', session.access_token);
-        if (!cancelled) setCustomers(items || []);
+        const [{ items }, { data: { user } }] = await Promise.all([
+          apiGetAuth('/admin/customers', session.access_token),
+          supabase.auth.getUser(),
+        ]);
+        if (!cancelled) {
+          setCustomers(items || []);
+          setCurrentUserId(user?.id || null);
+        }
       } catch (err) {
         if (!cancelled) toast.error(err.message);
       } finally {
@@ -53,10 +61,28 @@ const AdminCustomers = () => {
       setCustomers((prev) => prev.map((c) => c.id === customer.id ? { ...c, role: nextRole } : c));
       toast.success(`Role changed to ${nextRole}`);
     } catch (err) {
-      toast.error(err.message);
+      if (err.message !== 'Verification cancelled') toast.error(err.message);
     } finally {
       setSavingId(null);
       setOpenDropdown(null);
+    }
+  }
+
+  async function confirmDelete() {
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    if (!target) return;
+    setSavingId(target.id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      await apiDeleteAuth(`/admin/customers/${target.id}`, session.access_token);
+      setCustomers((prev) => prev.filter((c) => c.id !== target.id));
+      toast.success('Customer removed');
+    } catch (err) {
+      if (err.message !== 'Verification cancelled') toast.error(err.message);
+    } finally {
+      setSavingId(null);
     }
   }
 
@@ -89,9 +115,11 @@ const AdminCustomers = () => {
     {
       key: 'role', label: 'Role',
       render: (u) => (
-        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-          <StatusPill kind={ROLE_KIND[u.role] || 'neutral'}>{u.role}</StatusPill>
-          <div className="relative">
+        <div className="flex items-center justify-between gap-2 w-full" onClick={(e) => e.stopPropagation()}>
+          <span className="flex justify-center w-[4.75rem] shrink-0">
+            <StatusPill kind={ROLE_KIND[u.role] || 'neutral'}>{u.role}</StatusPill>
+          </span>
+          <div className="relative shrink-0">
             <button
               type="button"
               disabled={savingId === u.id}
@@ -116,6 +144,20 @@ const AdminCustomers = () => {
               </div>
             )}
           </div>
+          {u.id !== currentUserId ? (
+            <button
+              type="button"
+              disabled={savingId === u.id}
+              onClick={(e) => { e.stopPropagation(); setOpenDropdown(null); setDeleteTarget(u); }}
+              className="w-7 h-7 shrink-0 flex items-center justify-center rounded bg-red-500 hover:bg-red-600 text-white disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-red-300"
+              title="Remove customer"
+              aria-label={`Remove ${u.firstName || u.lastName || 'customer'}`}
+            >
+              <BsTrash className="w-3.5 h-3.5" />
+            </button>
+          ) : (
+            <span className="w-7 h-7 shrink-0" aria-hidden="true" />
+          )}
         </div>
       ),
     },
@@ -177,6 +219,15 @@ const AdminCustomers = () => {
               : 'When shoppers sign up they will show up here. Share the storefront to get started.'}
           />
         }
+      />
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Remove customer"
+        message={`Are you sure you want to remove ${deleteTarget ? `${deleteTarget.firstName || ''} ${deleteTarget.lastName || ''}`.trim() || 'this customer' : ''}? This permanently deletes their account and cannot be undone.`}
+        confirmLabel="Remove Customer"
+        danger
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
       />
     </AdminPage>
   );

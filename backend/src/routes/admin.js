@@ -7,8 +7,8 @@ import os from 'os'
 import net from 'net'
 import dns from 'dns/promises'
 import { URL } from 'url'
-import { supabaseAdmin } from '../config/supabase.js'
-import { authMiddleware, requireAdmin } from '../middleware/auth.js'
+import { supabaseAdmin, supabaseAuth } from '../config/supabase.js'
+import { authMiddleware, requireAdmin, requireStepUp } from '../middleware/auth.js'
 import { decryptText } from '../utils/encryption.js'
 import logger from '../utils/logger.js'
 
@@ -16,6 +16,11 @@ const router = Router()
 
 // every admin endpoint requires a valid session and the 'admin' role
 router.use(authMiddleware, requireAdmin)
+
+// automated step-up: every state-changing admin action (any non-GET request)
+// requires a recent password re-verification, so new sensitive endpoints are
+// covered automatically without per-route wiring
+router.use((req, res, next) => (req.method === 'GET' ? next() : requireStepUp(req, res, next)))
 
 // parses pagination params: ?page=1&pageSize=20
 function parsePagination(query) {
@@ -247,6 +252,7 @@ router.get('/customers', async (req, res) => {
 
 // PATCH /api/admin/customers/:id/role
 // body: { role } — must be 'user' or 'admin'
+// step-up (password re-verification) is enforced router-wide for all writes
 // prevents admin from demoting themselves
 router.patch('/customers/:id/role', async (req, res) => {
   const { role } = req.body ?? {}
@@ -270,9 +276,35 @@ router.patch('/customers/:id/role', async (req, res) => {
       .single()
     if (error) throw error
     res.json({ item: data })
-    logAudit({ adminEmail: req.userEmail, action: 'role_change', target: `user:${req.params.id}`, details: `role -> ${role}` })
+    logAudit({ adminEmail: req.userEmail, action: 'role_change', target: `user:${req.params.id}`, details: `role -> ${role} (step-up verified)` })
   } catch (err) {
     logger.error({ err }, 'Admin role update error')
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// DELETE /api/admin/customers/:id
+// removes the account (auth user + profile); step-up enforced router-wide
+// prevents admin from deleting themselves
+router.delete('/customers/:id', async (req, res) => {
+  if (req.params.id === req.userId) {
+    return res.status(400).json({ error: 'Cannot delete your own account' })
+  }
+
+  try {
+    const { error } = await supabaseAuth.auth.admin.deleteUser(req.params.id)
+    if (error) {
+      if (String(error.message).toLowerCase().includes('not found')) {
+        return res.status(404).json({ error: 'User not found' })
+      }
+      throw error
+    }
+    // profile rows usually cascade from auth.users; remove any leftover row
+    await supabaseAdmin.from('profiles').delete().eq('id', req.params.id)
+    res.json({ success: true })
+    logAudit({ adminEmail: req.userEmail, action: 'user_delete', target: `user:${req.params.id}`, details: 'account removed (step-up verified)' })
+  } catch (err) {
+    logger.error({ err }, 'Admin customer delete error')
     res.status(500).json({ error: 'Server error' })
   }
 })

@@ -2,6 +2,8 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom"
 import { useState, useEffect } from "react"
 import supabase from "../lib/supabase"
 import RecoveryGate from "./RecoveryGate.jsx"
+import StepUpModal from "./StepUpModal.jsx"
+import { clearStepUp } from "../lib/stepUp"
 import { useThemeDetection } from "./adminTheme"
 import FloatingNotification from "./Toaster.jsx"
 import {
@@ -37,6 +39,7 @@ function AdminLayout() {
 
   // signs the admin out and sends them back to the homepage
   async function handleLogout() {
+    clearStepUp()
     await supabase.auth.signOut()
     navigate("/")
   }
@@ -71,6 +74,7 @@ function AdminLayout() {
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-[#0b1929]">
       <RecoveryGate />
+      <StepUpModal />
 
       {/* dark overlay that shows behind the sidebar on mobile when it's open */}
       {/* tapping it closes the sidebar */}

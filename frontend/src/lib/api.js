@@ -1,20 +1,50 @@
+import { ensureStepUp, peekStepUpToken } from './stepUp'
+
 // base URL for backend API calls - defaults to /api which gets proxied
 // to the backend by vite's dev server proxy config
 const apiBase = import.meta.env.VITE_API_BASE || '/api'
 
-async function request(path, { method = 'GET', body, token } = {}) {
+async function send(path, { method = 'GET', body, token, stepUpToken, isForm = false } = {}) {
   const headers = {}
   if (token) headers.Authorization = `Bearer ${token}`
-  let payload
-  if (body !== undefined) {
+  // attach a cached step-up token to authenticated requests when we have one
+  const effectiveStepUp = stepUpToken ?? (token ? peekStepUpToken() : null)
+  if (effectiveStepUp) headers['X-Step-Up-Token'] = effectiveStepUp
+  let payload = body
+  if (body !== undefined && !isForm) {
     headers['Content-Type'] = 'application/json'
     payload = JSON.stringify(body)
   }
   const res = await fetch(`${apiBase}${path}`, { method, headers, body: payload })
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(data.error || `HTTP ${res.status}`)
+  return { res, data }
+}
+
+function toError(res, data) {
+  const err = new Error(data.error || `HTTP ${res.status}`)
+  err.status = res.status
+  err.code = data.code
+  return err
+}
+
+async function request(path, opts = {}) {
+  let { res, data } = await send(path, opts)
+
+  // sensitive admin actions require step-up: prompt for the password once
+  // (result is cached for a few minutes) and retry the same request
+  if (!res.ok && data.code === 'STEP_UP_REQUIRED' && opts.token) {
+    let stepUpToken
+    try {
+      stepUpToken = await ensureStepUp(opts.token)
+    } catch (err) {
+      const e = new Error(err.message || 'Verification cancelled')
+      e.code = 'STEP_UP_REQUIRED'
+      throw e
+    }
+    ;({ res, data } = await send(path, { ...opts, stepUpToken }))
   }
+
+  if (!res.ok) throw toError(res, data)
   return data
 }
 
@@ -29,16 +59,7 @@ export const apiPatchAuth = (path, body, token) => request(path, { method: 'PATC
 export const apiDeleteAuth = (path, token) => request(path, { method: 'DELETE', token })
 
 // file upload helper - sends FormData (multipart) or JSON for URL fetch
-export async function apiUploadAuth(path, body, token) {
-  const isFormData = body instanceof FormData
-  const headers = { Authorization: `Bearer ${token}` }
-  if (!isFormData) headers['Content-Type'] = 'application/json'
-  const res = await fetch(`${apiBase}${path}`, {
-    method: 'POST',
-    headers,
-    body: isFormData ? body : JSON.stringify(body),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-  return data
+export function apiUploadAuth(path, body, token) {
+  const isForm = body instanceof FormData
+  return request(path, { method: 'POST', body, token, isForm })
 }
