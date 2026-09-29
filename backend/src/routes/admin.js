@@ -329,9 +329,16 @@ router.get('/products', async (req, res) => {
 
 // POST /api/admin/products
 router.post('/products', async (req, res) => {
-  const { prod_name, category, price, stock_quantity, image_url } = req.body ?? {}
+  const { prod_name, category, price, stock_quantity, is_active, image_url } = req.body ?? {}
   if (!prod_name || !category || price == null) {
     return res.status(400).json({ error: 'prod_name, category, and price are required' })
+  }
+  const stock = typeof stock_quantity === 'boolean' ? NaN : Number(stock_quantity ?? 0)
+  if (!Number.isInteger(stock) || stock < 0) {
+    return res.status(400).json({ error: 'Stock quantity must be a whole number of 0 or more' })
+  }
+  if (is_active !== undefined && typeof is_active !== 'boolean') {
+    return res.status(400).json({ error: 'Visibility must be Active or Hidden' })
   }
   try {
     const { data, error } = await supabaseAdmin
@@ -340,7 +347,8 @@ router.post('/products', async (req, res) => {
         prod_name,
         category,
         price: Number(price),
-        stock_quantity: Number(stock_quantity || 0),
+        stock_quantity: stock,
+        is_active: is_active ?? true,
         image_url: image_url || null,
       })
       .select()
@@ -356,13 +364,23 @@ router.post('/products', async (req, res) => {
 
 // PATCH /api/admin/products/:id
 router.patch('/products/:id', async (req, res) => {
-  const allowed = ['prod_name', 'category', 'price', 'stock_quantity', 'image_url']
+  const allowed = ['prod_name', 'category', 'price', 'stock_quantity', 'image_url', 'is_active']
   const updates = {}
   for (const key of allowed) {
     if (req.body?.[key] !== undefined) updates[key] = req.body[key]
   }
   if (Object.keys(updates).length === 0) {
     return res.status(400).json({ error: 'No updatable fields provided' })
+  }
+  if ('stock_quantity' in updates) {
+    const stock = typeof updates.stock_quantity === 'boolean' ? NaN : Number(updates.stock_quantity)
+    if (!Number.isInteger(stock) || stock < 0) {
+      return res.status(400).json({ error: 'Stock quantity must be a whole number of 0 or more' })
+    }
+    updates.stock_quantity = stock
+  }
+  if ('is_active' in updates && typeof updates.is_active !== 'boolean') {
+    return res.status(400).json({ error: 'Visibility must be Active or Hidden' })
   }
   try {
     const { data, error } = await supabaseAdmin

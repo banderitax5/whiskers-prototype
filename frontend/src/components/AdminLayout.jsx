@@ -9,7 +9,6 @@ import FloatingNotification from "./Toaster.jsx"
 import {
   BsBarChart,
   BsBoxSeam,
-  BsClipboardData,
   BsPeople,
   BsCreditCard,
   BsReceipt,
@@ -64,7 +63,6 @@ function AdminLayout() {
   const navLinks = [
     { to: "/admin", label: "Data Analytics", icon: <BsBarChart />, end: true },
     { to: "/admin/products", label: "Product Management", icon: <BsBoxSeam /> },
-    { to: "/admin/inventory", label: "Inventory Management", icon: <BsClipboardData /> },
     { to: "/admin/customers", label: "Customers", icon: <BsPeople /> },
     { to: "/admin/orders", label: "Orders", icon: <BsReceipt /> },
     { to: "/admin/payments", label: "Payments", icon: <BsCreditCard /> },
@@ -149,8 +147,8 @@ function AdminLayout() {
       {/* main content area where the active admin page renders */}
       <main className="flex-1 p-4 sm:p-6 overflow-y-auto dark:bg-[#0b1929]">
 
-        {/* top bar with hamburger menu (mobile), title, search, and profile icon */}
-        <div className="flex items-center justify-between mb-6 gap-3">
+        {/* top bar with hamburger menu (mobile) and title */}
+        <div className="flex items-center gap-3 mb-6">
           {/* hamburger button to open the sidebar on mobile */}
           <button
             type="button"
@@ -164,17 +162,6 @@ function AdminLayout() {
           <h1 className="text-lg sm:text-xl font-semibold text-gray-800 dark:text-slate-100">
             Admin Dashboard
           </h1>
-
-          <div className="flex items-center gap-3">
-            <input
-              type="text"
-              placeholder="Search..."
-              className="hidden sm:block px-4 py-2 rounded-full border border-gray-200 dark:border-[#1e3a5f] text-sm text-gray-700 dark:text-slate-200 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-[#0b2e59] bg-white dark:bg-[#162d4a]"
-            />
-            <div className="w-8 h-8 bg-yellow-400 text-[#0b2e59] rounded-full flex items-center justify-center text-sm font-bold">
-              {getInitial()}
-            </div>
-          </div>
         </div>
 
         <Outlet />

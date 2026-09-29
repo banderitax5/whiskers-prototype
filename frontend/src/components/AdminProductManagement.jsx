@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import supabase from '../lib/supabase';
 import { apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth, apiUploadAuth } from '../lib/api';
-import { AdminPage, AdminTable, EmptyState, btnPrimary, StatusPill, ConfirmDialog } from './adminTheme';
-import { BsBoxSeam, BsPencilSquare, BsTrash, BsUpload, BsSearch } from 'react-icons/bs';
+import { AdminPage, AdminTable, EmptyState, StatCard, btnPrimary, StatusPill, ConfirmDialog } from './adminTheme';
+import { BsBoxSeam, BsPlusLg, BsDashLg, BsPencilSquare, BsTrash, BsUpload, BsSearch } from 'react-icons/bs';
 import toast from 'react-hot-toast';
 
 const AdminProductManagement = () => {
@@ -11,7 +11,7 @@ const AdminProductManagement = () => {
   const [uploading, setUploading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [formData, setFormData] = useState({ prod_name: '', category: '', price: '', stock_quantity: '', image_url: '' });
+  const [formData, setFormData] = useState({ prod_name: '', category: '', price: '', stock_quantity: '0', is_active: true, image_url: '' });
   const [sortKey, setSortKey] = useState('prod_name');
   const [sortDir, setSortDir] = useState('asc');
   const [priceMin, setPriceMin] = useState('');
@@ -23,7 +23,7 @@ const AdminProductManagement = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [mobileEditItem, setMobileEditItem] = useState(null);
-  const [mobileForm, setMobileForm] = useState({ prod_name: '', category: '', price: '', stock_quantity: '', image_url: '' });
+  const [mobileForm, setMobileForm] = useState({ prod_name: '', category: '', price: '', stock_quantity: '0', is_active: true, image_url: '' });
   const [mobileUploading, setMobileUploading] = useState(false);
   const [mobileDragging, setMobileDragging] = useState(false);
   const [mobileUrlInput, setMobileUrlInput] = useState('');
@@ -59,7 +59,8 @@ const AdminProductManagement = () => {
       prod_name: item.prod_name || '',
       category: item.category || '',
       price: String(item.price ?? ''),
-      stock_quantity: String(item.stock_quantity ?? ''),
+      stock_quantity: String(item.stock_quantity ?? 0),
+      is_active: item.is_active !== false,
       image_url: item.image_url || '',
     });
     setShowForm(true);
@@ -67,7 +68,7 @@ const AdminProductManagement = () => {
 
   function resetForm() {
     setEditing(null);
-    setFormData({ prod_name: '', category: '', price: '', stock_quantity: '', image_url: '' });
+    setFormData({ prod_name: '', category: '', price: '', stock_quantity: '0', is_active: true, image_url: '' });
   }
 
   const handleFileUpload = async (file) => {
@@ -106,13 +107,19 @@ const AdminProductManagement = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const stock = Number(formData.stock_quantity);
+    if (!Number.isInteger(stock) || stock < 0) {
+      toast.error('Stock quantity must be a whole number of 0 or more');
+      return;
+    }
     try {
       const token = await getToken(); if (!token) return;
       const payload = {
         prod_name: formData.prod_name,
         category: formData.category,
         price: Number(formData.price),
-        stock_quantity: Number(formData.stock_quantity),
+        stock_quantity: stock,
+        is_active: formData.is_active,
         image_url: formData.image_url,
       };
       if (editing) {
@@ -125,6 +132,16 @@ const AdminProductManagement = () => {
       resetForm(); setShowForm(false); await fetchProducts();
     } catch (error) { toast.error(error.message); }
   };
+
+  async function adjustStock(item, delta) {
+    const next = Math.max(0, Number(item.stock_quantity || 0) + delta);
+    try {
+      const token = await getToken(); if (!token) return;
+      await apiPatchAuth(`/admin/products/${item.prod_id}`, { stock_quantity: next }, token);
+      setProducts((prev) => prev.map((p) => p.prod_id === item.prod_id ? { ...p, stock_quantity: next } : p));
+      toast.success(`Stock ${delta > 0 ? 'increased' : 'decreased'} to ${next}`);
+    } catch (err) { toast.error(err.message); }
+  }
 
   async function confirmDelete() {
     if (!deleteTarget) return;
@@ -152,7 +169,8 @@ const AdminProductManagement = () => {
       prod_name: item.prod_name || '',
       category: item.category || '',
       price: String(item.price ?? ''),
-      stock_quantity: String(item.stock_quantity ?? ''),
+      stock_quantity: String(item.stock_quantity ?? 0),
+      is_active: item.is_active !== false,
       image_url: item.image_url || '',
     });
   }
@@ -187,13 +205,19 @@ const AdminProductManagement = () => {
   async function handleMobileSubmit(e) {
     e.preventDefault();
     if (!mobileEditItem) return;
+    const stock = Number(mobileForm.stock_quantity);
+    if (!Number.isInteger(stock) || stock < 0) {
+      toast.error('Stock quantity must be a whole number of 0 or more');
+      return;
+    }
     try {
       const token = await getToken(); if (!token) return;
       await apiPatchAuth(`/admin/products/${mobileEditItem.prod_id}`, {
         prod_name: mobileForm.prod_name,
         category: mobileForm.category,
         price: Number(mobileForm.price),
-        stock_quantity: Number(mobileForm.stock_quantity),
+        stock_quantity: stock,
+        is_active: mobileForm.is_active,
         image_url: mobileForm.image_url,
       }, token);
       toast.success('Product updated');
@@ -253,6 +277,17 @@ const AdminProductManagement = () => {
     return list;
   }, [products, sortKey, sortDir, priceMin, priceMax, search, categoryFilter]);
 
+  const totalProducts = products.length;
+  const lowStockCount = products.filter((p) => p.stock_quantity > 0 && p.stock_quantity <= 10).length;
+  const outOfStockCount = products.filter((p) => p.stock_quantity <= 0).length;
+
+  // HIDDEN beats OUT beats ACTIVE — matches the admin table badge rules
+  function productBadge(item) {
+    if (item.is_active === false) return { kind: 'neutral', label: 'HIDDEN' };
+    if (Number(item.stock_quantity || 0) <= 0) return { kind: 'danger', label: 'OUT' };
+    return { kind: 'success', label: 'ACTIVE' };
+  }
+
   const columns = [
     { key: 'img', label: 'Image', render: (item) => (
       <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-[#162d4a] overflow-hidden flex items-center justify-center">
@@ -267,21 +302,28 @@ const AdminProductManagement = () => {
     ) },
     { key: 'price', label: 'Price', sortable: true, render: (item) => <span className="font-black text-[#0b2e59] dark:text-yellow-200">PHP {Number(item.price || 0).toLocaleString()}</span> },
     { key: 'stock_quantity', label: 'Stock', sortable: true, render: (item) => <span className="text-gray-700 dark:text-slate-300">{item.stock_quantity}</span> },
-    { key: 'status', label: 'Status', render: (item) => (
-      <StatusPill kind={item.stock_quantity > 0 ? 'success' : 'danger'}>
-        {item.stock_quantity > 0 ? 'Active' : 'Out'}
-      </StatusPill>
-    ) },
+    { key: 'status', label: 'Status', render: (item) => {
+      const s = productBadge(item);
+      return <StatusPill kind={s.kind}>{s.label}</StatusPill>;
+    } },
     { key: 'actions', label: 'Actions', render: (item) => (
-      <div className="flex gap-1">
-        <button onClick={() => startEdit(item)} className="p-1.5 rounded bg-[#facc15] hover:bg-[#fde047] text-black"><BsPencilSquare /></button>
-        <button onClick={() => setDeleteTarget(item)} className="p-1.5 rounded bg-red-600 hover:bg-red-500 text-white"><BsTrash /></button>
+      <div className="flex items-center gap-1">
+        <button onClick={() => startEdit(item)} className="p-1.5 rounded bg-[#facc15] hover:bg-[#fde047] text-black" title="Edit"><BsPencilSquare /></button>
+        <button onClick={() => adjustStock(item, -1)} className="p-1.5 rounded bg-gray-100 dark:bg-[#162d4a] hover:bg-gray-200 dark:hover:bg-[#1e3a5f] text-gray-700 dark:text-slate-300" title="Decrease stock"><BsDashLg /></button>
+        <button onClick={() => adjustStock(item, +1)} className="p-1.5 rounded bg-gray-100 dark:bg-[#162d4a] hover:bg-gray-200 dark:hover:bg-[#1e3a5f] text-gray-700 dark:text-slate-300" title="Increase stock"><BsPlusLg /></button>
+        <button onClick={() => setDeleteTarget(item)} className="p-1.5 rounded bg-red-600 hover:bg-red-500 text-white" title="Delete"><BsTrash /></button>
       </div>
     ) },
   ];
 
   return (
     <AdminPage title="Product Management" subtitle="Curate the items shoppers can buy.">
+
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-4 mb-6">
+        <StatCard label="Total Products" value={totalProducts} />
+        <StatCard label="Low Stock" value={lowStockCount} />
+        <StatCard label="Out of Stock" value={outOfStockCount} />
+      </div>
 
       <div className="flex justify-end mb-4">
         <button onClick={() => { setShowForm((s) => !s); if (showForm) resetForm(); }} className={btnPrimary}>
@@ -291,10 +333,11 @@ const AdminProductManagement = () => {
 
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 p-5 rounded-xl border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#0f2137] space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
             <input value={formData.prod_name} onChange={(e) => setFormData({...formData, prod_name: e.target.value})} placeholder="Product Name" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
             <input value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})} placeholder="Category" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
             <input value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} type="number" placeholder="Price" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
+            <input value={formData.stock_quantity} onChange={(e) => setFormData({...formData, stock_quantity: e.target.value})} type="number" min="0" step="1" placeholder="Stock" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
             <div
               onClick={() => fileInputRef.current?.click()}
               onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
@@ -325,6 +368,25 @@ const AdminProductManagement = () => {
             <button type="button" onClick={handleUrlUpload} disabled={uploading || !urlInput.trim()} className="px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest border border-gray-200 dark:border-[#1e3a5f] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#162d4a] disabled:opacity-30 disabled:cursor-not-allowed transition">
               Fetch
             </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-slate-400">Visibility</span>
+            <div className="flex gap-1.5">
+              {[{ value: true, label: 'Active' }, { value: false, label: 'Hidden' }].map((opt) => (
+                <button
+                  key={opt.label}
+                  type="button"
+                  onClick={() => setFormData({ ...formData, is_active: opt.value })}
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition ${
+                    formData.is_active === opt.value
+                      ? 'bg-[#0b2e59] text-white'
+                      : 'bg-white dark:bg-[#162d4a] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#1e3a5f] border border-gray-200 dark:border-[#1e3a5f]'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
           {formData.image_url && (
             <div className="flex items-center gap-3">
@@ -403,15 +465,17 @@ const AdminProductManagement = () => {
                 <div className="text-sm font-bold text-gray-900 dark:text-slate-100 truncate">{item.prod_name}</div>
                 <div className="text-xs text-gray-500 dark:text-slate-400">
                   PHP {Number(item.price || 0).toLocaleString()}
-                  <span className="ml-1.5">· {item.category}</span>
+                  <span className="ml-1.5">· {item.category} · Stock {item.stock_quantity}</span>
                 </div>
               </div>
-              <StatusPill kind={item.stock_quantity > 0 ? 'success' : 'danger'}>
-                {item.stock_quantity > 0 ? 'Active' : 'Out'}
+              <StatusPill kind={productBadge(item).kind}>
+                {productBadge(item).label}
               </StatusPill>
             </div>
             <div className="flex items-center gap-1.5 pt-1.5 mt-1 border-t border-gray-50 dark:border-[#1e3a5f]/40">
               <button onClick={() => openMobileEdit(item)} className="px-2 py-1 rounded bg-yellow-400 text-black text-[10px] font-bold">Edit</button>
+              <button onClick={() => adjustStock(item, -1)} className="px-2 py-1 rounded bg-gray-100 dark:bg-[#162d4a] text-gray-700 dark:text-slate-300 text-[10px] font-bold">−1</button>
+              <button onClick={() => adjustStock(item, +1)} className="px-2 py-1 rounded bg-gray-100 dark:bg-[#162d4a] text-gray-700 dark:text-slate-300 text-[10px] font-bold">+1</button>
               <button onClick={() => setDeleteTarget(item)} className="px-2 py-1 rounded bg-red-600 text-white text-[10px] font-bold ml-auto">Delete</button>
             </div>
           </div>
@@ -438,7 +502,7 @@ const AdminProductManagement = () => {
               <input value={mobileForm.category} onChange={(e) => setMobileForm({...mobileForm, category: e.target.value})} placeholder="Category" className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
               <div className="grid grid-cols-2 gap-3">
                 <input value={mobileForm.price} onChange={(e) => setMobileForm({...mobileForm, price: e.target.value})} type="number" placeholder="Price" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
-                <input value={mobileForm.stock_quantity} onChange={(e) => setMobileForm({...mobileForm, stock_quantity: e.target.value})} type="number" placeholder="Stock" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
+                <input value={mobileForm.stock_quantity} onChange={(e) => setMobileForm({...mobileForm, stock_quantity: e.target.value})} type="number" min="0" step="1" placeholder="Stock" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
               </div>
               <div
                 onClick={() => mobileFileRef.current?.click()}
@@ -460,6 +524,25 @@ const AdminProductManagement = () => {
               <div className="flex gap-2">
                 <input value={mobileUrlInput} onChange={(e) => setMobileUrlInput(e.target.value)} placeholder="Or paste image URL..." className="flex-1 px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
                 <button type="button" onClick={handleMobileUrlUpload} disabled={mobileUploading || !mobileUrlInput.trim()} className="px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border border-gray-200 dark:border-[#1e3a5f] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#162d4a] disabled:opacity-30 disabled:cursor-not-allowed transition">Fetch</button>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-slate-400">Visibility</span>
+                <div className="flex gap-1.5">
+                  {[{ value: true, label: 'Active' }, { value: false, label: 'Hidden' }].map((opt) => (
+                    <button
+                      key={opt.label}
+                      type="button"
+                      onClick={() => setMobileForm({ ...mobileForm, is_active: opt.value })}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest transition ${
+                        mobileForm.is_active === opt.value
+                          ? 'bg-[#0b2e59] text-white'
+                          : 'bg-white dark:bg-[#162d4a] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#1e3a5f] border border-gray-200 dark:border-[#1e3a5f]'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               {mobileForm.image_url && (
                 <div className="flex items-center gap-3">

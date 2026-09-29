@@ -43,6 +43,7 @@ router.get('/', async (req, res) => {
     let query = supabaseAdmin
       .from('product')
       .select('*', { count: 'exact' })
+      .eq('is_active', true)
       .order('prod_name', { ascending: true })
       .range(from, to)
 
@@ -82,6 +83,7 @@ router.get('/categories', async (req, res) => {
     const { data, error } = await supabaseAdmin
       .from('product')
       .select('category')
+      .eq('is_active', true)
     if (error) throw error
     const cats = [...new Set((data || []).map(r => r.category).filter(Boolean))].sort()
     res.json({ items: cats })
@@ -97,6 +99,7 @@ router.get('/brands', async (req, res) => {
     const { data, error } = await supabaseAdmin
       .from('product')
       .select('brand')
+      .eq('is_active', true)
     if (error) throw error
     const brands = [...new Set((data || []).map(r => r.brand).filter(Boolean))].sort()
     res.json({ items: brands })

@@ -18,7 +18,6 @@ const NotFound = lazy(() => import('./pages/NotFound.jsx'))
 const AdminLayout = lazy(() => import('./components/AdminLayout.jsx'))
 const AdminDashboard = lazy(() => import('./components/AdminDashboard.jsx'))
 const AdminPayments = lazy(() => import('./components/AdminPayments.jsx'))
-const AdminInventoryManagement = lazy(() => import('./components/AdminInventoryManagement.jsx'))
 const AdminProductManagement = lazy(() => import('./components/AdminProductManagement.jsx'))
 const AdminOrders = lazy(() => import('./components/AdminOrders.jsx'))
 const AdminAuditLogs = lazy(() => import('./components/AdminAuditLogs.jsx'))
@@ -140,7 +139,6 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <AdminDashboard /> },
       { path: 'products', element: <AdminProductManagement /> },
-      { path: 'inventory', element: <AdminInventoryManagement /> },
       { path: 'customers', element: <AdminCustomers /> },
       { path: 'orders', element: <AdminOrders /> },
       { path: 'payments', element: <AdminPayments /> },

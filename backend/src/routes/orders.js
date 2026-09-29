@@ -33,20 +33,27 @@ router.post('/', orderLimiter, async (req, res) => {
 
     const { data: dbProducts, error: prodErr } = await req.db
       .from('product')
-      .select('prod_id, price')
+      .select('prod_id, prod_name, price, stock_quantity, is_active')
       .in('prod_id', productIds)
     if (prodErr) throw prodErr
 
-    const priceMap = new Map((dbProducts || []).map(p => [p.prod_id, Number(p.price)]))
+    const productMap = new Map((dbProducts || []).map(p => [p.prod_id, p]))
 
-    // validate every item exists and compute the real total
+    // validate every item exists, is visible and in stock, and compute the real total
     let totalAmount = shipping
     const validatedItems = []
     for (const item of items) {
-      const dbPrice = priceMap.get(item.productId)
-      if (dbPrice == null) {
+      const dbProduct = productMap.get(item.productId)
+      if (!dbProduct) {
         return res.status(400).json({ error: `Product ${item.productId} not found.` })
       }
+      if (dbProduct.is_active === false) {
+        return res.status(400).json({ error: `"${dbProduct.prod_name}" is currently unavailable.` })
+      }
+      if (Number(dbProduct.stock_quantity || 0) <= 0) {
+        return res.status(400).json({ error: `"${dbProduct.prod_name}" is out of stock.` })
+      }
+      const dbPrice = Number(dbProduct.price)
       const qty = Math.max(1, Number(item.quantity) || 1)
       const subtotal = dbPrice * qty
       totalAmount += subtotal
