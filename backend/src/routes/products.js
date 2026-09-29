@@ -27,7 +27,7 @@ router.get('/', async (req, res) => {
   try {
     const {
       page = 1,
-      pageSize = 50,
+      pageSize = 1000,
       category,
       brand,
       search,

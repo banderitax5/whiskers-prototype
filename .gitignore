@@ -35,3 +35,4 @@ dist-ssr
 # OpenCode
 .opencode/
 AGENTS.md
+cloudflared-linux-amd64.deb

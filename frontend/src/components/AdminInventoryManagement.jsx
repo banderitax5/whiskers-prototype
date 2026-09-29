@@ -42,8 +42,13 @@ const AdminInventoryManagement = () => {
     setLoading(true);
     try {
       const token = await getToken(); if (!token) return;
-      const { items } = await apiGetAuth('/admin/products', token);
-      setProducts(items || []);
+      const all = [];
+      for (let p = 1; p <= 100; p++) {
+        const { items, total } = await apiGetAuth(`/admin/products?page=${p}&pageSize=100`, token);
+        all.push(...(items || []));
+        if (!items || items.length < 100 || all.length >= (total ?? 0)) break;
+      }
+      setProducts(all);
     } catch (err) { toast.error(err.message); }
     finally { setLoading(false); }
   }

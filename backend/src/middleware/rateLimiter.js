@@ -7,7 +7,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 function clientKey(req) {
   const cf = req.headers['cf-connecting-ip']
   if (process.env.TRUST_PROXY && typeof cf === 'string' && cf) {
-    return cf
+    return ipKeyGenerator(cf)
   }
   return ipKeyGenerator(req.ip)
 }
