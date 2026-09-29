@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { useShop } from '../context/ShopContext.jsx'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
@@ -148,6 +148,14 @@ function UserOrders() {
                     <div>
                       <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-slate-500 mb-1">Payment Amount</p>
                       <p className="font-semibold text-[#0b2e59] dark:text-yellow-300">PHP {Number(order.payment?.amount || order.total_amount).toLocaleString()}</p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <Link
+                        to={`/orders/${order.order_id}`}
+                        className="inline-flex items-center justify-center w-full sm:w-auto px-4 h-11 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        View Confirmation &amp; Receipt
+                      </Link>
                     </div>
                   </div>
                 </div>

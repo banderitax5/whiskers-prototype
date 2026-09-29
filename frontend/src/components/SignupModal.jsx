@@ -111,7 +111,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-3 sm:p-4 z-[70]">
       <div className="bg-white dark:bg-gray-800 rounded-2xl overflow-hidden w-full max-w-lg sm:max-w-2xl lg:max-w-4xl flex flex-col md:flex-row shadow-xl animate-in fade-in duration-300">
         <div className="md:w-1/2 p-3 hidden md:flex items-center justify-center">
-          <img src="login/cat.png" alt="Happy cat" className="w-full h-full object-cover rounded-lg" />
+          <img src="/login/cat.png" alt="Happy cat" className="w-full h-full object-cover rounded-lg" />
         </div>
 
         <div className="w-full md:w-1/2 p-6 sm:p-8 relative">
@@ -126,7 +126,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
           </button>
 
           <div className="flex justify-center mb-6 sm:mb-8">
-            <img src="logo/logo-whiskers.png" alt="Whiskers" className="h-10 sm:h-12" />
+            <img src="/logo/logo-whiskers.png" alt="Whiskers" className="h-10 sm:h-12" />
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">

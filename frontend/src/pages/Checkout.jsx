@@ -104,7 +104,7 @@ function Checkout() {
       clearCart(selectedIds.length > 0 ? selectedIds : null)
       pushNotification('Order placed successfully!')
       trackEvent('checkout_complete', { order_id, total, items: checkoutItems.length })
-      navigate('/orders', { state: { newOrderId: order_id } })
+      navigate(`/orders/${order_id}`)
     } catch (err) {
       pushNotification(err.message, 'error')
     } finally {

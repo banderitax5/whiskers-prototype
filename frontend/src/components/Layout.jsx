@@ -22,10 +22,9 @@ function Layout() {
   useEffect(() => {
     trackEvent('page_view', { path: location.pathname })
   }, [location.pathname])
-  const showNavLinks = location.pathname !== '/profile' &&
-                       location.pathname !== '/orders' &&
-                       location.pathname !== '/addresses' &&
-                       location.pathname !== '/pets'
+  const showNavLinks = !['/profile', '/orders', '/addresses', '/pets'].some(
+    (p) => location.pathname === p || location.pathname.startsWith(`${p}/`)
+  )
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100">

@@ -65,3 +65,42 @@
     padding: 4px 8px !important;
   }
 }
+
+/* ── printable official receipt ─────────────────────────────── */
+@media print {
+  /* the receipt is a standalone document: no injected link URLs,
+     no forced underlines, keep the navy header / status colors */
+  .receipt-doc {
+    box-shadow: none !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  .receipt-doc a,
+  .receipt-doc a[href] {
+    text-decoration: none !important;
+    color: inherit !important;
+  }
+
+  .receipt-doc a[href]::after {
+    content: none !important;
+  }
+
+  .receipt-doc,
+  .receipt-doc * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .receipt-doc th,
+  .receipt-doc td {
+    border-color: #e5e7eb !important;
+  }
+}
+
+@media print {
+  @page {
+    margin: 12mm;
+  }
+}

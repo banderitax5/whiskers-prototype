@@ -188,4 +188,67 @@ router.get('/', async (req, res) => {
   }
 })
 
+// GET /api/orders/:id — a single order for the logged-in user
+// RLS on req.db guarantees the row belongs to the caller
+router.get('/:id', async (req, res) => {
+  // order_id is a UUID in the schema — accept alphanumerics + dashes only
+  const orderId = String(req.params.id || '').trim()
+  if (!/^[A-Za-z0-9-]{1,64}$/.test(orderId)) {
+    return res.status(400).json({ error: 'Invalid order id' })
+  }
+
+  try {
+    const { data: order, error } = await req.db
+      .from('orders')
+      .select('order_id, status, total_amount, created_at, customer_name, phone, address')
+      .eq('order_id', orderId)
+      .maybeSingle()
+    if (error) throw error
+    if (!order) return res.status(404).json({ error: 'Order not found' })
+
+    const { data: details } = await req.db
+      .from('order_details')
+      .select('order_id, prod_id, quantity, subtotal')
+      .eq('order_id', orderId)
+
+    const prodIds = [...new Set((details || []).map((d) => d.prod_id).filter(Boolean))]
+    const { data: products } = await req.db
+      .from('product')
+      .select('prod_id, prod_name, image_url')
+      .in('prod_id', prodIds)
+    const prodMap = new Map((products || []).map((p) => [p.prod_id, p]))
+
+    const { data: paymentRows } = await req.db
+      .from('payment')
+      .select('order_id, amount, method, payment_date')
+      .eq('order_id', orderId)
+      .limit(1)
+
+    res.json({
+      item: {
+        order_id: order.order_id,
+        status: order.status,
+        total_amount: order.total_amount,
+        created_at: order.created_at,
+        customer_name: order.customer_name,
+        phone: order.phone,
+        address: order.address,
+        items: (details || []).map((d) => {
+          const prod = prodMap.get(d.prod_id) || {}
+          return {
+            name: prod.prod_name || 'Unknown',
+            image: prod.image_url || '',
+            quantity: d.quantity,
+            subtotal: d.subtotal,
+          }
+        }),
+        payment: (paymentRows && paymentRows[0]) || null,
+      },
+    })
+  } catch (err) {
+    logger.error({ err }, 'Order detail error')
+    res.status(500).json({ error: 'Failed to load order' })
+  }
+})
+
 export default router

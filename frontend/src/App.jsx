@@ -11,6 +11,8 @@ const Profile = lazy(() => import('./pages/Profile.jsx'))
 const Cart = lazy(() => import('./pages/Cart.jsx'))
 const Checkout = lazy(() => import('./pages/Checkout.jsx'))
 const UserOrders = lazy(() => import('./pages/UserOrders.jsx'))
+const OrderConfirmation = lazy(() => import('./pages/OrderConfirmation.jsx'))
+const OfficialReceipt = lazy(() => import('./pages/OfficialReceipt.jsx'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword.jsx'))
 const NotFound = lazy(() => import('./pages/NotFound.jsx'))
 
@@ -107,6 +109,14 @@ const router = createBrowserRouter([
           </RequireAuth>
         ),
       },
+      {
+        path: 'orders/:orderId',
+        element: (
+          <RequireAuth>
+            <OrderConfirmation />
+          </RequireAuth>
+        ),
+      },
       { path: 'about', element: <About /> },
       {
         path: 'pets',
@@ -144,6 +154,16 @@ const router = createBrowserRouter([
       { path: 'payments', element: <AdminPayments /> },
       { path: 'audit-logs', element: <AdminAuditLogs /> },
     ],
+  },
+
+  // PRINTABLE RECEIPT (standalone — no navbar/footer, like NotFound)
+  {
+    path: '/receipt/:orderId',
+    element: (
+      <RequireAuth>
+        <OfficialReceipt />
+      </RequireAuth>
+    ),
   },
 
   { path: '*', element: <NotFound /> },

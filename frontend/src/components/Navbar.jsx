@@ -140,7 +140,7 @@ function Navbar() {
         <div className="flex items-center gap-2 sm:gap-3 w-full">
 
           <Link to="/" className="flex items-center gap-2 shrink-0">
-            <img src="logo/logo-whiskers.png" alt="Whiskers" className="h-10 sm:h-12 w-auto" />
+            <img src="/logo/logo-whiskers.png" alt="Whiskers" className="h-10 sm:h-12 w-auto" />
           </Link>
 
           <SearchSuggestions className="flex-1" />
