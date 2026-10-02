@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Navigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import supabase from '../lib/supabase'
+import { philippinesData } from '../data/philippinesData.js'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -29,6 +30,16 @@ function Profile() {
   const [saving, setSaving] = useState(false)
   const [session, setSession] = useState(undefined)
   const [fieldErrors, setFieldErrors] = useState({})
+  const [formError, setFormError] = useState('')
+
+  // make auth failures readable for the user
+  function readableError(err, fallback) {
+    const msg = err?.message || fallback
+    if (msg === 'Not authenticated' || msg === 'JWT expired' || /token|jwt|session/i.test(msg)) {
+      return 'Your session has expired. Please log in again to save your profile.'
+    }
+    return msg
+  }
 
   // validation rules — returns error message or ''
   function validateName(value, label) {
@@ -87,16 +98,6 @@ function Profile() {
     }
   }
 
-  const philippinesData = {
-    "Metro Manila": [
-      "Quezon City","Manila","Makati","Taguig","Pasig","Mandaluyong",
-      "Pasay","Parañaque","Las Piñas","Caloocan","Marikina",
-      "Valenzuela","San Juan","Malabon","Navotas","Pateros"
-    ],
-    "Cebu": ["Cebu City","Mandaue","Lapu-Lapu"],
-    "Davao del Sur": ["Davao City"]
-  }
-
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s)
@@ -104,7 +105,11 @@ function Profile() {
 
       fetchWithAuth('/profile')
         .then(setProfile)
-        .catch((err) => toast.error(err.message || 'Failed to load profile'))
+        .catch((err) => {
+          const msg = readableError(err, 'Failed to load profile')
+          setFormError(msg)
+          toast.error(msg)
+        })
         .finally(() => setLoading(false))
     })
   }, [])
@@ -112,6 +117,8 @@ function Profile() {
   async function handleSubmit(e) {
     e.preventDefault()
     if (!profile) return
+
+    setFormError('')
 
     const errors = validateAll()
     const hasErrors = Object.values(errors).some(Boolean)
@@ -139,9 +146,12 @@ function Profile() {
       })
 
       setProfile(updated)
+      setFormError('')
       toast.success('Profile saved successfully.')
     } catch (err) {
-      toast.error(err.message || 'Failed to save profile')
+      const msg = readableError(err, 'Failed to save profile')
+      setFormError(msg)
+      toast.error(msg)
     } finally {
       setSaving(false)
     }
@@ -191,6 +201,25 @@ function Profile() {
       <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
 
         <div className="p-4 sm:p-8 space-y-5 sm:space-y-6">
+
+          {formError && (
+            <div
+              className="flex items-start justify-between gap-3 text-sm text-red-700 bg-red-50 dark:bg-red-900/40 dark:text-red-300 border border-red-200 dark:border-red-800 px-3 py-2 rounded-lg"
+              role="alert"
+            >
+              <span>{formError}</span>
+              <button
+                type="button"
+                onClick={() => setFormError('')}
+                aria-label="Dismiss error"
+                className="shrink-0 text-red-400 hover:text-red-600 dark:text-red-500 dark:hover:text-red-300 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )}
 
           {/* PERSONAL */}
           <section className="space-y-3 sm:space-y-4">

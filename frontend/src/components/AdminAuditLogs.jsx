@@ -8,13 +8,33 @@ import CopyToClipboard from './CopyToClipboard'
 
 const ACTION_KIND = {
   delete: 'danger',
+  user_delete: 'danger',
+  stepup_failed: 'danger',
   create: 'success',
   add: 'success',
   update: 'progress',
   edit: 'progress',
   status: 'progress',
   role: 'progress',
+  role_change: 'progress',
+  stepup_verified: 'success',
 }
+
+const ACTION_LABEL = {
+  create: 'Created',
+  add: 'Added',
+  update: 'Updated',
+  edit: 'Edited',
+  delete: 'Deleted',
+  status: 'Status Changed',
+  role: 'Role Changed',
+  role_change: 'Role Changed',
+  user_delete: 'User Deleted',
+  stepup_verified: 'Verification Passed',
+  stepup_failed: 'Verification Failed',
+}
+
+const actionLabel = (action) => ACTION_LABEL[action] || action || '-'
 
 const AdminAuditLogs = () => {
   const [logs, setLogs] = useState([])
@@ -95,13 +115,13 @@ const AdminAuditLogs = () => {
       <span className="font-medium text-gray-800 dark:text-slate-200">{log.admin_email || 'System'}</span>
     )},
     { key: 'action', label: 'Action', sortable: true, render: (log) => (
-      <StatusPill kind={ACTION_KIND[log.action] || 'neutral'}>{log.action}</StatusPill>
+      <StatusPill kind={ACTION_KIND[log.action] || 'neutral'}>{actionLabel(log.action)}</StatusPill>
     )},
-    { key: 'target', label: 'Target', sortable: true, render: (log) => (
+    { key: 'target', label: 'Activity', sortable: true, render: (log) => (
       <span className="font-mono text-xs text-gray-600 dark:text-slate-400">{log.target || '-'}</span>
     )},
     { key: 'details', label: 'Details', sortable: true, render: (log) => (
-      <span className="text-gray-500 dark:text-slate-500 text-xs max-w-[200px] truncate block">{log.details || '-'}</span>
+      <span className="text-gray-500 dark:text-slate-500 text-xs max-w-[200px] truncate block" title={log.details || ''}>{log.details || '-'}</span>
     )},
   ]
 
@@ -113,7 +133,7 @@ const AdminAuditLogs = () => {
           <input
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-            placeholder="Search logs..."
+            placeholder="Search by admin, action, activity..."
             className="w-full pl-10 pr-4 py-2 rounded-lg bg-white dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 text-sm focus:outline-none focus:border-[#0b2e59]"
           />
         </div>
@@ -152,14 +172,14 @@ const AdminAuditLogs = () => {
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-slate-500 shrink-0">Action</span>
-              <StatusPill kind={ACTION_KIND[log.action] || 'neutral'}>{log.action}</StatusPill>
+              <StatusPill kind={ACTION_KIND[log.action] || 'neutral'}>{actionLabel(log.action)}</StatusPill>
             </div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-slate-500 shrink-0">Target</span>
+              <span className="text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-slate-500 shrink-0">Activity</span>
               <span className="text-[10px] font-mono text-gray-500 dark:text-slate-400">{log.target || '-'}</span>
             </div>
             {log.details && (
-              <div className="text-[10px] italic text-gray-500 dark:text-slate-400 pt-1 border-t border-gray-50 dark:border-[#1e3a5f]/50 truncate">
+              <div className="text-[10px] italic text-gray-500 dark:text-slate-400 pt-1 border-t border-gray-50 dark:border-[#1e3a5f]/50 truncate" title={log.details}>
                 {log.details}
               </div>
             )}

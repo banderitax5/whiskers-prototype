@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useShop } from '../context/ShopContext.jsx'
 import { trackEvent } from '../lib/appEvents.js'
@@ -37,6 +37,30 @@ function Checkout() {
   })
   const [submitting, setSubmitting] = useState(false)
   const [fieldErrors, setFieldErrors] = useState({})
+  const accessToken = session?.access_token
+
+  // prefill delivery details from the saved profile
+  useEffect(() => {
+    if (!accessToken) return
+    let cancelled = false
+    fetch(`${API_BASE}/profile`, { headers: { Authorization: `Bearer ${accessToken}` } })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((p) => {
+        if (!p || cancelled) return
+        setForm((prev) => ({
+          ...prev,
+          fullName: prev.fullName || [p.firstName, p.lastName].filter(Boolean).join(' '),
+          phone: prev.phone || p.phone || '',
+          addressLine1: prev.addressLine1 || p.addressLine1 || '',
+          addressLine2: prev.addressLine2 || p.addressLine2 || '',
+          city: prev.city || p.city || '',
+          province: prev.province || p.province || '',
+          postalCode: prev.postalCode || p.postalCode || '',
+        }))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [accessToken])
 
   function onChange(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }))

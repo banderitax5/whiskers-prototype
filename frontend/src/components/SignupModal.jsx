@@ -109,12 +109,8 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-3 sm:p-4 z-[70]">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl overflow-hidden w-full max-w-lg sm:max-w-2xl lg:max-w-4xl flex flex-col md:flex-row shadow-xl animate-in fade-in duration-300">
-        <div className="md:w-1/2 p-3 hidden md:flex items-center justify-center">
-          <img src="/login/cat.png" alt="Happy cat" className="w-full h-full object-cover rounded-lg" />
-        </div>
-
-        <div className="w-full md:w-1/2 p-6 sm:p-8 relative">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md sm:max-w-lg shadow-xl animate-in fade-in duration-300 max-h-[calc(100dvh-1.5rem)] overflow-y-auto">
+        <div className="w-full p-5 sm:p-6 relative">
           <button
             type="button"
             onClick={onClose}
@@ -125,17 +121,19 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
             </svg>
           </button>
 
-          <div className="flex justify-center mb-6 sm:mb-8">
-            <img src="/logo/logo-whiskers.png" alt="Whiskers" className="h-10 sm:h-12" />
+          <div className="flex justify-center mb-1">
+            <img src="/logo/logo-whiskers.png" alt="Whiskers" className="h-11 sm:h-12" />
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
-            {error && (
-              <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg" role="alert">
-                {error}
-              </p>
-            )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+          <form onSubmit={handleSubmit} className="space-y-2.5 sm:space-y-3">
+            <div className="h-8">
+              {error && (
+                <p className="text-sm text-red-600 bg-red-50 dark:bg-red-900 dark:text-red-200 px-3 py-1.5 rounded-lg line-clamp-1" role="alert" title={error}>
+                  {error}
+                </p>
+              )}
+            </div>
+              <div className="grid grid-cols-2 gap-3">
               <div>
                 <label htmlFor="signup-firstName" className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   FIRST NAME
@@ -143,7 +141,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                 <input
                   type="text"
                   id="signup-firstName"
-                  placeholder="Enter your first name"
+                  placeholder="First name"
                   value={firstName}
                   onChange={(e) => handleChange('firstName', e.target.value, setFirstName)}
                   onBlur={(e) => handleBlur('firstName', e.target.value)}
@@ -152,7 +150,9 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                   maxLength={50}
                   className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                 />
-                {fieldErrors.firstName && <p className="text-xs text-red-500 mt-1">{fieldErrors.firstName}</p>}
+                <div className="h-6">
+                  {fieldErrors.firstName && <p className="text-xs text-red-500 dark:text-red-400 mt-1 line-clamp-1">{fieldErrors.firstName}</p>}
+                </div>
               </div>
 
               <div>
@@ -162,7 +162,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                 <input
                   type="text"
                   id="signup-lastName"
-                  placeholder="Enter your last name"
+                  placeholder="Last name"
                   value={lastName}
                   onChange={(e) => handleChange('lastName', e.target.value, setLastName)}
                   onBlur={(e) => handleBlur('lastName', e.target.value)}
@@ -171,7 +171,9 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                   maxLength={50}
                   className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                 />
-                {fieldErrors.lastName && <p className="text-xs text-red-500 mt-1">{fieldErrors.lastName}</p>}
+                <div className="h-6">
+                  {fieldErrors.lastName && <p className="text-xs text-red-500 dark:text-red-400 mt-1 line-clamp-1">{fieldErrors.lastName}</p>}
+                </div>
               </div>
             </div>
 
@@ -190,7 +192,9 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                 autoComplete="email"
                 className="w-full px-3 sm:px-4 py-2 rounded-lg border border-gray-500 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
               />
-              {fieldErrors.email && <p className="text-xs text-red-500 mt-1">{fieldErrors.email}</p>}
+              <div className="h-6">
+                {fieldErrors.email && <p className="text-xs text-red-500 dark:text-red-400 mt-1 line-clamp-1">{fieldErrors.email}</p>}
+              </div>
             </div>
 
             <div>
@@ -226,7 +230,9 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                   {showPassword ? <BsEyeSlash className="h-4 w-4" /> : <BsEye className="h-4 w-4" />}
                 </button>
               </div>
-              {fieldErrors.password && <p className="text-xs text-red-500 mt-1">{fieldErrors.password}</p>}
+              <div className="h-6">
+                {fieldErrors.password && <p className="text-xs text-red-500 dark:text-red-400 mt-1 line-clamp-1">{fieldErrors.password}</p>}
+              </div>
             </div>
 
             <div>
@@ -255,13 +261,15 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                   {showPassword ? <BsEyeSlash className="h-4 w-4" /> : <BsEye className="h-4 w-4" />}
                 </button>
               </div>
-              {fieldErrors.confirmPassword && <p className="text-xs text-red-500 mt-1">{fieldErrors.confirmPassword}</p>}
+              <div className="h-6">
+                {fieldErrors.confirmPassword && <p className="text-xs text-red-500 dark:text-red-400 mt-1 line-clamp-1">{fieldErrors.confirmPassword}</p>}
+              </div>
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[#0039a6] hover:bg-[#0046cc] active:scale-[0.98] text-white font-semibold transition-all duration-200 mt-4 sm:mt-6 disabled:opacity-70 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[#0039a6] hover:bg-[#0046cc] active:scale-[0.98] text-white font-semibold transition-all duration-200 mt-1 sm:mt-2 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {loading ? 'Creating account…' : 'Sign Up'}
               {!loading && (
@@ -272,7 +280,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
             </button>
           </form>
 
-          <p className="mt-6 text-center text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+          <p className="mt-4 text-center text-xs sm:text-sm text-gray-600 dark:text-gray-400">
              Already have an account?{' '}
              <button
                className="text-[#0039a6] hover:text-[#0046cc] font-semibold transition-colors"

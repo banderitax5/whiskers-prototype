@@ -102,12 +102,8 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-3 sm:p-4 z-[70]">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl overflow-hidden w-full max-w-lg sm:max-w-2xl lg:max-w-4xl flex flex-col md:flex-row shadow-xl animate-in fade-in duration-300">
-        <div className="md:w-1/2 p-3 hidden md:flex items-center justify-center">
-          <img src="/login/dog.png" alt="Happy dog" className="w-full h-full object-cover rounded-lg" />
-        </div>
-
-        <div className="w-full md:w-1/2 p-6 sm:p-8 relative">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md sm:max-w-lg shadow-xl animate-in fade-in duration-300 max-h-[calc(100dvh-1.5rem)] overflow-y-auto">
+        <div className="w-full p-5 sm:p-6 relative">
           <button
             type="button"
             onClick={onClose}
@@ -118,8 +114,8 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
             </svg>
           </button>
 
-          <div className="flex justify-center mb-6 sm:mb-8">
-            <img src="/logo/logo-whiskers.png" alt="Whiskers" className="h-10 sm:h-12" />
+          <div className="flex justify-center mb-1">
+            <img src="/logo/logo-whiskers.png" alt="Whiskers" className="h-11 sm:h-12" />
           </div>
 
           {view === 'forgot' ? (
@@ -137,18 +133,20 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleForgot} className="space-y-4 sm:space-y-6">
+              <form onSubmit={handleForgot} className="space-y-3 sm:space-y-4">
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Reset your password</h2>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                     Enter the email you signed up with and we will send you a link to set a new password.
                   </p>
                 </div>
-                {forgotError && (
-                  <p className="text-sm text-red-700 bg-red-50 dark:bg-red-900 dark:text-red-200 px-3 py-2 rounded-lg" role="alert">
-                    {forgotError}
-                  </p>
-                )}
+                <div className="h-8">
+                  {forgotError && (
+                    <p className="text-sm text-red-700 bg-red-50 dark:bg-red-900 dark:text-red-200 px-3 py-1.5 rounded-lg line-clamp-1" role="alert" title={forgotError}>
+                      {forgotError}
+                    </p>
+                  )}
+                </div>
                 <div>
                   <label htmlFor="forgot-email" className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     EMAIL
@@ -183,12 +181,14 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
               </form>
             )
           ) : (
-          <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
-            {error && (
-              <p className="text-sm text-red-700 bg-red-50 dark:bg-red-900 dark:text-red-200 px-3 py-2 rounded-lg" role="alert">
-                {error}
-              </p>
-            )}
+          <form onSubmit={handleSubmit} className="space-y-2.5 sm:space-y-3">
+            <div className="h-8">
+              {error && (
+                <p className="text-sm text-red-700 bg-red-50 dark:bg-red-900 dark:text-red-200 px-3 py-1.5 rounded-lg line-clamp-1" role="alert" title={error}>
+                  {error}
+                </p>
+              )}
+            </div>
             <div>
               <label htmlFor="login-email" className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 EMAIL
@@ -203,7 +203,9 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
                 autoComplete="email"
                 className="w-full px-3 sm:px-4 py-2 rounded-lg border bg-white dark:bg-gray-700 border-gray-500 dark:border-gray-600 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
               />
-              {fieldErrors.email && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{fieldErrors.email}</p>}
+              <div className="h-6">
+                {fieldErrors.email && <p className="text-xs text-red-600 dark:text-red-400 mt-1 line-clamp-1">{fieldErrors.email}</p>}
+              </div>
             </div>
 
             <div>
@@ -230,7 +232,9 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
                   {showPassword ? <BsEyeSlash className="h-4 w-4" /> : <BsEye className="h-4 w-4" />}
                 </button>
               </div>
-              {fieldErrors.password && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{fieldErrors.password}</p>}
+              <div className="h-6">
+                {fieldErrors.password && <p className="text-xs text-red-600 dark:text-red-400 mt-1 line-clamp-1">{fieldErrors.password}</p>}
+              </div>
             </div>
 
             <div className="flex justify-end">
@@ -258,7 +262,7 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
           </form>
           )}
 
-          <p className="mt-6 text-center text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+          <p className="mt-4 text-center text-xs sm:text-sm text-gray-600 dark:text-gray-400">
              New customer?{' '}
              <button
                className="text-[#0039a6] hover:text-[#0046cc] font-semibold transition-colors"
