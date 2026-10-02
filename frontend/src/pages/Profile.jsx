@@ -6,6 +6,26 @@ import { philippinesData } from '../data/philippinesData.js'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
+const SHELL = 'max-w-2xl mx-auto py-4 sm:py-6 bg-white dark:bg-gray-900 min-h-screen'
+const HEADER = 'mb-5 sm:mb-8'
+const CARD = 'bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden'
+const CARD_BODY = 'p-4 sm:p-8 space-y-5 sm:space-y-6'
+const GRID2 = 'grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4'
+const PULSE = 'bg-gray-200 dark:bg-gray-700 rounded animate-pulse'
+const ADDRESS_SECTION = 'space-y-4 pt-2 border-t border-gray-100 dark:border-gray-700'
+const FOOTER = 'px-4 sm:px-6 py-3 sm:py-4 bg-gray-50 dark:bg-gray-700 border-t'
+const FIELD = 'space-y-1.5'
+const LABEL_BAR = `${PULSE} h-5 w-24`
+
+function FieldSkeleton({ readOnly = false }) {
+  return (
+    <div className={FIELD}>
+      <div className={LABEL_BAR} />
+      <div className={`${PULSE} ${readOnly ? 'h-[46px]' : 'h-[38px] sm:h-[46px]'} w-full rounded-lg`} />
+    </div>
+  )
+}
+
 async function fetchWithAuth(path, options = {}) {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) throw new Error('Not authenticated')
@@ -163,20 +183,45 @@ function Profile() {
 
   if (loading) {
     return (
-      <div className="max-w-2xl mx-auto py-4 sm:py-6 px-3 sm:px-4 bg-white dark:bg-gray-900 min-h-screen">
-        <div className="mb-5 sm:mb-8">
-          <div className="h-8 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+      <>
+      <span role="status" className="sr-only">Loading...</span>
+      <div className={SHELL} aria-hidden="true">
+        <div className={HEADER}>
+          <div className={`${PULSE} h-7 sm:h-9 w-28`} />
+          <div className={`${PULSE} h-8 sm:h-6 w-full sm:w-11/12 mt-1`} />
         </div>
-        <div className="space-y-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="space-y-1.5">
-              <div className="h-4 w-20 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
-              <div className="h-10 w-full bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse" />
-            </div>
-          ))}
-          <div className="h-10 w-32 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse mt-4" />
+        <div className={CARD}>
+          <div className={CARD_BODY}>
+            <section className="space-y-3 sm:space-y-4">
+              <div className={`${PULSE} h-5 w-20`} />
+              <div className={GRID2}>
+                <FieldSkeleton />
+                <FieldSkeleton />
+              </div>
+              <FieldSkeleton readOnly />
+            </section>
+
+            <section>
+              <FieldSkeleton />
+            </section>
+
+            <section className={ADDRESS_SECTION}>
+              <FieldSkeleton />
+              <FieldSkeleton />
+              <div className={GRID2}>
+                <FieldSkeleton />
+                <FieldSkeleton />
+              </div>
+              <FieldSkeleton />
+            </section>
+          </div>
+
+          <div className={FOOTER}>
+            <div className={`${PULSE} h-11 sm:h-12 w-full sm:w-36 rounded-lg`} />
+          </div>
         </div>
       </div>
+      </>
     )
   }
 
@@ -187,9 +232,9 @@ function Profile() {
     'block text-sm font-medium text-gray-600 mb-1.5 dark:text-gray-300'
 
   return (
-    <div className="max-w-2xl mx-auto py-4 sm:py-6 bg-white dark:bg-gray-900 min-h-screen">
+    <div className={SHELL}>
 
-      <div className="mb-5 sm:mb-8">
+      <div className={HEADER}>
         <h1 className="text-xl sm:text-3xl font-bold text-[#0b2e59] dark:text-yellow-300 tracking-tight">
           Profile
         </h1>
@@ -198,9 +243,9 @@ function Profile() {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+      <form onSubmit={handleSubmit} className={CARD}>
 
-        <div className="p-4 sm:p-8 space-y-5 sm:space-y-6">
+        <div className={CARD_BODY}>
 
           {formError && (
             <div
@@ -227,7 +272,7 @@ function Profile() {
               Personal
             </h2>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+            <div className={GRID2}>
               <div>
                 <label className={labelClass}>First Name</label>
                 <input
@@ -289,7 +334,7 @@ function Profile() {
           </section>
 
           {/* ADDRESS */}
-          <section className="space-y-4 pt-2 border-t border-gray-100 dark:border-gray-700">
+          <section className={ADDRESS_SECTION}>
 
             <div>
               <label className={labelClass}>Address Line 1</label>
@@ -318,7 +363,7 @@ function Profile() {
             </div>
 
             {/* Province + City */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+            <div className={GRID2}>
               <div>
                 <label className={labelClass}>Province / State</label>
                 <select
@@ -382,7 +427,7 @@ function Profile() {
 
         </div>
 
-        <div className="px-4 sm:px-6 py-3 sm:py-4 bg-gray-50 dark:bg-gray-700 border-t">
+        <div className={FOOTER}>
           <button
             type="submit"
             disabled={saving}

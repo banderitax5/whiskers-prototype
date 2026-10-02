@@ -4,6 +4,37 @@ import { apiGetAuth } from '../lib/api';
 import { AdminPage, StatCard } from './adminTheme';
 import toast from 'react-hot-toast';
 
+const PANEL = 'rounded-xl border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#0f2137] p-4';
+const PANEL_TITLE = 'text-xs font-black uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-3';
+const CHART_GRID = 'mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4';
+const PULSE = 'bg-gray-200 dark:bg-[#162d4a] rounded animate-pulse';
+const STAT_LABELS = [
+  'Total Sales',
+  'Total Profit',
+  'Total Orders',
+  'Pending Orders',
+  'Total Users',
+  'Total Products',
+  'Total Revenue',
+];
+
+function PanelSkeleton({ rows = 4 }) {
+  return (
+    <div className={PANEL}>
+      <div className={`${PULSE} h-4 w-44 mb-3`} />
+      <div className="space-y-2">
+        {Array.from({ length: rows }).map((_, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <div className={`${PULSE} h-4 w-24`} />
+            <div className={`${PULSE} h-4 flex-1`} />
+            <div className={`${PULSE} h-4 w-8`} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function BarChart({ items, max }) {
   if (!items.length) return <p className="text-xs text-gray-400">No data yet</p>
   const barMax = max || Math.max(...items.map(i => i.count), 1)
@@ -79,23 +110,52 @@ function AdminDashboard() {
     return () => { cancelled = true; };
   }, []);
 
-  const cards = stats
+  const statValues = stats
     ? [
-        { label: 'Total Sales', value: `PHP ${Number(stats.totalSales || 0).toLocaleString()}` },
-        { label: 'Total Profit', value: `PHP ${Number(stats.totalProfit || 0).toLocaleString()}` },
-        { label: 'Total Orders', value: stats.totalOrders ?? 0 },
-        { label: 'Pending Orders', value: stats.pendingOrders ?? 0 },
-        { label: 'Total Users', value: stats.totalUsers ?? 0 },
-        { label: 'Total Products', value: stats.totalProducts ?? 0 },
-        { label: 'Total Revenue', value: `PHP ${Number(stats.totalRevenue || 0).toLocaleString()}` },
+        `PHP ${Number(stats.totalSales || 0).toLocaleString()}`,
+        `PHP ${Number(stats.totalProfit || 0).toLocaleString()}`,
+        stats.totalOrders ?? 0,
+        stats.pendingOrders ?? 0,
+        stats.totalUsers ?? 0,
+        stats.totalProducts ?? 0,
+        `PHP ${Number(stats.totalRevenue || 0).toLocaleString()}`,
       ]
     : [];
+  const cards = STAT_LABELS.map((label, i) => ({ label, value: statValues[i] }));
 
   return (
     <AdminPage title="Data Analytics" subtitle="A live look at how the store is performing.">
 
       {!stats ? (
-        <div className="text-center text-gray-500 dark:text-slate-400 py-10">Loading analytics...</div>
+        <div>
+          <span role="status" className="sr-only">Loading...</span>
+          <div aria-hidden="true">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+            {STAT_LABELS.map((label) => <StatCard key={label} label={label} loading />)}
+          </div>
+
+          <div className={CHART_GRID}>
+            <div className={`lg:col-span-2 ${PANEL}`}>
+              <div className={`${PULSE} h-4 w-44 mb-3`} />
+              <div className={`${PULSE} h-28 w-full`} />
+              <div className="flex justify-between mt-1">
+                <div className={`${PULSE} h-3 w-16`} />
+                <div className={`${PULSE} h-3 w-16`} />
+              </div>
+            </div>
+            <PanelSkeleton />
+            <PanelSkeleton />
+            <PanelSkeleton />
+          </div>
+
+          <div className={CHART_GRID}>
+            <PanelSkeleton />
+            <PanelSkeleton />
+            <PanelSkeleton />
+            <PanelSkeleton />
+          </div>
+          </div>
+        </div>
       ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
@@ -104,11 +164,11 @@ function AdminDashboard() {
 
           {/* SALES CHARTS */}
           {sales && (
-            <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className={CHART_GRID}>
               {/* Daily Revenue */}
               {sales.dailyRevenue.length > 0 && (
-                <div className="lg:col-span-2 rounded-xl border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#0f2137] p-4">
-                  <h3 className="text-xs font-black uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-3">Daily Revenue (30d)</h3>
+                <div className={`lg:col-span-2 ${PANEL}`}>
+                  <h3 className={PANEL_TITLE}>Daily Revenue (30d)</h3>
                   <div className="flex items-end gap-px h-28">
                     {sales.dailyRevenue.map((d) => {
                       const max = Math.max(...sales.dailyRevenue.map(x => x.amount), 1)
@@ -128,8 +188,8 @@ function AdminDashboard() {
               )}
 
               {/* Revenue by Payment Method */}
-              <div className="rounded-xl border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#0f2137] p-4">
-                <h3 className="text-xs font-black uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-3">Revenue by Payment Method</h3>
+              <div className={PANEL}>
+                <h3 className={PANEL_TITLE}>Revenue by Payment Method</h3>
                 {sales.methodRevenue.length > 0 ? (
                   <div className="space-y-2">
                     {sales.methodRevenue.map((m) => {
@@ -150,8 +210,8 @@ function AdminDashboard() {
               </div>
 
               {/* Top Selling Products */}
-              <div className="rounded-xl border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#0f2137] p-4">
-                <h3 className="text-xs font-black uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-3">Top Selling Products</h3>
+              <div className={PANEL}>
+                <h3 className={PANEL_TITLE}>Top Selling Products</h3>
                 {sales.topProducts.length > 0 ? (
                   <div className="space-y-2">
                     {sales.topProducts.slice(0, 6).map((p) => {
@@ -171,8 +231,8 @@ function AdminDashboard() {
               </div>
 
               {/* Order Status Breakdown */}
-              <div className="rounded-xl border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#0f2137] p-4">
-                <h3 className="text-xs font-black uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-3">Order Status</h3>
+              <div className={PANEL}>
+                <h3 className={PANEL_TITLE}>Order Status</h3>
                 {sales.statusCounts.length > 0 ? (
                   <div className="space-y-2">
                     {sales.statusCounts.map((s) => {
@@ -194,22 +254,22 @@ function AdminDashboard() {
           )}
 
           {analytics && (
-            <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className={CHART_GRID}>
               {/* Conversion Funnel */}
-              <div className="rounded-xl border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#0f2137] p-4">
-                <h3 className="text-xs font-black uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-3">Conversion Funnel (30d)</h3>
+              <div className={PANEL}>
+                <h3 className={PANEL_TITLE}>Conversion Funnel (30d)</h3>
                 <FunnelChart data={analytics.funnel} />
               </div>
 
               {/* Traffic by Source */}
-              <div className="rounded-xl border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#0f2137] p-4">
-                <h3 className="text-xs font-black uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-3">Traffic by Source (30d)</h3>
+              <div className={PANEL}>
+                <h3 className={PANEL_TITLE}>Traffic by Source (30d)</h3>
                 <BarChart items={analytics.sources.slice(0, 6)} />
               </div>
 
               {/* Campaign Performance */}
-              <div className="rounded-xl border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#0f2137] p-4">
-                <h3 className="text-xs font-black uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-3">Campaigns (30d)</h3>
+              <div className={PANEL}>
+                <h3 className={PANEL_TITLE}>Campaigns (30d)</h3>
                 {analytics.campaigns.length > 0 ? (
                   <BarChart items={analytics.campaigns.slice(0, 6)} />
                 ) : (
@@ -218,8 +278,8 @@ function AdminDashboard() {
               </div>
 
               {/* Top Searches */}
-              <div className="rounded-xl border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#0f2137] p-4">
-                <h3 className="text-xs font-black uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-3">Top Searches (30d)</h3>
+              <div className={PANEL}>
+                <h3 className={PANEL_TITLE}>Top Searches (30d)</h3>
                 {analytics.topSearches.length > 0 ? (
                   <BarChart items={analytics.topSearches.map(s => ({ name: s.query, count: s.count }))} />
                 ) : (
@@ -229,8 +289,8 @@ function AdminDashboard() {
 
               {/* Daily Page Views */}
               {analytics.dailyViews.length > 0 && (
-                <div className="lg:col-span-2 rounded-xl border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#0f2137] p-4">
-                  <h3 className="text-xs font-black uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-3">Daily Page Views (30d)</h3>
+                <div className={`lg:col-span-2 ${PANEL}`}>
+                  <h3 className={PANEL_TITLE}>Daily Page Views (30d)</h3>
                   <div className="flex items-end gap-px h-24">
                     {analytics.dailyViews.map((d) => {
                       const max = Math.max(...analytics.dailyViews.map(x => x.count), 1)

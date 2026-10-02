@@ -167,9 +167,9 @@ const AdminCustomers = () => {
     <AdminPage title="Customer Management" subtitle="People who signed up to your store.">
 
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4 mb-6">
-        <StatCard label="Total Registered" value={customers.length} />
-        <StatCard label="With Feedback" value={customers.filter((c) => c.feedback).length} />
-        <StatCard label="Search Results" value={filtered.length} />
+        <StatCard label="Total Registered" value={customers.length} loading={loading} />
+        <StatCard label="With Feedback" value={customers.filter((c) => c.feedback).length} loading={loading} />
+        <StatCard label="Search Results" value={filtered.length} loading={loading} />
       </div>
 
       <div className="mb-4 relative max-w-md">

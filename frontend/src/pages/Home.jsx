@@ -13,6 +13,14 @@ const CAROUSEL_SLIDES = [
   { image: '/categoryshop/berd.jpg', alt: 'Bird Supplies' },
 ]
 
+const SHELL = 'space-y-6 sm:space-y-8 lg:mx-auto lg:max-w-7xl'
+const HERO_HEIGHT = 'h-[200px] sm:h-[250px] md:h-[325px]'
+const HEADING_ROW = 'mb-3 sm:mb-4 flex items-center justify-between gap-2'
+const CARD_ROW = 'flex gap-2 sm:gap-4 pb-3 sm:pb-4'
+const CARD_SHELL =
+  'flex-shrink-0 w-36 sm:w-52 md:w-56 lg:w-60 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden'
+const PULSE = 'bg-gray-200 dark:bg-gray-700 rounded animate-pulse'
+
 function Home() {
   const navigate = useNavigate()
   const { addToCart } = useShop()
@@ -75,21 +83,33 @@ function Home() {
 
   if (loading) {
     return (
-    <div className="space-y-6 sm:space-y-8">
+      <>
+      <span role="status" className="sr-only">Loading...</span>
+      <div className={SHELL} aria-hidden="true">
         <section className="pt-2">
-          <div className="h-[200px] sm:h-[250px] md:h-[325px] bg-gray-200 dark:bg-gray-800 rounded-xl animate-pulse" />
+          <div className={`${HERO_HEIGHT} bg-gray-200 dark:bg-gray-800 rounded-xl animate-pulse`} />
         </section>
         {[1, 2].map((i) => (
           <div key={i}>
-            <div className="h-6 w-48 bg-gray-200 dark:bg-gray-700 rounded mb-3 animate-pulse" />
-            <div className="flex gap-3 sm:gap-4 overflow-hidden">
-              {[1, 2, 3, 4].map((j) => (
-                <div key={j} className="flex-shrink-0 w-44 sm:w-52">
-                  <div className="h-64 bg-gray-200 dark:bg-gray-800 rounded-lg animate-pulse" />
-                  <div className="mt-2 space-y-2">
-                    <div className="h-3 w-16 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
-                    <div className="h-4 w-full bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
-                    <div className="h-5 w-20 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+            <div className={HEADING_ROW}>
+              <div className={`${PULSE} h-7 sm:h-8 w-48`} />
+              <div className={`${PULSE} h-4 sm:h-5 w-16`} />
+            </div>
+            <div className={`${CARD_ROW} overflow-hidden`}>
+              {Array.from({ length: 7 }).map((_, j) => (
+                <div key={j} className={CARD_SHELL}>
+                  <div className="h-24 sm:h-36 md:h-40 bg-gray-200 dark:bg-gray-700 animate-pulse" />
+                  <div className="p-2 sm:p-4 space-y-1 sm:space-y-2">
+                    <div className={`${PULSE} h-4 sm:h-5 w-16`} />
+                    <div className="min-h-[2rem] sm:min-h-[2.5rem] space-y-1 sm:space-y-2">
+                      <div className={`${PULSE} h-3 w-full`} />
+                      <div className={`${PULSE} h-3 w-3/4`} />
+                    </div>
+                    <div className={`${PULSE} h-5 sm:h-7 w-20`} />
+                  </div>
+                  <div className="p-2 sm:p-4 pt-0 space-y-1.5 sm:space-y-2">
+                    <div className={`${PULSE} h-[34px] sm:h-10 rounded-md`} />
+                    <div className={`${PULSE} h-[34px] sm:h-10 rounded-md`} />
                   </div>
                 </div>
               ))}
@@ -97,13 +117,14 @@ function Home() {
           </div>
         ))}
       </div>
+      </>
     )
   }
 
   return (
-    <div className="space-y-6 sm:space-y-8 lg:mx-auto lg:max-w-7xl">
+    <div className={SHELL}>
       <section className="pt-2">
-        <div className="relative overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-800 h-[200px] sm:h-[250px] md:h-[325px]">
+        <div className={`relative overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-800 ${HERO_HEIGHT}`}>
           {CAROUSEL_SLIDES.map((slide, idx) => (
             <div
               key={idx}
@@ -133,11 +154,11 @@ function Home() {
 
       {Object.entries(groupedByCategory).slice(0, 6).map(([category, catProducts]) => (
         <div key={category} className="mt-6 sm:mt-8 md:mt-10">
-          <div className="mb-3 flex items-center justify-between gap-2 sm:mb-4">
+          <div className={HEADING_ROW}>
             <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-red-600 dark:text-red-400 tracking-wide">{category.toUpperCase()}</h2>
             <a href="/menu" className="text-blue-600 dark:text-blue-400 hover:underline text-xs sm:text-sm font-semibold uppercase whitespace-nowrap transition-colors hover:text-blue-800 dark:hover:text-blue-300">VIEW ALL</a>
           </div>
-          <div className="flex gap-2 sm:gap-4 overflow-x-auto pb-3 sm:pb-4 scrollbar-hide snap-x snap-mandatory touch-pan-x scroll-smooth">
+          <div className={`${CARD_ROW} overflow-x-auto scrollbar-hide snap-x snap-mandatory touch-pan-x scroll-smooth`}>
             {catProducts.slice(0, 7).map((product) => (
               <div
                 key={product.prod_id}
@@ -153,7 +174,7 @@ function Home() {
                     setActiveSizeVariants(product.sizeVariants || [])
                   }
                 }}
-                className="snap-start flex-shrink-0 w-36 sm:w-52 md:w-56 lg:w-60 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm overflow-hidden cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+                className={`${CARD_SHELL} snap-start shadow-sm cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all duration-200`}
               >
                 <div className="p-2 sm:p-3 bg-gray-50 dark:bg-gray-700 flex items-center justify-center h-24 sm:h-36 md:h-40">
                   {product.image_url ? (

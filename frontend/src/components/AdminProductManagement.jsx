@@ -320,9 +320,9 @@ const AdminProductManagement = () => {
     <AdminPage title="Product Management" subtitle="Curate the items shoppers can buy.">
 
       <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-4 mb-6">
-        <StatCard label="Total Products" value={totalProducts} />
-        <StatCard label="Low Stock" value={lowStockCount} />
-        <StatCard label="Out of Stock" value={outOfStockCount} />
+        <StatCard label="Total Products" value={totalProducts} loading={loading} />
+        <StatCard label="Low Stock" value={lowStockCount} loading={loading} />
+        <StatCard label="Out of Stock" value={outOfStockCount} loading={loading} />
       </div>
 
       <div className="flex justify-end mb-4">
@@ -401,7 +401,11 @@ const AdminProductManagement = () => {
       )}
 
       <div className="flex flex-wrap gap-2 mb-4">
-        {categories.map((c) => (
+        {loading
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <div key={`sk-chip-${i}`} className="h-7 w-20 rounded-lg bg-gray-200 dark:bg-[#162d4a] animate-pulse" aria-hidden="true" />
+            ))
+          : categories.map((c) => (
           <button
             key={c}
             onClick={() => { setCategoryFilter(c); setPage(1); }}

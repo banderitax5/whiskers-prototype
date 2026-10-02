@@ -21,6 +21,19 @@ const BORDER = 'border border-gray-200 dark:border-[#1e3a5f]';
 const TEXT = 'text-gray-900 dark:text-gray-100';
 const TEXT_DIM = 'text-gray-500 dark:text-slate-400';
 const ACCENT = 'bg-yellow-400 hover:bg-yellow-500 text-gray-900 dark:text-gray-900';
+const PULSE = 'bg-gray-200 dark:bg-[#162d4a] rounded animate-pulse';
+
+function skeletonCount(pageSize) {
+  return Math.min(pageSize || 10, 20);
+}
+
+function skeletonCell(col) {
+  if (col.key === 'select') return <div className={`${PULSE} h-4 w-4`} />;
+  if (col.key === 'actions') return <div className={`${PULSE} h-7 w-16`} />;
+  if (col.key === 'img') return <div className={`${PULSE} h-9 w-9 rounded-lg`} />;
+  if (col.key === 'status') return <div className={`${PULSE} h-5 w-16 rounded-full`} />;
+  return <div className={`${PULSE} h-4 w-3/4`} />;
+}
 
 export function AdminPage({ title, subtitle, children }) {
   return (
@@ -36,13 +49,17 @@ export function AdminPage({ title, subtitle, children }) {
   );
 }
 
-export function StatCard({ label, value }) {
+export function StatCard({ label, value, loading }) {
   return (
     <div className={`${SURFACE} ${BORDER} p-3 sm:p-5 rounded-xl shadow-sm`}>
       <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-slate-400">
         {label}
       </span>
-      <h2 className="text-lg sm:text-2xl lg:text-3xl font-black mt-0.5 sm:mt-1 text-[#0b2e59] dark:text-yellow-200 leading-tight">{value}</h2>
+      {loading ? (
+        <div className={`${PULSE} h-6 sm:h-8 lg:h-9 w-16 mt-0.5 sm:mt-1`} aria-hidden="true" />
+      ) : (
+        <h2 className="text-lg sm:text-2xl lg:text-3xl font-black mt-0.5 sm:mt-1 text-[#0b2e59] dark:text-yellow-200 leading-tight">{value}</h2>
+      )}
     </div>
   );
 }
@@ -112,15 +129,22 @@ export function AdminTable({ columns, rows, rowKey, loading, empty, colSpan, onR
   const paginatedRows = pageSize ? rows.slice((page - 1) * pageSize, page * pageSize) : rows;
 
   const nonCheckboxColumns = columns.filter((c) => c.key !== 'select');
+  const rowsToSkeleton = skeletonCount(pageSize);
 
   return (
     <div className={`${BORDER} ${SURFACE} shadow-sm rounded-xl overflow-hidden`}>
+      <span role="status" className="sr-only">{loading ? 'Loading...' : ''}</span>
       {/* Mobile: clean card layout */}
       <div className="sm:hidden">
         {loading ? (
-          <div className="flex items-center justify-center py-10 text-gray-400 dark:text-slate-500">
-            <span className="inline-block w-4 h-4 border-2 border-[#0b2e59] border-t-transparent rounded-full animate-spin mr-2" />
-            Loading...
+          <div className="divide-y divide-gray-100 dark:divide-[#1e3a5f]/60" aria-hidden="true">
+            {Array.from({ length: rowsToSkeleton }).map((_, r) => (
+              <div key={`sk-${r}`} className="px-3 py-3 space-y-1.5">
+                <div className={`${PULSE} h-4 w-1/2`} />
+                <div className={`${PULSE} h-3 w-1/3`} />
+                <div className={`${PULSE} h-3 w-2/3`} />
+              </div>
+            ))}
           </div>
         ) : paginatedRows.length === 0 ? (
           <div className="p-0">{empty}</div>
@@ -179,12 +203,15 @@ export function AdminTable({ columns, rows, rowKey, loading, empty, colSpan, onR
           </thead>
           <tbody>
             {loading ? (
-              <tr>
-                <td colSpan={colSpan || columns.length} className="text-center py-10 text-gray-400 dark:text-slate-500">
-                  <span className="inline-block w-4 h-4 border-2 border-[#0b2e59] border-t-transparent rounded-full animate-spin mr-2 align-middle" />
-                  Loading...
-                </td>
-              </tr>
+              Array.from({ length: rowsToSkeleton }).map((_, r) => (
+                <tr key={`sk-${r}`} className="border-b border-gray-100 dark:border-[#1e3a5f]" aria-hidden="true">
+                  {columns.map((c) => (
+                    <td key={c.key} className={`py-3 px-4 lg:py-4 lg:px-5 align-middle ${c.cellClassName || ''}`}>
+                      {skeletonCell(c)}
+                    </td>
+                  ))}
+                </tr>
+              ))
             ) : paginatedRows.length === 0 ? (
               <tr>
                 <td colSpan={colSpan || columns.length} className="p-0">{empty}</td>

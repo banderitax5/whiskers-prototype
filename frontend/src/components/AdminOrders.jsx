@@ -255,9 +255,9 @@ const AdminOrders = () => {
     <AdminPage title="Order Management" subtitle="Track and move orders through their lifecycle.">
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-4 mb-6">
-        <StatCard label="Orders in View" value={orders.length} />
-        <StatCard label="Total Value" value={`PHP ${totalRevenue.toLocaleString()}`} />
-        <StatCard label="Pending" value={counts.Pending || 0} />
+        <StatCard label="Orders in View" value={orders.length} loading={loading} />
+        <StatCard label="Total Value" value={`PHP ${totalRevenue.toLocaleString()}`} loading={loading} />
+        <StatCard label="Pending" value={counts.Pending || 0} loading={loading} />
       </div>
 
       <div className="flex flex-wrap gap-3 mb-4 items-center">
