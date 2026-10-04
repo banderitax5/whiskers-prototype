@@ -11,6 +11,7 @@ const Profile = lazy(() => import('./pages/Profile.jsx'))
 const Cart = lazy(() => import('./pages/Cart.jsx'))
 const Checkout = lazy(() => import('./pages/Checkout.jsx'))
 const UserOrders = lazy(() => import('./pages/UserOrders.jsx'))
+const Support = lazy(() => import('./pages/Support.jsx'))
 const OrderConfirmation = lazy(() => import('./pages/OrderConfirmation.jsx'))
 const OfficialReceipt = lazy(() => import('./pages/OfficialReceipt.jsx'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword.jsx'))
@@ -24,6 +25,7 @@ const AdminProductManagement = lazy(() => import('./components/AdminProductManag
 const AdminOrders = lazy(() => import('./components/AdminOrders.jsx'))
 const AdminAuditLogs = lazy(() => import('./components/AdminAuditLogs.jsx'))
 const AdminCustomers = lazy(() => import('./components/AdminCustomers.jsx'))
+const AdminSupports = lazy(() => import('./components/AdminSupports.jsx'))
 
 import supabase from './lib/supabase'
 
@@ -134,6 +136,14 @@ const router = createBrowserRouter([
           </RequireAuth>
         ),
       },
+      {
+        path: 'support',
+        element: (
+          <RequireAuth>
+            <Support />
+          </RequireAuth>
+        ),
+      },
       { path: 'reset', element: <ResetPassword /> },
     ],
   },
@@ -152,6 +162,7 @@ const router = createBrowserRouter([
       { path: 'customers', element: <AdminCustomers /> },
       { path: 'orders', element: <AdminOrders /> },
       { path: 'payments', element: <AdminPayments /> },
+      { path: 'support', element: <AdminSupports /> },
       { path: 'audit-logs', element: <AdminAuditLogs /> },
     ],
   },

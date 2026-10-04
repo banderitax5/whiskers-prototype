@@ -45,16 +45,18 @@ function formatProfile(u) {
 // GET /api/admin/stats - top-line numbers for the dashboard
 router.get('/stats', async (req, res) => {
   try {
-    const [usersHead, productsHead, ordersHead, pendingHead, salesData, paymentData] = await Promise.all([
+    const [usersHead, productsHead, ordersHead, pendingHead, salesData, paymentData, ordersRes] = await Promise.all([
       supabaseAdmin.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'user'),
       supabaseAdmin.from('product').select('*', { count: 'exact', head: true }),
       supabaseAdmin.from('orders').select('*', { count: 'exact', head: true }),
       supabaseAdmin.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'Pending'),
       supabaseAdmin.from('sales').select('total_amount, profit'),
       supabaseAdmin.from('payment').select('amount'),
+      // sales table only ever gets seeded rows, so Total Sales comes from live orders instead
+      supabaseAdmin.from('orders').select('total_amount').neq('status', 'Cancelled').limit(1000),
     ])
 
-    const totalSales = (salesData.data || []).reduce((s, r) => s + Number(r.total_amount || 0), 0)
+    const totalSales = (ordersRes.data || []).reduce((s, r) => s + Number(r.total_amount || 0), 0)
     const totalProfit = (salesData.data || []).reduce((s, r) => s + Number(r.profit || 0), 0)
     const totalRevenue = (paymentData.data || []).reduce((s, r) => s + Number(r.amount || 0), 0)
 
@@ -227,7 +229,7 @@ router.get('/sales-analytics', async (req, res) => {
   }
 })
 
-// GET /api/admin/customers - paginated user list with feedback
+// GET /api/admin/customers - paginated user list with feedback and order stats
 router.get('/customers', async (req, res) => {
   try {
     const { page, pageSize, from, to } = parsePagination(req.query)
@@ -239,10 +241,32 @@ router.get('/customers', async (req, res) => {
       .range(from, to)
     if (error) throw error
 
-    const customers = (data || []).map((u) => ({
-      ...formatProfile(u),
-      feedback: u.feedback?.[0]?.comments || null,
-    }))
+    // order stats per customer, walked in 1000-row batches (REST row cap)
+    const statsByUser = new Map()
+    for (let offset = 0; offset < 10000; offset += 1000) {
+      const { data: batch } = await supabaseAdmin
+        .from('orders')
+        .select('id, total_amount, status')
+        .range(offset, offset + 999)
+      for (const o of batch || []) {
+        if (!o.id || o.status === 'Cancelled') continue
+        const agg = statsByUser.get(o.id) || { count: 0, spent: 0 }
+        agg.count += 1
+        agg.spent += Number(o.total_amount || 0)
+        statsByUser.set(o.id, agg)
+      }
+      if (!batch || batch.length < 1000) break
+    }
+
+    const customers = (data || []).map((u) => {
+      const agg = statsByUser.get(u.id)
+      return {
+        ...formatProfile(u),
+        feedback: u.feedback?.[0]?.comments || null,
+        ordersCount: agg?.count || 0,
+        totalSpent: Math.round((agg?.spent || 0) * 100) / 100,
+      }
+    })
     res.json({ items: customers, page, pageSize, total: count ?? 0 })
   } catch (err) {
     logger.error({ err }, 'Admin customers error')
@@ -563,8 +587,12 @@ router.get('/orders', async (req, res) => {
 // updates the order's lifecycle status (Pending -> Shipped -> Delivered etc)
 router.patch('/orders/:id', async (req, res) => {
   const { status } = req.body ?? {}
+  const ALLOWED_STATUSES = ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled']
   if (!status || typeof status !== 'string') {
     return res.status(400).json({ error: 'status is required' })
+  }
+  if (!ALLOWED_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `status must be one of: ${ALLOWED_STATUSES.join(', ')}` })
   }
   try {
     const { data, error } = await supabaseAdmin
@@ -683,6 +711,67 @@ router.delete('/payments/:id', async (req, res) => {
     logAudit({ adminEmail: req.userEmail, action: 'delete', target: `payment:${req.params.id}` })
   } catch (err) {
     logger.error({ err }, 'Admin payment delete error')
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// ── Customer Support ──────────────────────────────────────────────────────────
+
+// GET /api/admin/supports - all support cases with the sender's name
+router.get('/supports', async (req, res) => {
+  try {
+    const { page, pageSize, from, to } = parsePagination(req.query)
+
+    const { data, error, count } = await supabaseAdmin
+      .from('supports')
+      .select('*', { count: 'exact' })
+      .order('date_submitted', { ascending: false })
+      .range(from, to)
+    if (error) throw error
+
+    const userIds = [...new Set((data || []).map((s) => s.id).filter(Boolean))]
+    const { data: profiles } = userIds.length > 0
+      ? await supabaseAdmin.from('profiles').select('id, first_name, last_name').in('id', userIds)
+      : { data: [] }
+    const profileMap = new Map((profiles || []).map((p) => [p.id, p]))
+
+    const items = (data || []).map((s) => {
+      const profile = profileMap.get(s.id)
+      return {
+        support_id: s.support_id,
+        message: s.message,
+        response: s.response,
+        date_submitted: s.date_submitted,
+        firstName: decryptText(profile?.first_name),
+        lastName: decryptText(profile?.last_name),
+      }
+    })
+    res.json({ items, page, pageSize, total: count ?? 0 })
+  } catch (err) {
+    logger.error({ err }, 'Admin supports list error')
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// PATCH /api/admin/supports/:id
+// body: { response } — replies to a support case
+router.patch('/supports/:id', async (req, res) => {
+  const response = String(req.body?.response ?? '').trim()
+  if (!response || response.length > 2000) {
+    return res.status(400).json({ error: 'response must be between 1 and 2000 characters' })
+  }
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('supports')
+      .update({ response })
+      .eq('support_id', req.params.id)
+      .select('support_id')
+      .single()
+    if (error) throw error
+    res.json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'status', target: `support:${req.params.id}`, details: 'support reply sent' })
+  } catch (err) {
+    logger.error({ err }, 'Admin support reply error')
     res.status(500).json({ error: 'Server error' })
   }
 })

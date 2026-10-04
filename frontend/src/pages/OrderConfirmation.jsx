@@ -232,14 +232,6 @@ function OrderConfirmation() {
                 <span className="text-gray-600 dark:text-gray-300">Shipping Fee</span>
                 <span className="font-semibold text-gray-900 dark:text-gray-100">{peso(s.shipping)}</span>
               </div>
-              <div className="flex items-center justify-between py-2 text-sm">
-                <span className="text-gray-600 dark:text-gray-300">Voucher Discount (shopcode)</span>
-                <span className="font-semibold text-green-600 dark:text-green-400">−{peso(s.voucher)}</span>
-              </div>
-              <div className="flex items-center justify-between py-2 text-sm">
-                <span className="text-gray-600 dark:text-gray-300">Estimated VAT (4% included)</span>
-                <span className="font-semibold text-gray-900 dark:text-gray-100">{peso(s.vat)}</span>
-              </div>
             </div>
             <div className="-mx-4 sm:-mx-5 -mb-4 sm:-mb-5 mt-3 px-4 sm:px-5 py-4 rounded-b-xl bg-blue-50 dark:bg-blue-900/30 flex items-center justify-between">
               <span className="text-xs font-black uppercase tracking-widest text-gray-700 dark:text-blue-200">Total Paid</span>

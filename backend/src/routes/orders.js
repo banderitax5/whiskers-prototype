@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { authMiddleware } from '../middleware/auth.js'
 import { orderLimiter } from '../middleware/rateLimiter.js'
+import { supabaseAdmin } from '../config/supabase.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -54,14 +55,21 @@ router.post('/', orderLimiter, async (req, res) => {
         return res.status(400).json({ error: `"${dbProduct.prod_name}" is out of stock.` })
       }
       const dbPrice = Number(dbProduct.price)
+      if (!(dbPrice > 0)) {
+        return res.status(400).json({ error: `"${dbProduct.prod_name}" is not yet priced and cannot be purchased.` })
+      }
       const qty = Math.max(1, Number(item.quantity) || 1)
+      if (qty > Number(dbProduct.stock_quantity || 0)) {
+        return res.status(400).json({ error: `Only ${dbProduct.stock_quantity} of "${dbProduct.prod_name}" left in stock.` })
+      }
       const subtotal = dbPrice * qty
       totalAmount += subtotal
       validatedItems.push({ ...item, productId: item.productId, price: dbPrice, quantity: qty, subtotal })
     }
 
-    // insert order + details + payment, clean up on partial failure
+    // insert order + details + payment, decrement stock, clean up on partial failure
     let orderId = null
+    const decremented = []
     try {
       const { data: order, error: orderErr } = await req.db
         .from('orders')
@@ -95,6 +103,26 @@ router.post('/', orderLimiter, async (req, res) => {
         method: paymentMethod,
       })
       if (payErr) throw payErr
+
+      // decrement inventory with a guarded update so concurrent orders
+      // can never push stock below zero; runs on the service client because
+      // RLS does not let customers update product rows. failure aborts the order
+      for (const item of validatedItems) {
+        const current = Number(productMap.get(item.productId).stock_quantity)
+        const { data: upd, error: updErr } = await supabaseAdmin
+          .from('product')
+          .update({ stock_quantity: current - item.quantity })
+          .eq('prod_id', item.productId)
+          .gte('stock_quantity', item.quantity)
+          .select('prod_id')
+        if (updErr) throw updErr
+        if (!upd || upd.length === 0) {
+          const conflict = new Error('Insufficient stock')
+          conflict.stockConflict = true
+          throw conflict
+        }
+        decremented.push(item)
+      }
     } catch (innerErr) {
       // partial failure — clean up any rows that were created
       logger.error({ err: innerErr }, 'Order creation failed, cleaning up')
@@ -102,6 +130,24 @@ router.post('/', orderLimiter, async (req, res) => {
         await req.db.from('payment').delete().eq('order_id', orderId)
         await req.db.from('order_details').delete().eq('order_id', orderId)
         await req.db.from('orders').delete().eq('order_id', orderId)
+      }
+      // restore any stock we already decremented before the failure
+      for (const item of decremented) {
+        try {
+          const { data: cur } = await supabaseAdmin
+            .from('product')
+            .select('stock_quantity')
+            .eq('prod_id', item.productId)
+            .single()
+          if (cur) {
+            await supabaseAdmin
+              .from('product')
+              .update({ stock_quantity: Number(cur.stock_quantity) + item.quantity })
+              .eq('prod_id', item.productId)
+          }
+        } catch (restoreErr) {
+          logger.error({ err: restoreErr, productId: item.productId }, 'Stock restore failed')
+        }
       }
       throw innerErr
     }
@@ -116,6 +162,9 @@ router.post('/', orderLimiter, async (req, res) => {
 
     res.status(201).json({ order_id: orderId, status: 'Pending', total_amount: totalAmount })
   } catch (err) {
+    if (err.stockConflict) {
+      return res.status(409).json({ error: 'Some items just sold out. Please review your cart and try again.' })
+    }
     logger.error({ err }, 'Order creation error')
     res.status(500).json({ error: 'Failed to create order' })
   }
@@ -161,6 +210,19 @@ router.get('/', async (req, res) => {
       if (!paymentMap.has(p.order_id)) paymentMap.set(p.order_id, p)
     }
 
+    const { data: feedbackRows, error: fbErr } = await supabaseAdmin
+      .from('feedback')
+      .select('order_id, prod_id, rating, comments')
+      .in('order_id', orderIds)
+      .eq('id', req.userId)
+    if (fbErr) logger.error({ err: fbErr }, 'feedback fetch error')
+
+    const feedbackMap = new Map()
+    for (const f of (feedbackRows || [])) {
+      if (!feedbackMap.has(f.order_id)) feedbackMap.set(f.order_id, [])
+      feedbackMap.get(f.order_id).push(f)
+    }
+
     const items = (orders || []).map((o) => ({
       order_id: o.order_id,
       status: o.status,
@@ -172,6 +234,7 @@ router.get('/', async (req, res) => {
       items: (detailsMap.get(o.order_id) || []).map((d) => {
         const prod = prodMap.get(d.prod_id) || {}
         return {
+          prod_id: d.prod_id,
           name: prod.prod_name || 'Unknown',
           image: prod.image_url || '',
           quantity: d.quantity,
@@ -179,6 +242,7 @@ router.get('/', async (req, res) => {
         }
       }),
       payment: paymentMap.get(o.order_id) || null,
+      feedback: feedbackMap.get(o.order_id) || [],
     }))
 
     res.json({ items })
@@ -224,6 +288,12 @@ router.get('/:id', async (req, res) => {
       .eq('order_id', orderId)
       .limit(1)
 
+    const { data: feedbackRows } = await supabaseAdmin
+      .from('feedback')
+      .select('prod_id, rating, comments, date_submittted')
+      .eq('order_id', orderId)
+      .eq('id', req.userId)
+
     res.json({
       item: {
         order_id: order.order_id,
@@ -236,6 +306,7 @@ router.get('/:id', async (req, res) => {
         items: (details || []).map((d) => {
           const prod = prodMap.get(d.prod_id) || {}
           return {
+            prod_id: d.prod_id,
             name: prod.prod_name || 'Unknown',
             image: prod.image_url || '',
             quantity: d.quantity,
@@ -243,6 +314,7 @@ router.get('/:id', async (req, res) => {
           }
         }),
         payment: (paymentRows && paymentRows[0]) || null,
+        feedback: feedbackRows || [],
       },
     })
   } catch (err) {

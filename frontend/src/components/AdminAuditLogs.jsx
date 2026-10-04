@@ -2,8 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import supabase from '../lib/supabase'
 import { apiGetAuth } from '../lib/api'
 import { AdminPage, AdminTable, StatusPill, EmptyState } from './adminTheme'
-import { BsClockHistory, BsSearch, BsArrowRepeat } from 'react-icons/bs'
-import toast from 'react-hot-toast'
+import { BsClockHistory, BsSearch, BsArrowRepeat, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs'
 import CopyToClipboard from './CopyToClipboard'
 
 const ACTION_KIND = {
@@ -43,6 +42,7 @@ const AdminAuditLogs = () => {
   const [page, setPage] = useState(1)
   const [sortKey, setSortKey] = useState('created_at')
   const [sortDir, setSortDir] = useState('desc')
+  const [error, setError] = useState(null)
   const PAGE_SIZE = 20
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -55,13 +55,14 @@ const AdminAuditLogs = () => {
 
   async function fetchLogs() {
     setLoading(true)
+    setError(null)
     try {
       const token = await getToken()
       if (!token) return
-      const { items } = await apiGetAuth('/admin/audit-logs', token)
+      const { items } = await apiGetAuth('/admin/audit-logs?limit=500', token)
       setLogs(items || [])
     } catch (err) {
-      toast.error(err.message)
+      setError(err.message || 'Could not reach the server.')
     } finally {
       setLoading(false)
     }
@@ -127,6 +128,23 @@ const AdminAuditLogs = () => {
 
   return (
     <AdminPage title="Audit Logs" subtitle="Track all admin actions across the system.">
+      {error && !loading ? (
+        <EmptyState
+          icon={<BsExclamationTriangle />}
+          title="Audit logs unavailable"
+          message={error}
+          action={
+            <button
+              type="button"
+              onClick={fetchLogs}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0b2e59] dark:bg-yellow-500 text-white dark:text-gray-900 text-xs font-black uppercase tracking-widest hover:bg-[#15407a] dark:hover:bg-yellow-400 transition min-h-[44px]"
+            >
+              <BsArrowClockwise className="w-3.5 h-3.5" /> Retry
+            </button>
+          }
+        />
+      ) : (
+      <>
       <div className="flex flex-wrap gap-3 mb-4 items-center">
         <div className="relative flex-1 min-w-[200px] max-w-md">
           <BsSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500" />
@@ -143,6 +161,11 @@ const AdminAuditLogs = () => {
         >
           <BsArrowRepeat className="h-4 w-4" /> Refresh
         </button>
+        {logs.length >= 500 && (
+          <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-slate-500">
+            Showing latest 500 actions
+          </span>
+        )}
       </div>
 
       <AdminTable
@@ -193,6 +216,8 @@ const AdminAuditLogs = () => {
           />
         }
       />
+      </>
+      )}
     </AdminPage>
   )
 }

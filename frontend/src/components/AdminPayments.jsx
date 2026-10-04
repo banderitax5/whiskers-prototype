@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import supabase from '../lib/supabase';
-import { apiGetAuth, apiDeleteAuth } from '../lib/api';
+import { apiGetAllPages, apiDeleteAuth } from '../lib/api';
 import { AdminPage, AdminTable, EmptyState, StatCard, ConfirmDialog } from './adminTheme';
-import { BsCreditCard, BsSearch, BsTrash } from 'react-icons/bs';
+import { BsCreditCard, BsSearch, BsTrash, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 import toast from 'react-hot-toast';
 
 const AdminPayments = () => {
@@ -17,26 +17,29 @@ const AdminPayments = () => {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [selected, setSelected] = useState(new Set());
   const [bulkDeleteTarget, setBulkDeleteTarget] = useState(null);
+  const [error, setError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const PAGE_SIZE = 10;
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setLoading(true);
+      setError(null);
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
-        const { items } = await apiGetAuth('/admin/payments', session.access_token);
+        const { items } = await apiGetAllPages('/admin/payments', session.access_token);
         if (!cancelled) setPayments(items || []);
       } catch (err) {
-        if (!cancelled) toast.error(err.message);
+        if (!cancelled) setError(err.message || 'Could not reach the server.');
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [reloadKey]);
 
   function handleSort(key) {
     if (sortKey === key) {
@@ -200,6 +203,23 @@ const AdminPayments = () => {
         <StatCard label="Avg. Payment" value={filteredPayments.length ? `PHP ${Math.round(avgPayment).toLocaleString()}` : 'PHP 0'} loading={loading} />
       </div>
 
+      {error && !loading ? (
+        <EmptyState
+          icon={<BsExclamationTriangle />}
+          title="Payments unavailable"
+          message={error}
+          action={
+            <button
+              type="button"
+              onClick={() => setReloadKey((k) => k + 1)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0b2e59] dark:bg-yellow-500 text-white dark:text-gray-900 text-xs font-black uppercase tracking-widest hover:bg-[#15407a] dark:hover:bg-yellow-400 transition min-h-[44px]"
+            >
+              <BsArrowClockwise className="w-3.5 h-3.5" /> Retry
+            </button>
+          }
+        />
+      ) : (
+      <>
       <div className="flex flex-wrap gap-3 mb-4 items-end">
         <div className="relative flex-1 min-w-[200px] max-w-md">
           <BsSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500" />
@@ -280,6 +300,8 @@ const AdminPayments = () => {
           />
         }
       />
+      </>
+      )}
 
       <ConfirmDialog
         open={!!deleteTarget}

@@ -125,8 +125,10 @@ function Pagination({ page, totalPages, rowsLength, pageSize, onPageChange }) {
 }
 
 export function AdminTable({ columns, rows, rowKey, loading, empty, colSpan, onRowClick, sortKey, sortDir, onSort, page, pageSize, onPageChange, renderMobileCard }) {
-  const totalPages = pageSize ? Math.ceil(rows.length / pageSize) : 1;
-  const paginatedRows = pageSize ? rows.slice((page - 1) * pageSize, page * pageSize) : rows;
+  const totalPages = pageSize ? Math.max(1, Math.ceil(rows.length / pageSize)) : 1;
+  // deleting or filtering rows can leave `page` past the end, which would show an empty table over real data
+  const current = Math.min(Math.max(1, page || 1), totalPages);
+  const paginatedRows = pageSize ? rows.slice((current - 1) * pageSize, current * pageSize) : rows;
 
   const nonCheckboxColumns = columns.filter((c) => c.key !== 'select');
   const rowsToSkeleton = skeletonCount(pageSize);
@@ -236,7 +238,7 @@ export function AdminTable({ columns, rows, rowKey, loading, empty, colSpan, onR
       </div>
 
       {pageSize && totalPages > 1 && (
-        <Pagination page={page} totalPages={totalPages} rowsLength={rows.length} pageSize={pageSize} onPageChange={onPageChange} />
+        <Pagination page={current} totalPages={totalPages} rowsLength={rows.length} pageSize={pageSize} onPageChange={onPageChange} />
       )}
     </div>
   );
@@ -282,10 +284,20 @@ export function StatusPill({ kind = 'neutral', children }) {
 }
 
 export function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', onConfirm, onCancel, danger = false }) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') onCancel?.(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onCancel]);
+
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4" onClick={onCancel}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         className="bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] rounded-xl shadow-2xl p-5 sm:p-6 w-full max-w-sm"
         onClick={(e) => e.stopPropagation()}
       >

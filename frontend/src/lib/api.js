@@ -58,6 +58,20 @@ export const apiPutAuth = (path, body, token) => request(path, { method: 'PUT', 
 export const apiPatchAuth = (path, body, token) => request(path, { method: 'PATCH', body, token })
 export const apiDeleteAuth = (path, token) => request(path, { method: 'DELETE', token })
 
+// admin lists are capped at 100 rows per page server-side; walk every page so
+// counts, filters and searches computed in the UI see the whole dataset
+export async function apiGetAllPages(path, token, { pageSize = 100, maxPages = 100 } = {}) {
+  const sep = path.includes('?') ? '&' : '?'
+  const items = []
+  for (let page = 1; page <= maxPages; page++) {
+    const data = await request(`${path}${sep}page=${page}&pageSize=${pageSize}`, { token })
+    const chunk = data.items || []
+    items.push(...chunk)
+    if (chunk.length === 0 || items.length >= (data.total ?? items.length)) break
+  }
+  return { items, total: items.length }
+}
+
 // file upload helper - sends FormData (multipart) or JSON for URL fetch
 export function apiUploadAuth(path, body, token) {
   const isForm = body instanceof FormData

@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import supabase from '../lib/supabase';
 import { apiGetAuth } from '../lib/api';
-import { AdminPage, StatCard } from './adminTheme';
-import toast from 'react-hot-toast';
+import { AdminPage, StatCard, EmptyState } from './adminTheme';
+import { BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 
 const PANEL = 'rounded-xl border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#0f2137] p-4';
 const PANEL_TITLE = 'text-xs font-black uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-3';
@@ -89,13 +89,19 @@ function AdminDashboard() {
   const [stats, setStats] = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [sales, setSales] = useState(null);
+  const [error, setError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      setError(null);
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (!session) return;
+        if (!session) {
+          if (!cancelled) setError('Your session has expired. Sign in again to load the dashboard.');
+          return;
+        }
         const [s, a, sl] = await Promise.all([
           apiGetAuth('/admin/stats', session.access_token),
           apiGetAuth('/admin/analytics?days=30', session.access_token).catch(() => null),
@@ -103,12 +109,19 @@ function AdminDashboard() {
         ]);
         if (!cancelled) { setStats(s); setAnalytics(a); setSales(sl); }
       } catch (err) {
-        if (!cancelled) toast.error(err.message);
+        if (!cancelled) setError(err.message || 'Could not reach the server.');
       }
     }
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [reloadKey]);
+
+  function retry() {
+    setStats(null);
+    setAnalytics(null);
+    setSales(null);
+    setReloadKey((k) => k + 1);
+  }
 
   const statValues = stats
     ? [
@@ -126,7 +139,22 @@ function AdminDashboard() {
   return (
     <AdminPage title="Data Analytics" subtitle="A live look at how the store is performing.">
 
-      {!stats ? (
+      {error && !stats ? (
+        <EmptyState
+          icon={<BsExclamationTriangle />}
+          title="Dashboard data unavailable"
+          message={error}
+          action={
+            <button
+              type="button"
+              onClick={retry}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0b2e59] dark:bg-yellow-500 text-white dark:text-gray-900 text-xs font-black uppercase tracking-widest hover:bg-[#15407a] dark:hover:bg-yellow-400 transition min-h-[44px]"
+            >
+              <BsArrowClockwise className="w-3.5 h-3.5" /> Retry
+            </button>
+          }
+        />
+      ) : !stats ? (
         <div>
           <span role="status" className="sr-only">Loading...</span>
           <div aria-hidden="true">

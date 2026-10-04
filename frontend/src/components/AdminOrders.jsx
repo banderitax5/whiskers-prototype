@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import supabase from '../lib/supabase';
-import { apiGetAuth, apiPatchAuth, apiDeleteAuth } from '../lib/api';
+import { apiGetAllPages, apiPatchAuth, apiDeleteAuth } from '../lib/api';
 import { AdminPage, AdminTable, EmptyState, StatCard, StatusPill, ConfirmDialog } from './adminTheme';
-import { BsBoxSeam, BsSearch, BsTrash } from 'react-icons/bs';
+import { BsBoxSeam, BsSearch, BsTrash, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 import toast from 'react-hot-toast';
 
 const STATUS_KIND = {
@@ -27,10 +27,19 @@ const AdminOrders = () => {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [selected, setSelected] = useState(new Set());
   const [bulkDeleteTarget, setBulkDeleteTarget] = useState(null);
+  const [error, setError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const PAGE_SIZE = 10;
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => { fetchAll(); }, [reloadKey]);
+
+  useEffect(() => {
+    if (!viewingOrder) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setViewingOrder(null); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [viewingOrder]);
 
   useEffect(() => {
     if (openDropdown === null) return;
@@ -46,11 +55,12 @@ const AdminOrders = () => {
 
   async function fetchAll() {
     setLoading(true);
+    setError(null);
     try {
       const token = await getToken(); if (!token) return;
-      const { items } = await apiGetAuth('/admin/orders', token);
+      const { items } = await apiGetAllPages('/admin/orders', token);
       setAllOrders(items || []);
-    } catch (err) { toast.error(err.message); }
+    } catch (err) { setError(err.message || 'Could not reach the server.'); }
     finally { setLoading(false); }
   }
 
@@ -260,6 +270,23 @@ const AdminOrders = () => {
         <StatCard label="Pending" value={counts.Pending || 0} loading={loading} />
       </div>
 
+      {error && !loading ? (
+        <EmptyState
+          icon={<BsExclamationTriangle />}
+          title="Orders unavailable"
+          message={error}
+          action={
+            <button
+              type="button"
+              onClick={() => setReloadKey((k) => k + 1)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0b2e59] dark:bg-yellow-500 text-white dark:text-gray-900 text-xs font-black uppercase tracking-widest hover:bg-[#15407a] dark:hover:bg-yellow-400 transition min-h-[44px]"
+            >
+              <BsArrowClockwise className="w-3.5 h-3.5" /> Retry
+            </button>
+          }
+        />
+      ) : (
+      <>
       <div className="flex flex-wrap gap-3 mb-4 items-center">
         <div className="relative flex-1 min-w-[200px] max-w-md">
           <BsSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500" />
@@ -345,11 +372,13 @@ const AdminOrders = () => {
           />
         }
       />
+      </>
+      )}
 
       {/* Order Detail Modal */}
       {viewingOrder && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setViewingOrder(null)}>
-          <div className="bg-white dark:bg-[#0f2847] rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" aria-label="Order Details" className="bg-white dark:bg-[#0f2847] rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             {/* header */}
             <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#1e3a5f]">
               <div>

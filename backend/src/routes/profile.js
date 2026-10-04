@@ -15,6 +15,7 @@ const LIMITS = {
   city: 100,
   province: 100,
   postalCode: 20,
+  country: 100,
 }
 
 // trims whitespace and caps length, returns null for empty strings
@@ -108,7 +109,7 @@ router.get('/', authMiddleware, async (req, res) => {
 
 // PUT /api/profile
 router.put('/', authMiddleware, async (req, res) => {
-  const { firstName, lastName, phone, addressLine1, addressLine2, city, province, postalCode } = req.body ?? {}
+  const { firstName, lastName, phone, addressLine1, addressLine2, city, province, postalCode, country } = req.body ?? {}
   try {
     const updates = {
       id: req.userId,
@@ -124,6 +125,8 @@ router.put('/', authMiddleware, async (req, res) => {
     const ln = sanitizeField(lastName, LIMITS.name)
     if (fn) updates.first_name = encryptText(fn)
     if (ln) updates.last_name = encryptText(ln)
+    const co = sanitizeField(country, LIMITS.country)
+    if (co) updates.country = encryptText(co)
 
     const { error: upsertError } = await req.db
       .from('profiles')

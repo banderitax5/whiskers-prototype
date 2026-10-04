@@ -17,7 +17,7 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
     if (isOpen && product) {
       setQty(1)
       setSelectedVariant(product)
-      trackEvent('product_view', { product_id: product.id, name: product.name })
+      trackEvent('product_view', { product_id: product.prod_id || product.id, name: product.prod_name || product.name })
     }
   }, [isOpen, product])
 
@@ -66,6 +66,7 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
 
   function increase() { setQty((v) => v + 1) }
   function decrease() { setQty((v) => Math.max(1, v - 1)) }
+  const purchasable = safePrice > 0
 
   return createPortal(
     <div
@@ -111,8 +112,11 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
           <div className="flex flex-col">
             <h3 className="text-xl font-bold text-gray-900 dark:text-white sm:text-2xl">{p.name}</h3>
             <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{p.brand || p.collection || 'Whiskers'}</p>
-            <p className="mt-3 text-3xl font-bold text-[#e4406a]">PHP {safePrice.toFixed(2)}</p>
-            <p className="text-sm text-gray-400 line-through">PHP {(safePrice * 1.12).toFixed(2)} (SRP)</p>
+            {purchasable ? (
+              <p className="mt-3 text-3xl font-bold text-[#e4406a]">PHP {safePrice.toFixed(2)}</p>
+            ) : (
+              <p className="mt-3 text-lg font-semibold text-gray-500 dark:text-gray-400">Price not yet set</p>
+            )}
 
             <div className="mt-4">
               <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Description</p>
@@ -157,10 +161,20 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
             {/* add to cart and buy now buttons side by side */}
             {/* pass the currently selected variant (current) so the right size gets added */}
             <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-5 sm:gap-3">
-              <button type="button" onClick={() => onAddToCart(current, qty)} className="h-10 rounded-lg bg-yellow-400 text-xs font-bold text-gray-900 transition hover:bg-yellow-500 active:bg-yellow-600 sm:h-12 sm:text-sm">
-                Add to Cart
+              <button
+                type="button"
+                disabled={!purchasable}
+                onClick={() => onAddToCart(current, qty)}
+                className="h-10 rounded-lg bg-yellow-400 text-xs font-bold text-gray-900 transition hover:bg-yellow-500 active:bg-yellow-600 sm:h-12 sm:text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {purchasable ? 'Add to Cart' : 'Unavailable'}
               </button>
-              <button type="button" onClick={() => onBuyNow(current, qty)} className="h-10 rounded-lg bg-[#0b2e59] text-xs font-bold text-white transition hover:bg-[#15407a] sm:h-12 sm:text-sm">
+              <button
+                type="button"
+                disabled={!purchasable}
+                onClick={() => onBuyNow(current, qty)}
+                className="h-10 rounded-lg bg-[#0b2e59] text-xs font-bold text-white transition hover:bg-[#15407a] sm:h-12 sm:text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              >
                 Buy Now
               </button>
             </div>

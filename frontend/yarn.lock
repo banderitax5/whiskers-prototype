@@ -2934,6 +2934,12 @@ path-scurry@^2.0.0:
     lru-cache "^11.0.0"
     minipass "^7.1.2"
 
+"petconnect-prototype@file:..":
+  resolved "file:.."
+  dependencies:
+    express-rate-limit "^8.3.2"
+    helmet "^8.1.0"
+
 picocolors@^1.1.1:
   version "1.1.1"
   resolved "https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz"

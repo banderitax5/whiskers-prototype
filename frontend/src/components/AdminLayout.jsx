@@ -16,6 +16,7 @@ import {
   BsList,
   BsXLg,
   BsClockHistory,
+  BsChatDots,
 } from "react-icons/bs"
 
 // the layout wrapper for all admin pages
@@ -66,6 +67,7 @@ function AdminLayout() {
     { to: "/admin/customers", label: "Customers", icon: <BsPeople /> },
     { to: "/admin/orders", label: "Orders", icon: <BsReceipt /> },
     { to: "/admin/payments", label: "Payments", icon: <BsCreditCard /> },
+    { to: "/admin/support", label: "Customer Support", icon: <BsChatDots /> },
     { to: "/admin/audit-logs", label: "Audit Logs", icon: <BsClockHistory /> },
   ]
 

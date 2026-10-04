@@ -28,6 +28,8 @@ function Home() {
   const [activeSizeVariants, setActiveSizeVariants] = useState([])
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
   const [currentSlide, setCurrentSlide] = useState(0)
 
   useEffect(() => {
@@ -43,17 +45,20 @@ function Home() {
 
   useEffect(() => {
     async function load() {
+      setLoading(true)
+      setLoadFailed(false)
       try {
         const res = await apiGet('/products?pageSize=200')
         setProducts(res.items || [])
       } catch (err) {
         console.error('Failed to load products:', err)
+        setLoadFailed(true)
       } finally {
         setLoading(false)
       }
     }
     load()
-  }, [])
+  }, [attempt])
 
   const enrichedProducts = useMemo(() => attachSizeVariants(products), [products])
 
@@ -72,7 +77,6 @@ function Home() {
       image: product.image_url || '',
       collection: product.category,
       brand: product.brand || '',
-      size: product.sizeLabel || '',
     }, qty)
   }
 
@@ -118,6 +122,34 @@ function Home() {
         ))}
       </div>
       </>
+    )
+  }
+
+  if (loadFailed) {
+    return (
+      <div className={SHELL}>
+        <div className="bg-red-50 border border-red-200 rounded-xl p-8 text-center dark:bg-red-900/30 dark:border-red-800">
+          <h2 className="font-semibold text-red-900 dark:text-red-200 mb-1">Could not load products</h2>
+          <p className="text-sm text-red-700 dark:text-red-300 mb-4">Check your connection and try again.</p>
+          <button
+            type="button"
+            onClick={() => setAttempt((a) => a + 1)}
+            className="px-4 py-2 rounded-lg bg-red-700 hover:bg-red-800 text-white text-sm font-semibold transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (products.length === 0) {
+    return (
+      <div className={SHELL}>
+        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center dark:bg-gray-800 dark:border-gray-700">
+          <p className="text-sm text-gray-600 dark:text-gray-400">No products are available right now. Please check back soon.</p>
+        </div>
+      </div>
     )
   }
 
@@ -190,29 +222,35 @@ function Home() {
                     {category}
                   </span>
                   <p className="text-xs sm:text-base font-semibold text-gray-800 dark:text-gray-100 line-clamp-2 leading-tight min-h-[2rem] sm:min-h-[2.5rem]">{product.prod_name}</p>
-                  <p className="text-sm sm:text-lg font-bold text-gray-900 dark:text-white">PHP {product.price.toFixed(2)}</p>
+                  {product.price > 0 ? (
+                    <p className="text-sm sm:text-lg font-bold text-gray-900 dark:text-white">PHP {product.price.toFixed(2)}</p>
+                  ) : (
+                    <p className="text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400">Price not yet set</p>
+                  )}
                 </div>
                 <div className="p-2 sm:p-4 pt-0 space-y-1.5 sm:space-y-2">
                   <button
                     type="button"
+                    disabled={!(product.price > 0)}
                     onClick={(e) => {
                       e.stopPropagation()
                       handleAddToCart(product)
                     }}
-                    className="w-full bg-yellow-400 hover:bg-yellow-500 active:bg-yellow-600 text-gray-900 font-semibold py-2 sm:py-2.5 rounded-md flex items-center justify-center gap-1.5 sm:gap-2 text-[10px] sm:text-sm transition-all duration-200 touch-manipulation min-h-[34px] sm:min-h-[40px] hover:shadow-sm active:scale-[0.98]"
+                    className="w-full bg-yellow-400 hover:bg-yellow-500 active:bg-yellow-600 text-gray-900 font-semibold py-2 sm:py-2.5 rounded-md flex items-center justify-center gap-1.5 sm:gap-2 text-[10px] sm:text-sm transition-all duration-200 touch-manipulation min-h-[34px] sm:min-h-[40px] hover:shadow-sm active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
                   >
                     <svg className="w-3.5 h-3.5 sm:w-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
                     </svg>
-                    <span className="whitespace-nowrap">ADD TO CART</span>
+                    <span className="whitespace-nowrap">{product.price > 0 ? 'ADD TO CART' : 'UNAVAILABLE'}</span>
                   </button>
                   <button
                     type="button"
+                    disabled={!(product.price > 0)}
                     onClick={(e) => {
                       e.stopPropagation()
                       handleBuyNow(product)
                     }}
-                    className="w-full bg-[#0b2e59] hover:bg-[#15407a] active:bg-[#1a4f8f] text-white font-semibold py-2 sm:py-2.5 rounded-md text-[10px] sm:text-sm transition-all duration-200 min-h-[34px] sm:min-h-[40px] hover:shadow-sm active:scale-[0.98]"
+                    className="w-full bg-[#0b2e59] hover:bg-[#15407a] active:bg-[#1a4f8f] text-white font-semibold py-2 sm:py-2.5 rounded-md text-[10px] sm:text-sm transition-all duration-200 min-h-[34px] sm:min-h-[40px] hover:shadow-sm active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
                   >
                     BUY NOW
                   </button>

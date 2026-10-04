@@ -111,7 +111,7 @@ function Cart() {
                       <div className="min-w-0">
                         <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">{item.name}</h3>
                         <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                          {[item.collection, item.brand, item.size].filter(Boolean).join(' · ')}
+                          {[item.collection, item.brand].filter(Boolean).join(' · ')}
                         </p>
                       </div>
                       <p className="flex-shrink-0 text-sm font-bold text-gray-900 dark:text-white">PHP {item.price.toFixed(2)}</p>

@@ -240,14 +240,6 @@ function OfficialReceipt() {
                   <span className="text-gray-600">Shipping Fee</span>
                   <span className="font-semibold text-gray-900">{peso(s.shipping)}</span>
                 </div>
-                <div className="flex items-center justify-between py-1.5 text-sm">
-                  <span className="text-gray-600">Voucher Discount (shopcode)</span>
-                  <span className="font-semibold text-green-700">−{peso(s.voucher)}</span>
-                </div>
-                <div className="flex items-center justify-between py-1.5 text-sm">
-                  <span className="text-gray-600">Estimated VAT (4% included)</span>
-                  <span className="font-semibold text-gray-900">{peso(s.vat)}</span>
-                </div>
               </div>
               <div className="-mx-4 -mb-4 mt-3 px-4 py-3 rounded-b-md bg-blue-50 flex items-center justify-between">
                 <span className="text-[11px] font-black uppercase tracking-widest text-gray-700">Total Paid</span>

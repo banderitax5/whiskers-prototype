@@ -14,6 +14,8 @@ import productsRoutes from './src/routes/products.js'
 import ordersRoutes from './src/routes/orders.js'
 import adminRoutes from './src/routes/admin.js'
 import eventsRoutes from './src/routes/events.js'
+import feedbackRoutes from './src/routes/feedback.js'
+import supportRoutes from './src/routes/support.js'
 
 const app = express()
 app.disable('x-powered-by')
@@ -58,6 +60,8 @@ app.use('/api/products', productsRoutes)
 app.use('/api/orders', ordersRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/events', eventsRoutes)
+app.use('/api/feedback', feedbackRoutes)
+app.use('/api/support', supportRoutes)
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', uptime: process.uptime() })

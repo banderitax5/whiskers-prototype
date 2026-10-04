@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import supabase from '../lib/supabase';
 import { apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth, apiUploadAuth } from '../lib/api';
 import { AdminPage, AdminTable, EmptyState, StatCard, btnPrimary, StatusPill, ConfirmDialog } from './adminTheme';
-import { BsBoxSeam, BsPlusLg, BsDashLg, BsPencilSquare, BsTrash, BsUpload, BsSearch } from 'react-icons/bs';
+import { BsBoxSeam, BsPlusLg, BsDashLg, BsPencilSquare, BsTrash, BsUpload, BsSearch, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 import toast from 'react-hot-toast';
 
 const AdminProductManagement = () => {
@@ -27,11 +27,21 @@ const AdminProductManagement = () => {
   const [mobileUploading, setMobileUploading] = useState(false);
   const [mobileDragging, setMobileDragging] = useState(false);
   const [mobileUrlInput, setMobileUrlInput] = useState('');
+  const [error, setError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const fileInputRef = useRef(null);
   const mobileFileRef = useRef(null);
   const PAGE_SIZE = 10;
 
-  useEffect(() => { fetchProducts(); }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchProducts(); }, [reloadKey]);
+
+  useEffect(() => {
+    if (!mobileEditItem) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setMobileEditItem(null); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [mobileEditItem]);
 
   async function getToken() {
     const { data: { session } } = await supabase.auth.getSession();
@@ -40,6 +50,7 @@ const AdminProductManagement = () => {
 
   async function fetchProducts() {
     setLoading(true);
+    setError(null);
     try {
       const token = await getToken(); if (!token) return;
       const all = [];
@@ -49,7 +60,7 @@ const AdminProductManagement = () => {
         if (!items || items.length < 100 || all.length >= (total ?? 0)) break;
       }
       setProducts(all);
-    } catch (err) { toast.error(err.message); }
+    } catch (err) { setError(err.message || 'Could not reach the server.'); }
     finally { setLoading(false); }
   }
 
@@ -400,6 +411,23 @@ const AdminProductManagement = () => {
         </form>
       )}
 
+      {error && !loading ? (
+        <EmptyState
+          icon={<BsExclamationTriangle />}
+          title="Products unavailable"
+          message={error}
+          action={
+            <button
+              type="button"
+              onClick={() => setReloadKey((k) => k + 1)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0b2e59] dark:bg-yellow-500 text-white dark:text-gray-900 text-xs font-black uppercase tracking-widest hover:bg-[#15407a] dark:hover:bg-yellow-400 transition min-h-[44px]"
+            >
+              <BsArrowClockwise className="w-3.5 h-3.5" /> Retry
+            </button>
+          }
+        />
+      ) : (
+      <>
       <div className="flex flex-wrap gap-2 mb-4">
         {loading
           ? Array.from({ length: 4 }).map((_, i) => (
@@ -492,10 +520,12 @@ const AdminProductManagement = () => {
           />
         }
       />
+      </>
+      )}
 
       {/* Mobile Edit Dialog */}
       {mobileEditItem && (
-        <dialog className="modal modal-open">
+        <dialog className="modal modal-open" aria-label="Edit Product">
           <div className="modal-box max-w-md bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] p-0 gap-0">
             <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#1e3a5f]">
               <h3 className="font-bold text-gray-900 dark:text-slate-100 text-sm">Edit Product</h3>

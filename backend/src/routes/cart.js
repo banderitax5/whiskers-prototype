@@ -77,7 +77,10 @@ router.post('/', async (req, res) => {
 
 // updates the quantity for a specific product in the user's cart
 router.put('/:productId', async (req, res) => {
-  const productId = Number(req.params.productId)
+  const productId = String(req.params.productId || '').trim()
+  if (!productId || productId.length > 64) {
+    return res.status(400).json({ error: 'Invalid product id' })
+  }
   const { quantity } = req.body ?? {}
   const qty = Math.max(1, Number(quantity) || 1)
 
@@ -86,12 +89,12 @@ router.put('/:productId', async (req, res) => {
       .from('cart_items')
       .update({ quantity: qty })
       .eq('product_id', productId)
-      .select()
-      .single()
-
+      .select('id')
     if (error) throw error
-    if (!data) return res.status(404).json({ error: 'Item not found in cart' })
-    res.json({ item: data })
+    if (!data || data.length === 0) {
+      return res.status(404).json({ error: 'Item not found in cart' })
+    }
+    res.json({ item: { product_id: productId, quantity: qty } })
   } catch (err) {
     logger.error({ err: err.message }, 'Cart update failed')
     res.status(500).json({ error: 'Failed to update cart item' })

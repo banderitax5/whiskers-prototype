@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import supabase from '../lib/supabase';
-import { apiGetAuth, apiPatchAuth, apiDeleteAuth } from '../lib/api';
+import { apiGetAllPages, apiPatchAuth, apiDeleteAuth } from '../lib/api';
 import { AdminPage, AdminTable, EmptyState, StatCard, StatusPill, ConfirmDialog } from './adminTheme';
-import { BsPeople, BsSearch, BsTrash } from 'react-icons/bs';
+import { BsPeople, BsSearch, BsTrash, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 import toast from 'react-hot-toast';
 
 const ROLES = ['user', 'admin'];
@@ -17,17 +17,20 @@ const AdminCustomers = () => {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [page, setPage] = useState(1);
+  const [error, setError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const PAGE_SIZE = 10;
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setLoading(true);
+      setError(null);
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
         const [{ items }, { data: { user } }] = await Promise.all([
-          apiGetAuth('/admin/customers', session.access_token),
+          apiGetAllPages('/admin/customers', session.access_token),
           supabase.auth.getUser(),
         ]);
         if (!cancelled) {
@@ -35,14 +38,14 @@ const AdminCustomers = () => {
           setCurrentUserId(user?.id || null);
         }
       } catch (err) {
-        if (!cancelled) toast.error(err.message);
+        if (!cancelled) setError(err.message || 'Could not reach the server.');
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [reloadKey]);
 
   useEffect(() => {
     if (openDropdown === null) return;
@@ -106,6 +109,16 @@ const AdminCustomers = () => {
       ),
     },
     { key: 'phone', label: 'Contact', render: (u) => <span className="text-gray-700 dark:text-slate-300">{u.phone || 'N/A'}</span> },
+    { key: 'ordersCount', label: 'Orders',
+      render: (u) => u.ordersCount > 0
+        ? <span className="font-black text-sm text-gray-900 dark:text-slate-100">{u.ordersCount}</span>
+        : <span className="text-gray-400 dark:text-slate-500">0</span>,
+    },
+    { key: 'totalSpent', label: 'Spent',
+      render: (u) => u.totalSpent > 0
+        ? <span className="font-black text-sm text-[#0b2e59] dark:text-yellow-200">PHP {Number(u.totalSpent).toLocaleString()}</span>
+        : <span className="text-gray-400 dark:text-slate-500">-</span>,
+    },
     {
       key: 'feedback', label: 'Feedback',
       render: (u) => u.feedback
@@ -182,12 +195,28 @@ const AdminCustomers = () => {
         />
       </div>
 
+      {error && !loading ? (
+        <EmptyState
+          icon={<BsExclamationTriangle />}
+          title="Customers unavailable"
+          message={error}
+          action={
+            <button
+              type="button"
+              onClick={() => setReloadKey((k) => k + 1)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0b2e59] dark:bg-yellow-500 text-white dark:text-gray-900 text-xs font-black uppercase tracking-widest hover:bg-[#15407a] dark:hover:bg-yellow-400 transition min-h-[44px]"
+            >
+              <BsArrowClockwise className="w-3.5 h-3.5" /> Retry
+            </button>
+          }
+        />
+      ) : (
       <AdminTable
         columns={columns}
         rows={filtered}
         rowKey={(u) => u.id}
         loading={loading}
-        colSpan={4}
+        colSpan={6}
         page={page}
         pageSize={PAGE_SIZE}
         onPageChange={setPage}
@@ -206,6 +235,8 @@ const AdminCustomers = () => {
             </div>
             <div className="text-xs text-gray-500 dark:text-slate-400 pl-9">
               {u.phone || 'No phone'}
+              {u.ordersCount > 0 && <span className="ml-1.5">· {u.ordersCount} order{u.ordersCount > 1 ? 's' : ''}</span>}
+              {u.totalSpent > 0 && <span className="ml-1.5">· PHP {Number(u.totalSpent).toLocaleString()}</span>}
               {u.feedback && <span className="ml-1.5">· Has feedback</span>}
             </div>
           </div>
@@ -218,8 +249,9 @@ const AdminCustomers = () => {
               ? 'Try a different name or phone number.'
               : 'When shoppers sign up they will show up here. Share the storefront to get started.'}
           />
-        }
-      />
+          }
+        />
+      )}
       <ConfirmDialog
         open={!!deleteTarget}
         title="Remove customer"

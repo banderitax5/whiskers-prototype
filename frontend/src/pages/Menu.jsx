@@ -24,6 +24,8 @@ function Menu() {
 
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
   const [categories, setCategories] = useState([])
   const [brands, setBrands] = useState([])
 
@@ -62,6 +64,8 @@ function Menu() {
 
   useEffect(() => {
     async function load() {
+      setLoading(true)
+      setLoadFailed(false)
       try {
         const [prodRes, catRes, brandRes] = await Promise.all([
           apiGet('/products?pageSize=500'),
@@ -73,12 +77,13 @@ function Menu() {
         setBrands(brandRes.items || [])
       } catch (err) {
         console.error('Failed to load products:', err)
+        setLoadFailed(true)
       } finally {
         setLoading(false)
       }
     }
     load()
-  }, [])
+  }, [attempt])
 
   // enrich products with size variant info
   const enrichedProducts = useMemo(() => attachSizeVariants(products), [products])
@@ -115,9 +120,10 @@ function Menu() {
       const matchBrand = filters.brands.length === 0 || filters.brands.some((b) => product.brand?.toLowerCase() === b.toLowerCase())
       const matchPrice =
         filters.maxPrice === 'all' ||
-        (filters.maxPrice === '300' && product.price <= 300) ||
-        (filters.maxPrice === '600' && product.price <= 600) ||
-        (filters.maxPrice === '1000' && product.price <= 1000)
+        (product.price > 0 &&
+          ((filters.maxPrice === '300' && product.price <= 300) ||
+            (filters.maxPrice === '600' && product.price <= 600) ||
+            (filters.maxPrice === '1000' && product.price <= 1000)))
       return matchSearch && matchCategory && matchBrand && matchPrice
     })
 
@@ -149,7 +155,6 @@ function Menu() {
       image: product.image_url || '',
       collection: product.category,
       brand: product.brand || '',
-      size: product.sizeLabel || '',
     }, qty)
   }
 
@@ -219,6 +224,24 @@ function Menu() {
               ))}
             </div>
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (loadFailed) {
+    return (
+      <div className="w-full lg:mx-auto lg:max-w-7xl py-6 sm:py-8">
+        <div className="bg-red-50 border border-red-200 rounded-xl p-8 text-center dark:bg-red-900/30 dark:border-red-800">
+          <h2 className="font-semibold text-red-900 dark:text-red-200 mb-1">Could not load products</h2>
+          <p className="text-sm text-red-700 dark:text-red-300 mb-4">Check your connection and try again.</p>
+          <button
+            type="button"
+            onClick={() => setAttempt((a) => a + 1)}
+            className="px-4 py-2 rounded-lg bg-red-700 hover:bg-red-800 text-white text-sm font-semibold transition-colors"
+          >
+            Retry
+          </button>
         </div>
       </div>
     )
@@ -381,20 +404,26 @@ function Menu() {
                       {product.prod_name}
                     </h3>
                     <p className="mt-0.5 sm:mt-1 text-[10px] sm:text-[11px] text-gray-400 dark:text-gray-500 truncate">{product.category}</p>
-                    <p className="mt-1 sm:mt-2 text-sm sm:text-base font-bold text-gray-900 dark:text-white">PHP {product.price.toFixed(2)}</p>
+                    {product.price > 0 ? (
+                      <p className="mt-1 sm:mt-2 text-sm sm:text-base font-bold text-gray-900 dark:text-white">PHP {product.price.toFixed(2)}</p>
+                    ) : (
+                      <p className="mt-1 sm:mt-2 text-[11px] sm:text-xs font-medium text-gray-500 dark:text-gray-400">Price not yet set</p>
+                    )}
 
                     <div className={`mt-2 sm:mt-3 flex gap-1.5 sm:gap-2 ${viewMode === 'list' ? 'flex-shrink-0' : ''}`}>
                       <button
                         type="button"
+                        disabled={!(product.price > 0)}
                         onClick={(e) => { e.stopPropagation(); handleAddToCart(product) }}
-                        className="flex-1 h-8 sm:h-9 rounded-lg bg-yellow-400 px-1.5 sm:px-2 text-[10px] sm:text-xs font-semibold text-gray-900 hover:bg-yellow-500 active:bg-yellow-600 transition"
+                        className="flex-1 h-8 sm:h-9 rounded-lg bg-yellow-400 px-1.5 sm:px-2 text-[10px] sm:text-xs font-semibold text-gray-900 hover:bg-yellow-500 active:bg-yellow-600 transition disabled:opacity-40 disabled:cursor-not-allowed"
                       >
-                        Add to Cart
+                        {product.price > 0 ? 'Add to Cart' : 'Unavailable'}
                       </button>
                       <button
                         type="button"
+                        disabled={!(product.price > 0)}
                         onClick={(e) => { e.stopPropagation(); handleBuyNow(product) }}
-                        className="flex-1 h-8 sm:h-9 rounded-lg bg-[#0b2e59] px-1.5 sm:px-2 text-[10px] sm:text-xs font-semibold text-white hover:bg-[#15407a] active:bg-[#0a2347] transition"
+                        className="flex-1 h-8 sm:h-9 rounded-lg bg-[#0b2e59] px-1.5 sm:px-2 text-[10px] sm:text-xs font-semibold text-white hover:bg-[#15407a] active:bg-[#0a2347] transition disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         Buy Now
                       </button>
