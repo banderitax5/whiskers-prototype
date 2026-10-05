@@ -104,7 +104,19 @@ npm run doctor
    - Frontend: http://localhost:5173
    - Backend API: http://localhost:4141
 
-Each image builds from its own service folder, so compose works straight from the repo root.
+Each image builds from its own service folder, so compose works straight from the repo root. Backend images install production dependencies only (`npm ci --omit=dev`, `NODE_ENV=production`).
+
+## Deployment (recommended target)
+
+The paper commits to Oracle Cloud Free Tier and the project must stay free and reachable 24/7, so the intended target is an **Oracle Cloud Always Free VM** (ARM shape) running Docker Compose:
+
+1. Provision the VM (Ubuntu), open only ports 22, 80, and 443.
+2. Install Docker, clone the repo, copy both `.env.example` files to `.env` and fill in Supabase keys.
+3. `docker compose up --build` (run `docker compose config` first to validate) — **run the build once on the VM**; it is the canonical build check.
+4. Put the frontend behind a reverse proxy (Caddy or nginx) on 443 with a Cloudflare-managed DNS record; point `VITE_PROXY_TARGET` at the backend container.
+5. Keep Supabase on its free cloud tier (database + auth); the VM only runs the API and static frontend.
+
+Render/Railway free tiers sleep after inactivity, so they do not satisfy the 24/7 requirement.
 
 ## Troubleshooting
 
