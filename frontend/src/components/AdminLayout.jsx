@@ -5,6 +5,7 @@ import RecoveryGate from "./RecoveryGate.jsx"
 import StepUpModal from "./StepUpModal.jsx"
 import { clearStepUp } from "../lib/stepUp"
 import { useThemeDetection } from "./adminTheme"
+import { useRole } from "../context/RoleContext"
 import FloatingNotification from "./Toaster.jsx"
 import {
   BsBarChart,
@@ -17,6 +18,7 @@ import {
   BsXLg,
   BsClockHistory,
   BsChatDots,
+  BsClipboardCheck,
 } from "react-icons/bs"
 
 // the layout wrapper for all admin pages
@@ -27,6 +29,7 @@ function AdminLayout() {
   const navigate = useNavigate()
   const [user, setUser] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const role = useRole()
 
   useThemeDetection()
 
@@ -61,15 +64,18 @@ function AdminLayout() {
   const inactiveClass = "text-white/80 hover:bg-white/10 hover:text-white"
 
   // all the sidebar navigation items in one array so we can loop over them
+  // each entry declares which roles may see it (staff = orders, products,
+  // support, payments view, bookings — per the paper's staff DFD)
   const navLinks = [
-    { to: "/admin", label: "Data Analytics", icon: <BsBarChart />, end: true },
-    { to: "/admin/products", label: "Product Management", icon: <BsBoxSeam /> },
-    { to: "/admin/customers", label: "Customers", icon: <BsPeople /> },
-    { to: "/admin/orders", label: "Orders", icon: <BsReceipt /> },
-    { to: "/admin/payments", label: "Payments", icon: <BsCreditCard /> },
-    { to: "/admin/support", label: "Customer Support", icon: <BsChatDots /> },
-    { to: "/admin/audit-logs", label: "Audit Logs", icon: <BsClockHistory /> },
-  ]
+    { to: "/admin", label: "Data Analytics", icon: <BsBarChart />, end: true, roles: ["admin"] },
+    { to: "/admin/products", label: "Product Management", icon: <BsBoxSeam />, roles: ["admin", "staff"] },
+    { to: "/admin/customers", label: "Customers", icon: <BsPeople />, roles: ["admin"] },
+    { to: "/admin/orders", label: "Orders", icon: <BsReceipt />, roles: ["admin", "staff"] },
+    { to: "/admin/payments", label: "Payments", icon: <BsCreditCard />, roles: ["admin", "staff"] },
+    { to: "/admin/support", label: "Customer Support", icon: <BsChatDots />, roles: ["admin", "staff"] },
+    { to: "/admin/bookings", label: "Bookings", icon: <BsClipboardCheck />, roles: ["admin", "staff"] },
+    { to: "/admin/audit-logs", label: "Audit Logs", icon: <BsClockHistory />, roles: ["admin"] },
+  ].filter((link) => link.roles.includes(role))
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-[#0b1929]">
@@ -162,7 +168,7 @@ function AdminLayout() {
           </button>
 
           <h1 className="text-lg sm:text-xl font-semibold text-gray-800 dark:text-slate-100">
-            Admin Dashboard
+            {role === 'staff' ? 'Staff Dashboard' : 'Admin Dashboard'}
           </h1>
         </div>
 

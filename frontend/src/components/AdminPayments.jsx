@@ -3,6 +3,7 @@ import supabase from '../lib/supabase';
 import { apiGetAllPages, apiDeleteAuth } from '../lib/api';
 import { AdminPage, AdminTable, EmptyState, StatCard, ConfirmDialog } from './adminTheme';
 import { BsCreditCard, BsSearch, BsTrash, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
+import { useRole } from '../context/RoleContext';
 import toast from 'react-hot-toast';
 
 const AdminPayments = () => {
@@ -146,8 +147,12 @@ const AdminPayments = () => {
 
   const allSelected = filteredPayments.length > 0 && selected.size === filteredPayments.length;
 
+  // deleting payments is admin-only on the backend, so staff never see it
+  const canDelete = useRole() === 'admin';
+
   const columns = [
-    { key: 'select', label: '', sortable: false,
+    ...(canDelete ? [{
+      key: 'select', label: '', sortable: false,
       render: (p) => (
         <input
           type="checkbox"
@@ -157,7 +162,7 @@ const AdminPayments = () => {
           className="h-4 w-4 rounded border-gray-300 dark:border-[#1e3a5f] text-[#0b2e59] dark:text-yellow-500 focus:ring-[#0b2e59] cursor-pointer accent-[#0b2e59]"
         />
       ),
-    },
+    }] : []),
     { key: 'payment_id', label: 'Trans. ID', render: (p) => <span className="text-xs font-mono text-gray-500 dark:text-slate-400">{String(p.payment_id).slice(0, 8).toUpperCase()}</span> },
     { key: 'order_id', label: 'Order ID', sortable: true, render: (p) => <span className="text-xs font-mono text-gray-500 dark:text-slate-400">{String(p.order_id).slice(0, 8).toUpperCase()}</span> },
     { key: 'customer', label: 'Customer', sortable: true,
@@ -180,7 +185,8 @@ const AdminPayments = () => {
         {p.payment_date ? new Date(p.payment_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
       </span>,
     },
-    { key: 'actions', label: '', sortable: false,
+    ...(canDelete ? [{
+      key: 'actions', label: '', sortable: false,
       render: (p) => (
         <button
           type="button"
@@ -191,7 +197,7 @@ const AdminPayments = () => {
           <BsTrash className="w-4 h-4" />
         </button>
       ),
-    },
+    }] : []),
   ];
 
   return (
@@ -245,7 +251,7 @@ const AdminPayments = () => {
         )}
       </div>
 
-      {selected.size > 0 && (
+      {canDelete && selected.size > 0 && (
         <div className="flex items-center gap-3 mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
           <span className="text-sm font-semibold text-red-700 dark:text-red-300">{selected.size} selected</span>
           <button
@@ -288,7 +294,7 @@ const AdminPayments = () => {
               {p.payment_date && <span className="ml-1.5">· {new Date(p.payment_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span>}
             </div>
             <div className="flex items-center gap-2 pt-1.5 mt-1.5 border-t border-gray-50 dark:border-[#1e3a5f]/40">
-              <button type="button" onClick={(e) => { e.stopPropagation(); setDeleteTarget(p); }} className="px-2.5 py-1 rounded text-red-400 text-[10px] font-bold">Delete</button>
+              {canDelete && <button type="button" onClick={(e) => { e.stopPropagation(); setDeleteTarget(p); }} className="px-2.5 py-1 rounded text-red-400 text-[10px] font-bold">Delete</button>}
             </div>
           </div>
         )}

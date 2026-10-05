@@ -101,3 +101,13 @@ export const supportLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: clientKey,
 })
+
+// 10 booking requests per hour per IP
+export const bookingLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many booking requests. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+})

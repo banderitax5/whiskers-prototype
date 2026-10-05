@@ -3,6 +3,7 @@ import supabase from '../lib/supabase';
 import { apiGetAllPages, apiPatchAuth, apiDeleteAuth } from '../lib/api';
 import { AdminPage, AdminTable, EmptyState, StatCard, StatusPill, ConfirmDialog } from './adminTheme';
 import { BsBoxSeam, BsSearch, BsTrash, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
+import { useRole } from '../context/RoleContext';
 import toast from 'react-hot-toast';
 
 const STATUS_KIND = {
@@ -173,8 +174,12 @@ const AdminOrders = () => {
 
   const allSelected = orders.length > 0 && selected.size === orders.length;
 
+  // deleting orders is admin-only on the backend, so staff never see it
+  const canDelete = useRole() === 'admin';
+
   const columns = [
-    { key: 'select', label: '', sortable: false,
+    ...(canDelete ? [{
+      key: 'select', label: '', sortable: false,
       render: (o) => (
         <input
           type="checkbox"
@@ -184,7 +189,7 @@ const AdminOrders = () => {
           className="h-4 w-4 rounded border-gray-300 dark:border-[#1e3a5f] text-[#0b2e59] dark:text-yellow-500 focus:ring-[#0b2e59] cursor-pointer accent-[#0b2e59]"
         />
       ),
-    },
+    }] : []),
     { key: 'id', label: 'Order ID', sortable: true, render: (o) => <span className="text-xs font-mono text-gray-500 dark:text-slate-400">{String(o.order_id).slice(0, 8).toUpperCase()}</span> },
     { key: 'customer', label: 'User Account', sortable: true,
       render: (o) => {
@@ -247,7 +252,8 @@ const AdminOrders = () => {
         </div>
       ),
     },
-    { key: 'actions', label: '', sortable: false,
+    ...(canDelete ? [{
+      key: 'actions', label: '', sortable: false,
       render: (o) => (
         <button
           type="button"
@@ -258,7 +264,7 @@ const AdminOrders = () => {
           <BsTrash className="w-4 h-4" />
         </button>
       ),
-    },
+    }] : []),
   ];
 
   return (
@@ -315,7 +321,7 @@ const AdminOrders = () => {
         ))}
       </div>
 
-      {selected.size > 0 && (
+      {canDelete && selected.size > 0 && (
         <div className="flex items-center gap-3 mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
           <span className="text-sm font-semibold text-red-700 dark:text-red-300">{selected.size} selected</span>
           <button
@@ -358,7 +364,7 @@ const AdminOrders = () => {
             </div>
             <div className="flex items-center gap-2 pt-1.5 mt-1.5 border-t border-gray-50 dark:border-[#1e3a5f]/40">
               <button type="button" onClick={(e) => { e.stopPropagation(); setViewingOrder(o); }} className="px-2.5 py-1 rounded bg-[#0b2e59] text-white text-[10px] font-bold">View</button>
-              <button type="button" onClick={(e) => { e.stopPropagation(); setDeleteTarget(o); }} className="px-2.5 py-1 rounded text-red-400 text-[10px] font-bold">Delete</button>
+              {canDelete && <button type="button" onClick={(e) => { e.stopPropagation(); setDeleteTarget(o); }} className="px-2.5 py-1 rounded text-red-400 text-[10px] font-bold">Delete</button>}
             </div>
           </div>
         )}

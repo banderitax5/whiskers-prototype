@@ -5,8 +5,8 @@ import { AdminPage, AdminTable, EmptyState, StatCard, StatusPill, ConfirmDialog 
 import { BsPeople, BsSearch, BsTrash, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 import toast from 'react-hot-toast';
 
-const ROLES = ['user', 'admin'];
-const ROLE_KIND = { user: 'progress', admin: 'success' };
+const ROLES = ['user', 'staff', 'admin'];
+const ROLE_KIND = { user: 'progress', staff: 'info', admin: 'success' };
 
 const AdminCustomers = () => {
   const [customers, setCustomers] = useState([]);

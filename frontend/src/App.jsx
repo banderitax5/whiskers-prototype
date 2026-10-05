@@ -1,6 +1,7 @@
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom'
-import { useState, useEffect, useRef, Suspense, lazy } from 'react'
+import { useState, useEffect, useRef, Suspense, lazy, useContext } from 'react'
 import Layout from './components/Layout.jsx'
+import { RoleContext } from './context/RoleContext.js'
 
 // USER PAGES (lazy loaded — chunks split per page)
 const Home = lazy(() => import('./pages/Home.jsx'))
@@ -26,6 +27,11 @@ const AdminOrders = lazy(() => import('./components/AdminOrders.jsx'))
 const AdminAuditLogs = lazy(() => import('./components/AdminAuditLogs.jsx'))
 const AdminCustomers = lazy(() => import('./components/AdminCustomers.jsx'))
 const AdminSupports = lazy(() => import('./components/AdminSupports.jsx'))
+const AdminBookings = lazy(() => import('./components/AdminBookings.jsx'))
+
+// USER PAGES for services (Q3 booking)
+const Services = lazy(() => import('./pages/Services.jsx'))
+const Bookings = lazy(() => import('./pages/Bookings.jsx'))
 
 import supabase from './lib/supabase'
 
@@ -50,11 +56,14 @@ function RequireAuth({ children }) {
   return children
 }
 
-// checks the user's role via the backend and only renders children if admin
+// checks the user's role via the backend and only renders children for
+// staff or admin; provides the role to the back-office tree so the sidebar
+// and pages can hide admin-only destinations
 // uses a checked flag that is only set after a successful call so that
 // if the first auth event carries a revoked token the next event retries
 function RequireAdmin({ children }) {
   const [state, setState] = useState('loading')
+  const [role, setRole] = useState('user')
   const checkedRef = useRef(false)
 
   useEffect(() => {
@@ -67,7 +76,8 @@ function RequireAdmin({ children }) {
         if (!res.ok) return
         const { role } = await res.json()
         checkedRef.current = true
-        setState(role === 'admin' ? 'allowed' : 'denied')
+        setRole(role)
+        setState(role === 'admin' || role === 'staff' ? 'allowed' : 'denied')
       } catch {
         // let the next auth event retry
       }
@@ -90,6 +100,14 @@ function RequireAdmin({ children }) {
   if (state === 'loading') return null
   if (state === 'denied') return <Navigate to="/" replace />
 
+  return <RoleContext.Provider value={role}>{children}</RoleContext.Provider>
+}
+
+// renders children only when the signed-in role matches, otherwise
+// sends staff back to their default landing page instead of a 403 wall
+function RequireRole({ role, fallback, children }) {
+  const current = useContext(RoleContext)
+  if (current !== role) return <Navigate to={fallback} replace />
   return children
 }
 
@@ -120,6 +138,15 @@ const router = createBrowserRouter([
         ),
       },
       { path: 'about', element: <About /> },
+      { path: 'services', element: <Services /> },
+      {
+        path: 'bookings',
+        element: (
+          <RequireAuth>
+            <Bookings />
+          </RequireAuth>
+        ),
+      },
       {
         path: 'pets',
         element: (
@@ -157,13 +184,16 @@ const router = createBrowserRouter([
       </RequireAdmin>
     ),
     children: [
-      { index: true, element: <AdminDashboard /> },
+      // the analytics dashboard and account tools stay admin-only;
+      // staff land on /admin/orders instead
+      { index: true, element: <RequireRole role="admin" fallback="/admin/orders"><AdminDashboard /></RequireRole> },
       { path: 'products', element: <AdminProductManagement /> },
-      { path: 'customers', element: <AdminCustomers /> },
+      { path: 'customers', element: <RequireRole role="admin" fallback="/admin/orders"><AdminCustomers /></RequireRole> },
       { path: 'orders', element: <AdminOrders /> },
       { path: 'payments', element: <AdminPayments /> },
       { path: 'support', element: <AdminSupports /> },
-      { path: 'audit-logs', element: <AdminAuditLogs /> },
+      { path: 'bookings', element: <AdminBookings /> },
+      { path: 'audit-logs', element: <RequireRole role="admin" fallback="/admin/orders"><AdminAuditLogs /></RequireRole> },
     ],
   },
 

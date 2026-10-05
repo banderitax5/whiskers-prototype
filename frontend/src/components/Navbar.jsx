@@ -20,6 +20,7 @@ function Navbar() {
   const dropdownRef = useRef(null)
   const [user, setUser] = useState(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [panelRole, setPanelRole] = useState('user')
   const [theme, setTheme] = useState('light')
   const [isCartPinging, setIsCartPinging] = useState(false)
   const { cartCount, lastAddedAt, setOpenLoginFn } = useShop()
@@ -46,7 +47,8 @@ function Navbar() {
       })
       if (!res.ok) return false
       const { role } = await res.json()
-      setIsAdmin(role === 'admin')
+      setIsAdmin(role === 'admin' || role === 'staff')
+      setPanelRole(role)
       localStorage.setItem("role", role)
       return true
     } catch {
@@ -63,7 +65,10 @@ function Navbar() {
 
   useEffect(() => {
     const savedRole = localStorage.getItem("role")
-    if (savedRole === "admin") setIsAdmin(true)
+    if (savedRole === "admin" || savedRole === "staff") {
+      setIsAdmin(true)
+      setPanelRole(savedRole)
+    }
 
     const savedTheme = localStorage.getItem('theme')
     if (savedTheme === 'dark' || savedTheme === 'light') {
@@ -168,7 +173,7 @@ function Navbar() {
                     <Link to="/orders" className="block px-4 py-2.5 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">Orders</Link>
                     <Link to="/pets" className="block px-4 py-2.5 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">Pets</Link>
                     {isAdmin && (
-                      <Link to="/admin" className="block px-4 py-2.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">Admin Panel</Link>
+                      <Link to="/admin" className="block px-4 py-2.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">{panelRole === 'staff' ? 'Staff Panel' : 'Admin Panel'}</Link>
                     )}
                     <button onClick={handleLogout} className="w-full text-left px-4 py-2.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">Logout</button>
                   </div>
@@ -276,7 +281,7 @@ function Navbar() {
               <Link to="/profile" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium">Profile</Link>
               <Link to="/orders" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium">Orders</Link>
               {isAdmin && (
-                <Link to="/admin" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 rounded-lg text-red-400 hover:bg-white/10 transition text-sm font-medium">Admin Panel</Link>
+                <Link to="/admin" onClick={() => setMobileMenuOpen(false)} className="block px-3 py-2 rounded-lg text-red-400 hover:bg-white/10 transition text-sm font-medium">{panelRole === 'staff' ? 'Staff Panel' : 'Admin Panel'}</Link>
               )}
               <button onClick={handleLogout} className="w-full text-left px-3 py-2 rounded-lg text-red-400 hover:bg-white/10 transition text-sm font-medium">Logout</button>
             </div>

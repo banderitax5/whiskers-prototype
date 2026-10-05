@@ -8,15 +8,16 @@ import net from 'net'
 import dns from 'dns/promises'
 import { URL } from 'url'
 import { supabaseAdmin, supabaseAuth } from '../config/supabase.js'
-import { authMiddleware, requireAdmin, requireStepUp } from '../middleware/auth.js'
+import { authMiddleware, requireAdmin, requireStaff, requireStepUp } from '../middleware/auth.js'
 import { decryptText } from '../utils/encryption.js'
 import { PERIODS, windowDays, bucketPayments } from '../utils/salesBuckets.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
 
-// every admin endpoint requires a valid session and the 'admin' role
-router.use(authMiddleware, requireAdmin)
+// the back office serves both roles: staff cover orders, products, support,
+// payments (view) and bookings; admin-only routes add requireAdmin individually
+router.use(authMiddleware, requireStaff)
 
 // automated step-up: every state-changing admin action (any non-GET request)
 // requires a recent password re-verification, so new sensitive endpoints are
@@ -44,7 +45,7 @@ function formatProfile(u) {
 }
 
 // GET /api/admin/stats - top-line numbers for the dashboard
-router.get('/stats', async (req, res) => {
+router.get('/stats', requireAdmin, async (req, res) => {
   try {
     const [usersHead, productsHead, ordersHead, pendingHead, salesData, paymentData, ordersRes] = await Promise.all([
       supabaseAdmin.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'user'),
@@ -77,7 +78,7 @@ router.get('/stats', async (req, res) => {
 })
 
 // GET /api/admin/analytics - event data for charts
-router.get('/analytics', async (req, res) => {
+router.get('/analytics', requireAdmin, async (req, res) => {
   try {
     const days = Math.min(90, Math.max(1, parseInt(req.query.days) || 30))
     const since = new Date(Date.now() - days * 86400000).toISOString()
@@ -147,7 +148,7 @@ router.get('/analytics', async (req, res) => {
 })
 
 // GET /api/admin/sales-analytics - sales data for charts
-router.get('/sales-analytics', async (req, res) => {
+router.get('/sales-analytics', requireAdmin, async (req, res) => {
   try {
     const period = PERIODS.includes(req.query.period) ? req.query.period : 'daily'
     const days = windowDays(period, parseInt(req.query.days))
@@ -229,7 +230,7 @@ router.get('/sales-analytics', async (req, res) => {
 })
 
 // GET /api/admin/customers - paginated user list with feedback and order stats
-router.get('/customers', async (req, res) => {
+router.get('/customers', requireAdmin, async (req, res) => {
   try {
     const { page, pageSize, from, to } = parsePagination(req.query)
 
@@ -277,7 +278,7 @@ router.get('/customers', async (req, res) => {
 // body: { role } — must be 'user' or 'admin'
 // step-up (password re-verification) is enforced router-wide for all writes
 // prevents admin from demoting themselves
-router.patch('/customers/:id/role', async (req, res) => {
+router.patch('/customers/:id/role', requireAdmin, async (req, res) => {
   const { role } = req.body ?? {}
   const ALLOWED_ROLES = ['user', 'admin']
 
@@ -309,7 +310,7 @@ router.patch('/customers/:id/role', async (req, res) => {
 // DELETE /api/admin/customers/:id
 // removes the account (auth user + profile); step-up enforced router-wide
 // prevents admin from deleting themselves
-router.delete('/customers/:id', async (req, res) => {
+router.delete('/customers/:id', requireAdmin, async (req, res) => {
   if (req.params.id === req.userId) {
     return res.status(400).json({ error: 'Cannot delete your own account' })
   }
@@ -680,7 +681,7 @@ router.delete('/order-items/:id', async (req, res) => {
 
 // DELETE /api/admin/orders/:id
 // cascades: deletes order_details + payment rows first, then the order
-router.delete('/orders/:id', async (req, res) => {
+router.delete('/orders/:id', requireAdmin, async (req, res) => {
   const orderId = req.params.id
   try {
     // delete payment
@@ -699,7 +700,7 @@ router.delete('/orders/:id', async (req, res) => {
 })
 
 // DELETE /api/admin/payments/:id
-router.delete('/payments/:id', async (req, res) => {
+router.delete('/payments/:id', requireAdmin, async (req, res) => {
   try {
     const { error } = await supabaseAdmin
       .from('payment')
@@ -775,11 +776,204 @@ router.patch('/supports/:id', async (req, res) => {
   }
 })
 
+// ── Service Catalog (staff-managed) ─────────────────────────────────────────
+
+// GET /api/admin/services - full catalog including inactive rows
+router.get('/services', async (_req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('services')
+      .select('service_id, name, description, price, duration_minutes, is_active, created_at')
+      .order('name', { ascending: true })
+    if (error) throw error
+    res.json({ items: data || [] })
+  } catch (err) {
+    logger.error({ err }, 'Admin services list error')
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+function validateServiceBody(body, { partial = false } = {}) {
+  const out = {}
+  if (!partial || 'name' in body) {
+    const name = String(body.name ?? '').trim()
+    if (!name || name.length > 120) return { error: 'name must be between 1 and 120 characters' }
+    out.name = name
+  }
+  if (!partial || 'description' in body) {
+    const description = String(body.description ?? '').trim()
+    if (description.length > 1000) return { error: 'description must be 1000 characters or fewer' }
+    out.description = description
+  }
+  if (!partial || 'price' in body) {
+    const price = Number(body.price)
+    if (!Number.isFinite(price) || price < 0 || price > 1000000) return { error: 'price must be a number between 0 and 1000000' }
+    out.price = Math.round(price * 100) / 100
+  }
+  if (!partial || 'duration_minutes' in body) {
+    if (body.duration_minutes !== undefined && body.duration_minutes !== null && body.duration_minutes !== '') {
+      const duration = Number(body.duration_minutes)
+      if (!Number.isInteger(duration) || duration < 0 || duration > 1440) return { error: 'duration_minutes must be an integer between 0 and 1440' }
+      out.duration_minutes = duration
+    } else if (!partial) {
+      out.duration_minutes = null
+    }
+  }
+  if ('is_active' in body) out.is_active = Boolean(body.is_active)
+  return { value: out }
+}
+
+// POST /api/admin/services - create a service
+router.post('/services', async (req, res) => {
+  const { value, error } = validateServiceBody(req.body ?? {})
+  if (error) return res.status(400).json({ error })
+  try {
+    const { data, error: insErr } = await supabaseAdmin
+      .from('services')
+      .insert(value)
+      .select('service_id, name, description, price, duration_minutes, is_active')
+      .single()
+    if (insErr) throw insErr
+    res.status(201).json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'create', target: `service:${data.service_id}`, details: value.name })
+  } catch (err) {
+    logger.error({ err }, 'Admin service create error')
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// PATCH /api/admin/services/:id - update a service
+router.patch('/services/:id', async (req, res) => {
+  const { value, error } = validateServiceBody(req.body ?? {}, { partial: true })
+  if (error) return res.status(400).json({ error })
+  if (Object.keys(value).length === 0) return res.status(400).json({ error: 'No valid fields to update' })
+  try {
+    const { data, error: updErr } = await supabaseAdmin
+      .from('services')
+      .update(value)
+      .eq('service_id', req.params.id)
+      .select('service_id, name, description, price, duration_minutes, is_active')
+      .single()
+    if (updErr) throw updErr
+    res.json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'update', target: `service:${req.params.id}`, details: Object.keys(value).join(', ') })
+  } catch (err) {
+    logger.error({ err }, 'Admin service update error')
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// DELETE /api/admin/services/:id - bookings keep their name snapshot (FK SET NULL)
+router.delete('/services/:id', async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('services')
+      .delete()
+      .eq('service_id', req.params.id)
+      .select('service_id')
+      .single()
+    if (error) throw error
+    res.json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'delete', target: `service:${req.params.id}` })
+  } catch (err) {
+    logger.error({ err }, 'Admin service delete error')
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// ── Bookings (staff approve or reject) ──────────────────────────────────────
+
+const BOOKING_STATUSES = ['Pending', 'Approved', 'Rejected', 'Cancelled']
+
+// GET /api/admin/bookings - paginated, optional ?status= filter
+router.get('/bookings', async (req, res) => {
+  try {
+    const { page, pageSize, from, to } = parsePagination(req.query)
+    const status = typeof req.query.status === 'string' && BOOKING_STATUSES.includes(req.query.status)
+      ? req.query.status
+      : null
+
+    let query = supabaseAdmin
+      .from('bookings')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(from, to)
+    if (status) query = query.eq('status', status)
+
+    const { data, error, count } = await query
+    if (error) throw error
+
+    const userIds = [...new Set((data || []).map((b) => b.user_id).filter(Boolean))]
+    const { data: profiles } = userIds.length > 0
+      ? await supabaseAdmin.from('profiles').select('id, first_name, last_name').in('id', userIds)
+      : { data: [] }
+    const profileMap = new Map((profiles || []).map((p) => [p.id, p]))
+
+    const items = (data || []).map((b) => {
+      const profile = profileMap.get(b.user_id)
+      return {
+        booking_id: b.booking_id,
+        service_name: b.service_name,
+        preferred_date: b.preferred_date,
+        notes: b.notes,
+        status: b.status,
+        created_at: b.created_at,
+        firstName: decryptText(profile?.first_name),
+        lastName: decryptText(profile?.last_name),
+      }
+    })
+    res.json({ items, page, pageSize, total: count ?? 0 })
+  } catch (err) {
+    logger.error({ err }, 'Admin bookings list error')
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// PATCH /api/admin/bookings/:id - { status: Approved | Rejected }
+router.patch('/bookings/:id', async (req, res) => {
+  const status = String(req.body?.status ?? '')
+  if (!['Approved', 'Rejected'].includes(status)) {
+    return res.status(400).json({ error: 'status must be Approved or Rejected' })
+  }
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('bookings')
+      .update({ status })
+      .eq('booking_id', req.params.id)
+      .select('booking_id, status')
+      .single()
+    if (error) throw error
+    res.json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'status', target: `booking:${req.params.id}`, details: `booking ${status.toLowerCase()}` })
+  } catch (err) {
+    logger.error({ err }, 'Admin booking status error')
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// DELETE /api/admin/bookings/:id - remove a record (admin only)
+router.delete('/bookings/:id', requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('bookings')
+      .delete()
+      .eq('booking_id', req.params.id)
+      .select('booking_id')
+      .single()
+    if (error) throw error
+    res.json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'delete', target: `booking:${req.params.id}` })
+  } catch (err) {
+    logger.error({ err }, 'Admin booking delete error')
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
 // ── Audit Logs ────────────────────────────────────────────────────────────────
 
 // GET /api/admin/audit-logs
 // query: ?limit=100 (default 100, max 500)
-router.get('/audit-logs', async (req, res) => {
+router.get('/audit-logs', requireAdmin, async (req, res) => {
   try {
     const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500)
     const { data, error } = await supabaseAdmin

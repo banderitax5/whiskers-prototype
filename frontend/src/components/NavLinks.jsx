@@ -10,6 +10,7 @@ function NavLinks() {
     { label: 'Dry Food', to: '/menu?category=Dogs - DRY' },
     { label: 'Wet Food', to: '/menu?category=Wet Food' },
     { label: 'Pet Recommendation', to: '/pets' },
+    { label: 'Services', to: '/services' },
   ]
 
   const brands = [

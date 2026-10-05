@@ -10,8 +10,8 @@ $SK = Get-EnvVal 'SUPABASE_SERVICE_KEY'
 $AK = Get-EnvVal 'SUPABASE_ANON_KEY'
 $results = New-Object System.Collections.Generic.List[string]
 
-function Step($name, $ok, $detail = '') {
-  $tag = if ($ok) { 'PASS' } else { 'FAIL' }
+function Step($name, $ok, $detail = '', $tag = '') {
+  if (-not $tag) { $tag = if ($ok) { 'PASS' } else { 'FAIL' } }
   $results.Add("[$tag] $name$(if ($detail) { " - $detail" })")
 }
 function Get-ErrBody($resp) {
@@ -154,9 +154,130 @@ try {
   Step 'admin stats GET' ([int]$stats.totalUsers -gt 0) "users=$($stats.totalUsers) sales=$($stats.totalSales)"
 } catch { Step 'admin stats GET' ($false) (Get-ErrBody $_.Exception.Response) }
 
-# â”€â”€ 9. cleanup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── 8b. booking flow (skipped until 001_services_bookings.sql is run) ──
+$bookingId = $null
+$svcId = $null
+$hasBookingTables = $true
+try {
+  Invoke-RestMethod -Uri "$SU/rest/v1/services?select=service_id&limit=1" -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+} catch { $hasBookingTables = $false }
+
+if (-not $hasBookingTables) {
+  Step 'booking flow' $true 'run backend/db/migrations/001_services_bookings.sql first' 'SKIP'
+} else {
+  # public catalog
+  try {
+    $svcList = Invoke-RestMethod -Uri "$base/api/services"
+    Step 'services list GET' ($null -ne $svcList.items) "count=$(@($svcList.items).Count)"
+  } catch { Step 'services list GET' $false (Get-ErrBody $_.Exception.Response) }
+
+  # seed a throwaway service
+  $svcId = [guid]::NewGuid().ToString()
+  try {
+    Invoke-RestMethod -Uri "$SU/rest/v1/services" -Method Post -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' `
+      -Body (@{ service_id = $svcId; name = 'E2E Grooming'; description = 'Throwaway probe service'; price = 500; duration_minutes = 30; is_active = $true } | ConvertTo-Json -Compress) | Out-Null
+    Step 'seed service row' $true $svcId
+  } catch { Step 'seed service row' $false (Get-ErrBody $_.Exception.Response) }
+
+  # new service shows in the public catalog
+  try {
+    $svcList2 = Invoke-RestMethod -Uri "$base/api/services"
+    Step 'service appears in catalog' [bool]($svcList2.items | Where-Object { $_.service_id -eq $svcId })
+  } catch { Step 'service appears in catalog' $false (Get-ErrBody $_.Exception.Response) }
+
+  # customer books it
+  $today = (Get-Date).AddDays(1).ToString('yyyy-MM-dd')
+  try {
+    $bk = Invoke-RestMethod -Uri "$base/api/bookings" -Method Post -Headers $authH -ContentType 'application/json' `
+      -Body (@{ serviceId = $svcId; preferredDate = $today; notes = 'E2E probe booking' } | ConvertTo-Json -Compress)
+    Step 'create booking' ($bk.item.status -eq 'Pending') "status=$($bk.item.status)"
+    $bookingId = $bk.item.booking_id
+  } catch { Step 'create booking' $false (Get-ErrBody $_.Exception.Response) }
+
+  # customer sees their own booking
+  try {
+    $myBk = Invoke-RestMethod -Uri "$base/api/bookings" -Headers $authH
+    Step 'my bookings GET' [bool]($myBk.items | Where-Object { $_.booking_id -eq $bookingId })
+  } catch { Step 'my bookings GET' $false (Get-ErrBody $_.Exception.Response) }
+
+  # validation: past date rejected
+  try {
+    Invoke-RestMethod -Uri "$base/api/bookings" -Method Post -Headers $authH -ContentType 'application/json' `
+      -Body (@{ serviceId = $svcId; preferredDate = '2020-01-01' } | ConvertTo-Json -Compress) | Out-Null
+    Step 'reject past date booking' $false 'got 2xx'
+  } catch { Step 'reject past date booking' ($_.Exception.Response.StatusCode.value__ -eq 400) $_.Exception.Response.StatusCode.value__ }
+
+  # admin list includes it (GET, no step-up)
+  try {
+    $admBk = Invoke-RestMethod -Uri "$base/api/admin/bookings?pageSize=100" -Headers $authH
+    Step 'admin bookings GET' [bool]($admBk.items | Where-Object { $_.booking_id -eq $bookingId }) "total=$($admBk.total)"
+  } catch { Step 'admin bookings GET' $false (Get-ErrBody $_.Exception.Response) }
+
+  # admin approve must hit the step-up gate (403 without re-auth)
+  try {
+    Invoke-RestMethod -Uri "$base/api/admin/bookings/$bookingId" -Method Patch -Headers $authH -ContentType 'application/json' `
+      -Body (@{ status = 'Approved' } | ConvertTo-Json -Compress) | Out-Null
+    Step 'admin approve hits step-up gate' $false 'got 2xx without password re-auth'
+  } catch { Step 'admin approve hits step-up gate (403 expected)' ($_.Exception.Response.StatusCode.value__ -eq 403) $_.Exception.Response.StatusCode.value__ }
+
+  # customer cancels their own Pending booking
+  if ($bookingId) {
+    try {
+      $cancel = Invoke-RestMethod -Uri "$base/api/bookings/$bookingId" -Method Patch -Headers $authH -ContentType 'application/json' -Body '{}'
+      Step 'customer cancels booking' ($cancel.item.status -eq 'Cancelled') "status=$($cancel.item.status)"
+    } catch { Step 'customer cancels booking' $false (Get-ErrBody $_.Exception.Response) }
+  } else { Step 'customer cancels booking' $false 'no booking was created' }
+
+  # admin delete must hit the step-up gate too
+  if ($bookingId) {
+    try {
+      Invoke-RestMethod -Uri "$base/api/admin/bookings/$bookingId" -Method Delete -Headers $authH | Out-Null
+      Step 'admin delete hits step-up gate' $false 'got 2xx without password re-auth'
+    } catch { Step 'admin delete hits step-up gate (403 expected)' ($_.Exception.Response.StatusCode.value__ -eq 403) $_.Exception.Response.StatusCode.value__ }
+  } else { Step 'admin delete hits step-up gate' $false 'no booking was created' }
+}
+
+# ── 9. staff role: allowed reads vs admin-only reads ──
+Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' `
+  -Body (@{ role = 'staff' } | ConvertTo-Json -Compress) | Out-Null
+
+try {
+  $me = Invoke-RestMethod -Uri "$base/api/me/role" -Headers $authH
+  Step 'me/role reports staff' ($me.role -eq 'staff') "role=$($me.role)"
+} catch { Step 'me/role reports staff' $false (Get-ErrBody $_.Exception.Response) }
+
+$staffAllowed = @('admin/orders?pageSize=1', 'admin/products?pageSize=1', 'admin/payments?pageSize=1', 'admin/supports?pageSize=1')
+if ($hasBookingTables) { $staffAllowed += 'admin/bookings?pageSize=1' }
+foreach ($ep in $staffAllowed) {
+  try {
+    Invoke-RestMethod -Uri "$base/api/$ep" -Headers $authH | Out-Null
+    Step "staff GET $ep" $true
+  } catch { Step "staff GET $ep" $false (Get-ErrBody $_.Exception.Response) }
+}
+
+foreach ($ep in @('admin/stats', 'admin/customers?pageSize=1', 'admin/audit-logs')) {
+  try {
+    Invoke-RestMethod -Uri "$base/api/$ep" -Headers $authH | Out-Null
+    Step "staff denied $ep" $false 'got 2xx'
+  } catch { Step "staff denied $ep" ($_.Exception.Response.StatusCode.value__ -eq 403) $_.Exception.Response.StatusCode.value__ }
+}
+
+# â”€â”€ 10. cleanup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' -Body (@{ role = 'user' } | ConvertTo-Json -Compress) | Out-Null
 Step 'role reverted to user' $true
+
+if ($bookingId) {
+  try {
+    Invoke-RestMethod -Uri "$SU/rest/v1/bookings?booking_id=eq.$bookingId" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+    Step 'booking row deleted' $true $bookingId
+  } catch { Step 'booking row deleted' $false (Get-ErrBody $_.Exception.Response) }
+}
+if ($svcId) {
+  try {
+    Invoke-RestMethod -Uri "$SU/rest/v1/services?service_id=eq.$svcId" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+    Step 'service row deleted' $true $svcId
+  } catch { Step 'service row deleted' $false (Get-ErrBody $_.Exception.Response) }
+}
 
 Invoke-RestMethod -Uri "$SU/rest/v1/feedback?order_id=eq.$orderId" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
 Invoke-RestMethod -Uri "$SU/rest/v1/supports?id=eq.$uid" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
@@ -174,6 +295,9 @@ try {
 } catch { Step 'auth user deleted' ($false) (Get-ErrBody $_.Exception.Response) }
 Write-Output '---- E2E RESULTS ----'
 $results | ForEach-Object { Write-Output $_ }
-$fails = @($results | Where-Object { $_.StartsWith('[FAIL]') })
-Write-Output "---- $($results.Count - $fails.Count)/$($results.Count) passed ----"
+$pass = @($results | Where-Object { $_.StartsWith('[PASS]') }).Count
+$fail = @($results | Where-Object { $_.StartsWith('[FAIL]') }).Count
+$skip = @($results | Where-Object { $_.StartsWith('[SKIP]') }).Count
+Write-Output "---- $pass/$($results.Count) passed$(if ($skip -gt 0) { ", $skip skipped" }) ----"
+if ($fail -gt 0) { exit 1 }
 

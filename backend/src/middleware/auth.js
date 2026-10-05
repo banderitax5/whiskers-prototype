@@ -41,6 +41,15 @@ export function requireAdmin(req, res, next) {
   next()
 }
 
+// the back office also serves a staff role (orders, products, support,
+// payments view, bookings); admin-only endpoints chain requireAdmin after this
+export function requireStaff(req, res, next) {
+  if (req.userRole !== 'admin' && req.userRole !== 'staff') {
+    return res.status(403).json({ error: 'Staff or admin access required' })
+  }
+  next()
+}
+
 // Requires a recent password re-verification for sensitive admin actions.
 // The token is issued by POST /api/auth/step-up and is bound to req.userId.
 // Must run after authMiddleware.
