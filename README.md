@@ -76,6 +76,11 @@ Open http://localhost:5173 — the Vite dev server proxies `/api` requests to th
 # Backend API tests (Node's built-in test runner)
 npm test --prefix backend
 
+# Full API end-to-end suite: 25 checks against a running backend.
+# Creates a throwaway Supabase user, exercises orders, stock, feedback,
+# support, admin, and the step-up gate, then cleans everything up.
+npm run test:e2e --prefix backend
+
 # Frontend lint
 npm run lint --prefix frontend
 
