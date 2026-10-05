@@ -17,6 +17,18 @@ const STAT_LABELS = [
   'Total Products',
   'Total Revenue',
 ];
+const PERIOD_OPTS = [
+  { key: 'daily', label: 'Daily' },
+  { key: 'weekly', label: 'Weekly' },
+  { key: 'monthly', label: 'Monthly' },
+  { key: 'yearly', label: 'Yearly' },
+];
+const PERIOD_TITLES = {
+  daily: 'Daily Revenue (30d)',
+  weekly: 'Weekly Revenue (12w)',
+  monthly: 'Monthly Revenue (12m)',
+  yearly: 'Yearly Revenue (3y)',
+};
 
 function PanelSkeleton({ rows = 4 }) {
   return (
@@ -89,6 +101,7 @@ function AdminDashboard() {
   const [stats, setStats] = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [sales, setSales] = useState(null);
+  const [period, setPeriod] = useState('daily');
   const [error, setError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -102,12 +115,11 @@ function AdminDashboard() {
           if (!cancelled) setError('Your session has expired. Sign in again to load the dashboard.');
           return;
         }
-        const [s, a, sl] = await Promise.all([
+        const [s, a] = await Promise.all([
           apiGetAuth('/admin/stats', session.access_token),
           apiGetAuth('/admin/analytics?days=30', session.access_token).catch(() => null),
-          apiGetAuth('/admin/sales-analytics?days=30', session.access_token).catch(() => null),
         ]);
-        if (!cancelled) { setStats(s); setAnalytics(a); setSales(sl); }
+        if (!cancelled) { setStats(s); setAnalytics(a); }
       } catch (err) {
         if (!cancelled) setError(err.message || 'Could not reach the server.');
       }
@@ -115,6 +127,23 @@ function AdminDashboard() {
     load();
     return () => { cancelled = true; };
   }, [reloadKey]);
+
+  // revenue chart data follows the period toggle
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSales() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        const sl = await apiGetAuth(`/admin/sales-analytics?days=30&period=${period}`, session.access_token);
+        if (!cancelled && sl) setSales(sl);
+      } catch {
+        // keep the last good snapshot; the panel shows its own empty state
+      }
+    }
+    loadSales();
+    return () => { cancelled = true; };
+  }, [period, reloadKey]);
 
   function retry() {
     setStats(null);
@@ -135,6 +164,7 @@ function AdminDashboard() {
       ]
     : [];
   const cards = STAT_LABELS.map((label, i) => ({ label, value: statValues[i] }));
+  const revenue = sales?.periodRevenue || sales?.dailyRevenue || [];
 
   return (
     <AdminPage title="Data Analytics" subtitle="A live look at how the store is performing.">
@@ -193,27 +223,50 @@ function AdminDashboard() {
           {/* SALES CHARTS */}
           {sales && (
             <div className={CHART_GRID}>
-              {/* Daily Revenue */}
-              {sales.dailyRevenue.length > 0 && (
-                <div className={`lg:col-span-2 ${PANEL}`}>
-                  <h3 className={PANEL_TITLE}>Daily Revenue (30d)</h3>
-                  <div className="flex items-end gap-px h-28">
-                    {sales.dailyRevenue.map((d) => {
-                      const max = Math.max(...sales.dailyRevenue.map(x => x.amount), 1)
-                      const h = Math.max(2, (d.amount / max) * 100)
-                      return (
-                        <div key={d.date} className="flex-1 flex flex-col items-center gap-0.5" title={`${d.date}: PHP ${d.amount.toLocaleString()}`}>
-                          <div className="w-full bg-emerald-500 dark:bg-emerald-400 rounded-t" style={{ height: `${h}%` }} />
-                        </div>
-                      )
-                    })}
-                  </div>
-                  <div className="flex justify-between mt-1">
-                    <span className="text-[9px] text-gray-400">{sales.dailyRevenue[0]?.date}</span>
-                    <span className="text-[9px] text-gray-400">{sales.dailyRevenue[sales.dailyRevenue.length - 1]?.date}</span>
+              {/* Revenue by period */}
+              <div className={`lg:col-span-2 ${PANEL}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <h3 className={`${PANEL_TITLE} mb-0`}>{PERIOD_TITLES[period]}</h3>
+                  <div role="group" aria-label="Revenue period" className="flex gap-1">
+                    {PERIOD_OPTS.map((o) => (
+                      <button
+                        key={o.key}
+                        type="button"
+                        onClick={() => setPeriod(o.key)}
+                        aria-pressed={period === o.key}
+                        className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider transition ${
+                          period === o.key
+                            ? 'bg-[#0b2e59] text-white dark:bg-yellow-500 dark:text-gray-900'
+                            : 'bg-gray-100 text-gray-500 dark:bg-[#162d4a] dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-[#1c3557]'
+                        }`}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
-              )}
+                {revenue.length === 0 ? (
+                  <p className="text-xs text-gray-400 dark:text-slate-500 py-6 text-center">No payments recorded in this period.</p>
+                ) : (
+                  <>
+                    <div className="flex items-end gap-px h-28">
+                      {revenue.map((d) => {
+                        const max = Math.max(...revenue.map(x => x.amount), 1)
+                        const h = Math.max(2, (d.amount / max) * 100)
+                        return (
+                          <div key={d.date} className="flex-1 flex flex-col items-center gap-0.5" title={`${d.date}: PHP ${d.amount.toLocaleString()}`}>
+                            <div className="w-full bg-emerald-500 dark:bg-emerald-400 rounded-t" style={{ height: `${h}%` }} />
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <div className="flex justify-between mt-1">
+                      <span className="text-[9px] text-gray-400">{revenue[0]?.date}</span>
+                      <span className="text-[9px] text-gray-400">{revenue[revenue.length - 1]?.date}</span>
+                    </div>
+                  </>
+                )}
+              </div>
 
               {/* Revenue by Payment Method */}
               <div className={PANEL}>

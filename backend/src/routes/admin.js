@@ -10,6 +10,7 @@ import { URL } from 'url'
 import { supabaseAdmin, supabaseAuth } from '../config/supabase.js'
 import { authMiddleware, requireAdmin, requireStepUp } from '../middleware/auth.js'
 import { decryptText } from '../utils/encryption.js'
+import { PERIODS, windowDays, bucketPayments } from '../utils/salesBuckets.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -148,7 +149,8 @@ router.get('/analytics', async (req, res) => {
 // GET /api/admin/sales-analytics - sales data for charts
 router.get('/sales-analytics', async (req, res) => {
   try {
-    const days = Math.min(90, Math.max(1, parseInt(req.query.days) || 30))
+    const period = PERIODS.includes(req.query.period) ? req.query.period : 'daily'
+    const days = windowDays(period, parseInt(req.query.days))
     const since = new Date(Date.now() - days * 86400000).toISOString()
 
     const [ordersRes, paymentsRes, detailsRes] = await Promise.all([
@@ -167,12 +169,9 @@ router.get('/sales-analytics', async (req, res) => {
     const payments = paymentsRes.data || []
     const details = detailsRes.data || []
 
-    // daily revenue
-    const dailyRevenue = {}
-    for (const p of payments) {
-      const day = (p.payment_date || '').slice(0, 10)
-      if (day) dailyRevenue[day] = (dailyRevenue[day] || 0) + Number(p.amount || 0)
-    }
+    // daily revenue (kept for older clients) and the requested period buckets
+    const dailyRevenue = bucketPayments(payments, 'daily')
+    const periodRevenue = bucketPayments(payments, period)
 
     // revenue by payment method
     const methodRevenue = {}
@@ -208,9 +207,9 @@ router.get('/sales-analytics', async (req, res) => {
     res.json({
       totalRevenue: payments.reduce((s, p) => s + Number(p.amount || 0), 0),
       totalOrders: orders.length,
-      dailyRevenue: Object.entries(dailyRevenue)
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([date, amount]) => ({ date, amount: Math.round(amount * 100) / 100 })),
+      period,
+      periodRevenue,
+      dailyRevenue,
       methodRevenue: Object.entries(methodRevenue)
         .sort((a, b) => b[1] - a[1])
         .map(([name, amount]) => ({ name, amount: Math.round(amount * 100) / 100 })),
