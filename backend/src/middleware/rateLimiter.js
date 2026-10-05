@@ -81,3 +81,23 @@ export const eventLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: clientKey,
 })
+
+// 30 review submissions per hour per IP (batch save per order, upserts allowed)
+export const feedbackLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  message: { error: 'Too many reviews. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+})
+
+// 20 support messages per hour per IP (each account holds a single thread)
+export const supportLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  message: { error: 'Too many messages. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+})

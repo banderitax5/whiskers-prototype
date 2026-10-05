@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { randomUUID } from 'crypto'
 import { supabaseAdmin } from '../config/supabase.js'
 import { authMiddleware } from '../middleware/auth.js'
+import { feedbackLimiter } from '../middleware/rateLimiter.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -12,7 +13,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // POST /api/feedback — save product reviews for the caller's own order
 // body: { orderId, items: [{ prodId, rating, comments? }] }
 // re-reviewing the same product in the same order updates the existing row
-router.post('/', async (req, res) => {
+router.post('/', feedbackLimiter, async (req, res) => {
   const { orderId, items } = req.body ?? {}
   if (!UUID_RE.test(String(orderId || ''))) {
     return res.status(400).json({ error: 'orderId must be a valid order id' })

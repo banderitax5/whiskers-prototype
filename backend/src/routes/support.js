@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { supabaseAdmin } from '../config/supabase.js'
 import { authMiddleware } from '../middleware/auth.js'
+import { supportLimiter } from '../middleware/rateLimiter.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -10,7 +11,7 @@ router.use(authMiddleware)
 // supports.support_id is a primary key referencing the auth user id, so each
 // account holds a single thread: the first message creates it, later messages
 // replace it (and clear any previous reply — the reply has been read by then).
-router.post('/', async (req, res) => {
+router.post('/', supportLimiter, async (req, res) => {
   const message = String(req.body?.message || '').trim()
   if (!message || message.length > 2000) {
     return res.status(400).json({ error: 'Message must be between 1 and 2000 characters' })
