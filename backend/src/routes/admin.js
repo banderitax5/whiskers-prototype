@@ -10,6 +10,7 @@ import { URL } from 'url'
 import { supabaseAdmin, supabaseAuth } from '../config/supabase.js'
 import { authMiddleware, requireAdmin, requireStepUp } from '../middleware/auth.js'
 import { decryptText } from '../utils/encryption.js'
+import { getTopSellingProducts } from '../utils/topSelling.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -149,7 +150,7 @@ router.get('/sales-analytics', async (req, res) => {
     const days = Math.min(90, Math.max(1, parseInt(req.query.days) || 30))
     const since = new Date(Date.now() - days * 86400000).toISOString()
 
-    const [ordersRes, paymentsRes, detailsRes] = await Promise.all([
+    const [ordersRes, paymentsRes] = await Promise.all([
       supabaseAdmin.from('orders')
         .select('order_id, total_amount, status, created_at')
         .gte('created_at', since)
@@ -157,13 +158,10 @@ router.get('/sales-analytics', async (req, res) => {
       supabaseAdmin.from('payment')
         .select('order_id, amount, method, payment_date')
         .gte('payment_date', since),
-      supabaseAdmin.from('order_details')
-        .select('order_id, prod_id, quantity, subtotal')
     ])
 
     const orders = ordersRes.data || []
     const payments = paymentsRes.data || []
-    const details = detailsRes.data || []
 
     // daily revenue
     const dailyRevenue = {}
@@ -179,22 +177,8 @@ router.get('/sales-analytics', async (req, res) => {
       methodRevenue[m] = (methodRevenue[m] || 0) + Number(p.amount || 0)
     }
 
-    // top selling products by quantity
-    const prodQty = {}
-    const prodRevenue = {}
-    for (const d of details) {
-      if (!d.prod_id) continue
-      prodQty[d.prod_id] = (prodQty[d.prod_id] || 0) + Number(d.quantity || 0)
-      prodRevenue[d.prod_id] = (prodRevenue[d.prod_id] || 0) + Number(d.subtotal || 0)
-    }
-
-    // resolve product names
-    const topProdIds = Object.entries(prodQty).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([id]) => id)
-    let prodMap = {}
-    if (topProdIds.length > 0) {
-      const { data: prods } = await supabaseAdmin.from('product').select('prod_id, prod_name').in('prod_id', topProdIds)
-      prodMap = Object.fromEntries((prods || []).map(p => [p.prod_id, p.prod_name]))
-    }
+    // top selling products by quantity (shared ranking with search "Trending")
+    const topProducts = await getTopSellingProducts(10)
 
     // order status breakdown
     const statusCounts = {}
@@ -212,10 +196,10 @@ router.get('/sales-analytics', async (req, res) => {
       methodRevenue: Object.entries(methodRevenue)
         .sort((a, b) => b[1] - a[1])
         .map(([name, amount]) => ({ name, amount: Math.round(amount * 100) / 100 })),
-      topProducts: topProdIds.map(id => ({
-        name: prodMap[id] || `Product #${id}`,
-        quantity: prodQty[id],
-        revenue: Math.round((prodRevenue[id] || 0) * 100) / 100,
+      topProducts: topProducts.map(p => ({
+        name: p.prod_name,
+        quantity: p.quantity,
+        revenue: p.revenue,
       })),
       statusCounts: Object.entries(statusCounts)
         .sort((a, b) => b[1] - a[1])

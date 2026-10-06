@@ -27,6 +27,7 @@ export default function MobileSearch() {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const [products, setProducts] = useState([])
+  const [trending, setTrending] = useState([])
   const [recentSearches, setRecentSearches] = useState(getRecent())
 
   useEffect(() => {
@@ -34,6 +35,10 @@ export default function MobileSearch() {
       try {
         const { items } = await apiGet('/products?pageSize=500')
         setProducts(items || [])
+      } catch { /* ignore */ }
+      try {
+        const { items } = await apiGet('/products/trending?limit=6')
+        setTrending(items || [])
       } catch { /* ignore */ }
     }
     load()
@@ -65,7 +70,10 @@ export default function MobileSearch() {
       .slice(0, 8)
   }, [query, products])
 
+  // trending: top selling products (same ranking as data analytics);
+  // fall back to one product per category when there is no sales data yet
   const popular = useMemo(() => {
+    if (trending.length > 0) return trending
     const seen = new Set()
     const picks = []
     for (const p of products) {
@@ -73,7 +81,7 @@ export default function MobileSearch() {
       if (!seen.has(cat) && picks.length < 6) { seen.add(cat); picks.push(p) }
     }
     return picks
-  }, [products])
+  }, [trending, products])
 
   const categories = useMemo(() => {
     return [...new Set(products.map((p) => p.category).filter(Boolean))].sort().slice(0, 6)
@@ -176,7 +184,9 @@ export default function MobileSearch() {
                         </div>
                         <div className="min-w-0">
                           <p className="text-xs font-semibold text-gray-800 dark:text-gray-100 truncate">{p.prod_name}</p>
-                          <p className="text-[10px] text-gray-400 dark:text-slate-500">{p.category}</p>
+                          <p className="text-[10px] text-gray-400 dark:text-slate-500">
+                            {p.category}{p.quantity != null ? ` · ${p.quantity} sold` : ''}
+                          </p>
                         </div>
                       </button>
                     ))}

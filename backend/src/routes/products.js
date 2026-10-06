@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { supabaseAdmin } from '../config/supabase.js'
 import { productLimiter } from '../middleware/rateLimiter.js'
+import { getTopSellingProducts } from '../utils/topSelling.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -74,6 +75,19 @@ router.get('/', async (req, res) => {
   } catch (err) {
     logger.error({ err: err.message }, 'Products fetch error')
     res.status(500).json({ error: 'Failed to fetch products' })
+  }
+})
+
+// GET /api/products/trending - top selling products, same ranking as the
+// admin data analytics "Top Selling Products" card
+router.get('/trending', async (req, res) => {
+  try {
+    const limit = Math.min(10, Math.max(1, parseInt(req.query.limit) || 6))
+    const items = await getTopSellingProducts(limit)
+    res.json({ items: items.filter(p => p.is_active) })
+  } catch (err) {
+    logger.error({ err: err.message }, 'Trending products fetch error')
+    res.status(500).json({ error: 'Failed to fetch trending products' })
   }
 })
 
