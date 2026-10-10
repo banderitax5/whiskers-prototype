@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { BsChatDotsFill, BsX, BsInstagram, BsFacebook, BsTelephone } from 'react-icons/bs'
+import { Link } from 'react-router-dom'
+import { BsChatDotsFill, BsX, BsInstagram, BsFacebook, BsTelephone, BsEnvelope } from 'react-icons/bs'
 
 export default function FloatingContact() {
   const [open, setOpen] = useState(false)
@@ -15,6 +16,14 @@ export default function FloatingContact() {
             </button>
           </div>
           <div className="space-y-2">
+            <Link
+              to="/support"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 hover:text-[#0b2e59] dark:hover:text-yellow-300 transition p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+            >
+              <BsEnvelope className="h-4 w-4 text-yellow-600" />
+              Message Support
+            </Link>
             <a
               href="https://www.facebook.com/profile.php?id=61561539844519"
               target="_blank"

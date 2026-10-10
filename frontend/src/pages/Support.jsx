@@ -61,7 +61,7 @@ function Support() {
     <div className="lg:mx-auto lg:max-w-4xl py-5 sm:py-6">
       <h1 className="mb-1 text-2xl font-bold text-[#0b2e59] dark:text-white">Support</h1>
       <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
-        Send us a message about an order or a product. Replies appear below. Each account keeps one thread: a new message replaces the earlier conversation.
+        Send us a message about an order or a product. Replies appear below. Each account keeps one thread: new messages are added above so the full conversation stays in one place.
       </p>
 
       <form onSubmit={submit} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shadow-sm mb-6">

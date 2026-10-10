@@ -29,14 +29,17 @@ function Menu() {
   const [categories, setCategories] = useState([])
   const [brands, setBrands] = useState([])
 
-  // category and brand filters are now arrays for multi-select
+  // category, brand, and search filters can arrive via URL (nav links, brand tiles)
   const initialCategory = searchParams.get('category')
     ? [searchParams.get('category')]
     : []
+  const initialBrand = searchParams.get('brand')
+    ? [searchParams.get('brand')]
+    : []
   const [filters, setFilters] = useState({
-    search: '',
+    search: searchParams.get('search') || '',
     categories: initialCategory,
-    brands: [],
+    brands: initialBrand,
     maxPrice: 'all',
   })
   const [sortBy, setSortBy] = useState('name-asc')
@@ -47,9 +50,10 @@ function Menu() {
   const [currentPage, setCurrentPage] = useState(1)
   const [showFilters, setShowFilters] = useState(true)
 
-  // sync URL search params → filter state when navigating from nav links
+  // sync URL search params → filter state when navigating from nav links or brand tiles
   useEffect(() => {
     const cat = searchParams.get('category')
+    const brand = searchParams.get('brand')
     const q = searchParams.get('search')
     if (cat) {
       setFilters((prev) => ({
@@ -57,10 +61,32 @@ function Menu() {
         categories: prev.categories.includes(cat) ? prev.categories : [...prev.categories, cat],
       }))
     }
+    if (brand) {
+      setFilters((prev) => ({
+        ...prev,
+        brands: prev.brands.includes(brand) ? prev.brands : [...prev.brands, brand],
+      }))
+    }
     if (q) {
       setFilters((prev) => ({ ...prev, search: q }))
     }
   }, [searchParams])
+
+  // write active filters back to the URL so filtered views are shareable
+  // and survive a refresh; replace avoids flooding the back button
+  useEffect(() => {
+    const next = {}
+    if (filters.search) next.search = filters.search
+    if (filters.categories.length === 1) next.category = filters.categories[0]
+    if (filters.brands.length === 1) next.brand = filters.brands[0]
+    const current = {
+      search: searchParams.get('search') || undefined,
+      category: searchParams.get('category') || undefined,
+      brand: searchParams.get('brand') || undefined,
+    }
+    if (current.search === next.search && current.category === next.category && current.brand === next.brand) return
+    setSearchParams(next, { replace: true })
+  }, [filters.search, filters.categories, filters.brands]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     async function load() {
@@ -115,7 +141,7 @@ function Menu() {
   const filteredProducts = useMemo(() => {
     const search = filters.search.trim().toLowerCase()
     let result = enrichedProducts.filter((product) => {
-      const matchSearch = !search || product.prod_name.toLowerCase().includes(search)
+      const matchSearch = !search || product.prod_name.toLowerCase().includes(search) || (product.brand || '').toLowerCase().includes(search)
       const matchCategory = filters.categories.length === 0 || filters.categories.some((cat) => product.category?.toLowerCase().includes(cat.toLowerCase()))
       const matchBrand = filters.brands.length === 0 || filters.brands.some((b) => product.brand?.toLowerCase() === b.toLowerCase())
       const matchPrice =
@@ -410,10 +436,22 @@ function Menu() {
                       <p className="mt-1 sm:mt-2 text-[11px] sm:text-xs font-medium text-gray-500 dark:text-gray-400">Price not yet set</p>
                     )}
 
+                    {/* stock indicator */}
+                    {(() => {
+                      const stock = Number(product.stock_quantity)
+                      if (!Number.isFinite(stock) || stock <= 0) {
+                        return <span className="mt-1 inline-block text-[10px] font-bold uppercase tracking-wide text-red-600 dark:text-red-400">Out of stock</span>
+                      }
+                      if (stock <= 5) {
+                        return <span className="mt-1 inline-block text-[10px] font-semibold text-amber-600 dark:text-amber-400">Only {stock} left</span>
+                      }
+                      return null
+                    })()}
+
                     <div className={`mt-2 sm:mt-3 flex gap-1.5 sm:gap-2 ${viewMode === 'list' ? 'flex-shrink-0' : ''}`}>
                       <button
                         type="button"
-                        disabled={!(product.price > 0)}
+                        disabled={!(product.price > 0) || Number(product.stock_quantity) <= 0}
                         onClick={(e) => { e.stopPropagation(); handleAddToCart(product) }}
                         className="flex-1 h-8 sm:h-9 rounded-lg bg-yellow-400 px-1.5 sm:px-2 text-[10px] sm:text-xs font-semibold text-gray-900 hover:bg-yellow-500 active:bg-yellow-600 transition disabled:opacity-40 disabled:cursor-not-allowed"
                       >
@@ -421,7 +459,7 @@ function Menu() {
                       </button>
                       <button
                         type="button"
-                        disabled={!(product.price > 0)}
+                        disabled={!(product.price > 0) || Number(product.stock_quantity) <= 0}
                         onClick={(e) => { e.stopPropagation(); handleBuyNow(product) }}
                         className="flex-1 h-8 sm:h-9 rounded-lg bg-[#0b2e59] px-1.5 sm:px-2 text-[10px] sm:text-xs font-semibold text-white hover:bg-[#15407a] active:bg-[#0a2347] transition disabled:opacity-40 disabled:cursor-not-allowed"
                       >
@@ -502,6 +540,7 @@ function Menu() {
                     value={filters.search}
                     onChange={(e) => updateFilter('search', e.target.value)}
                     placeholder="Search products..."
+                    aria-label="Search products"
                     className="h-10 w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 pl-9 pr-3 text-sm dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0b2e59]/20 focus:border-[#0b2e59]/40 transition"
                   />
                 </div>

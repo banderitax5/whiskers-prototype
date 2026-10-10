@@ -1,8 +1,18 @@
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
 const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content']
+const COOKIE_KEY = 'whiskers_cookie_consent'
+
+// analytics only fire when the user has accepted cookies (banner stores
+// 'accepted' or 'declined'); no consent decision yet also blocks tracking
+function hasAnalyticsConsent() {
+  try { return localStorage.getItem(COOKIE_KEY) === 'accepted' }
+  catch { return false }
+}
 
 export function captureUtmParams() {
+  // UTM capture is a functional necessity for attribution, not analytics;
+  // it is stored locally and only read by trackEvent once consent exists
   const params = new URLSearchParams(window.location.search)
   const utm = {}
   let found = false
@@ -20,6 +30,7 @@ export function getUtmParams() {
 }
 
 export function trackEvent(eventType, metadata = {}) {
+  if (!hasAnalyticsConsent()) return
   const payload = {
     event_type: eventType,
     page: window.location.pathname,

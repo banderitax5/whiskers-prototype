@@ -34,13 +34,14 @@ export function formatShortDate(iso) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-// display-only delivery window: order date +1 to +2 days
+// display-only delivery window: order date +2 to +5 business days
+// matches the FAQ promise on the About page
 export function etaWindow(iso) {
   if (!iso) return ''
   const start = new Date(iso)
-  start.setDate(start.getDate() + 1)
+  start.setDate(start.getDate() + 2)
   const end = new Date(iso)
-  end.setDate(end.getDate() + 2)
+  end.setDate(end.getDate() + 5)
   return `${formatShortDate(start)} – ${formatShortDate(end)}`
 }
 
@@ -61,10 +62,24 @@ export function summarize(order) {
 }
 
 // pill styles shared by both documents (label, tailwind classes)
+// the backend inserts a payment row at order time for every method, so the
+// row existing does NOT mean money was received. Be honest about the state:
+// COD is collected on delivery; online methods record intent, not settlement.
 export function paymentPill(order) {
-  return order?.payment
-    ? { label: 'PAID', className: 'bg-green-700 text-white' }
-    : { label: 'UNPAID', className: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' }
+  const method = String(order?.payment?.method || '').toLowerCase()
+  if (method === 'cod') {
+    return { label: 'PAY ON DELIVERY', className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300' }
+  }
+  if (order?.payment) {
+    return { label: 'PAYMENT PENDING', className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' }
+  }
+  return { label: 'UNPAID', className: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' }
+}
+
+// true only when money is actually expected up front (online methods)
+export function isOnlinePayment(order) {
+  const method = String(order?.payment?.method || '').toLowerCase()
+  return method === 'gcash' || method === 'paymaya'
 }
 
 export function fulfillmentPill(status) {

@@ -94,6 +94,11 @@ export function ShopProvider({ children }) {
     openLoginRef.current = fn
   }
 
+  // opens the login modal from anywhere that has access to the shop context
+  function openLogin() {
+    if (openLoginRef.current) openLoginRef.current()
+  }
+
   // shows a toast notification on screen
   // type can be 'success', 'error', or 'info'
   function pushNotification(message, type = 'success') {
@@ -257,6 +262,7 @@ export function ShopProvider({ children }) {
     clearCart,
     pushNotification,
     setOpenLoginFn,
+    openLogin,
   }
 
   return <ShopContext.Provider value={value}>{children}</ShopContext.Provider>

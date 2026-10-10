@@ -127,7 +127,7 @@ import { useState, useEffect, useMemo } from 'react'
             ))}
           </select>
           <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-            Based on veterinary assessment or prescription. Choose &quot;Healthy&quot; if your pet has <a href=""></a>known conditions.
+            Based on veterinary assessment or prescription. Choose &quot;Healthy&quot; if your pet has no known conditions.
           </p>
         </div>
 

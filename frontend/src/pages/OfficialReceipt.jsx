@@ -224,7 +224,7 @@ function OfficialReceipt() {
                 <span className="w-5 h-5 shrink-0 rounded-full bg-yellow-400 text-gray-900 text-xs font-black flex items-center justify-center mt-0.5" aria-hidden="true">?</span>
                 <div>
                   <p className="text-sm font-bold text-gray-900">Need support with this order?</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Call support at 420-400-10 or email care@whiskerspets.com</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Call support at +63 912 345 6789 or email care@whiskerspets.com</p>
                 </div>
               </div>
             </div>
@@ -242,7 +242,7 @@ function OfficialReceipt() {
                 </div>
               </div>
               <div className="-mx-4 -mb-4 mt-3 px-4 py-3 rounded-b-md bg-blue-50 flex items-center justify-between">
-                <span className="text-[11px] font-black uppercase tracking-widest text-gray-700">Total Paid</span>
+                <span className="text-[11px] font-black uppercase tracking-widest text-gray-700">Order Total</span>
                 <span className="text-xl font-black text-blue-700">{peso(s.total)}</span>
               </div>
             </div>

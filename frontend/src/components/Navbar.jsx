@@ -1,6 +1,6 @@
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
-import { BsCartFill, BsMessenger, BsSunFill, BsMoonStarsFill, BsList, BsXLg } from 'react-icons/bs'
+import { BsCartFill, BsMessenger, BsSunFill, BsMoonStarsFill, BsList, BsXLg, BsEnvelope, BsHeart } from 'react-icons/bs'
 import { FaUser } from "react-icons/fa";
 import LoginModal from './LoginModal'
 import SignupModal from './SignupModal'
@@ -200,6 +200,7 @@ function Navbar() {
           {/* Desktop: cart */}
           <NavLink
             to="/cart"
+            aria-label={`Cart${cartCount > 0 ? `, ${cartCount} items` : ''}`}
             className="hidden sm:flex relative w-9 h-9 sm:w-10 sm:h-10 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 dark:bg-white/5 dark:hover:bg-white/10 transition"
           >
             <BsCartFill className="text-white w-4 h-4 sm:w-5 sm:h-5" />
@@ -219,6 +220,7 @@ function Navbar() {
           <button
             type="button"
             onClick={toggleTheme}
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             className={`hidden sm:flex relative h-7 w-14 sm:h-8 sm:w-16 items-center rounded-full p-1 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-yellow-300/70 ${theme === 'dark' ? 'bg-slate-600' : 'bg-yellow-300'}`}
           >
             <span
@@ -252,11 +254,22 @@ function Navbar() {
             Cart {cartCount > 0 && <span className="text-yellow-300">({cartCount})</span>}
           </NavLink>
 
+          <NavLink to="/pets" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2 px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium">
+            <BsHeart className="w-4 h-4" />
+            Pet Recommendation
+          </NavLink>
+
+          <NavLink to="/support" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2 px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium">
+            <BsEnvelope className="w-4 h-4" />
+            Support
+          </NavLink>
+
           <div className="flex items-center gap-2 px-3 py-2 text-white/90 text-sm font-medium">
             <span>Theme</span>
             <button
               type="button"
               onClick={toggleTheme}
+              aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               className={`relative flex h-6 w-11 items-center rounded-full p-0.5 transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-600' : 'bg-yellow-300'}`}
             >
               <span

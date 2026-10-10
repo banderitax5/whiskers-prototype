@@ -52,7 +52,7 @@ function StarRating({ value, onChange, productName }) {
 }
 
 function UserOrders() {
-  const { session, pushNotification } = useShop()
+  const { session, pushNotification, addToCart } = useShop()
   const location = useLocation()
   const newOrderId = location.state?.newOrderId
 
@@ -63,6 +63,32 @@ function UserOrders() {
   const [expanded, setExpanded] = useState(null)
   const [drafts, setDrafts] = useState({})
   const [savingOrder, setSavingOrder] = useState(null)
+  const [reordering, setReordering] = useState(null)
+
+  // re-adds every item from a past order to the cart
+  // stock and price may have changed since purchase, so the backend cart
+  // endpoint is the source of truth; we just queue them optimistically
+  async function buyAgain(order) {
+    if (reordering) return
+    setReordering(order.order_id)
+    const items = order.items || []
+    for (const item of items) {
+      if (!item.prod_id) continue
+      await addToCart(
+        {
+          id: item.prod_id,
+          prod_id: item.prod_id,
+          name: item.name,
+          price: Number(item.subtotal) / Math.max(1, Number(item.quantity)),
+          image: item.image || '',
+        },
+        Number(item.quantity) || 1,
+        { notify: false }
+      )
+    }
+    pushNotification(`${items.length} item${items.length === 1 ? '' : 's'} added to cart. Check stock before checking out.`, 'success')
+    setReordering(null)
+  }
 
   useEffect(() => {
     if (!session?.access_token) return
@@ -198,7 +224,7 @@ function UserOrders() {
               key={order.order_id}
               className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm overflow-hidden"
             >
-              {/* order header â€” always visible */}
+              {/* order header - always visible */}
               <button
                 type="button"
                 onClick={() => toggleExpand(order.order_id)}
@@ -269,13 +295,27 @@ function UserOrders() {
                       <p className="text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-1">Payment Amount</p>
                       <p className="font-semibold text-[#0b2e59] dark:text-yellow-300">PHP {Number(order.payment?.amount || order.total_amount).toLocaleString()}</p>
                     </div>
-                    <div className="sm:col-span-2">
+                    <div className="sm:col-span-2 flex flex-wrap gap-2">
                       <Link
                         to={`/orders/${order.order_id}`}
-                        className="inline-flex items-center justify-center w-full sm:w-auto px-4 h-11 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                        className="inline-flex items-center justify-center px-4 h-11 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                       >
-                        View Confirmation &amp; Receipt
+                        View Confirmation
                       </Link>
+                      <Link
+                        to={`/receipt/${order.order_id}`}
+                        className="inline-flex items-center justify-center px-4 h-11 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        Receipt
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => buyAgain(order)}
+                        disabled={reordering === order.order_id || (order.items || []).length === 0}
+                        className="inline-flex items-center justify-center px-4 h-11 rounded-lg bg-yellow-400 text-sm font-semibold text-gray-900 hover:bg-yellow-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {reordering === order.order_id ? 'Adding…' : 'Buy Again'}
+                      </button>
                     </div>
                   </div>
 

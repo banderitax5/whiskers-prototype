@@ -47,11 +47,10 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
     collection: current.collection || current.category,
   } : null
   const safePrice = Number(p?.price) || 0
-
-  const previews = useMemo(() => {
-    if (!p?.image) return []
-    return [p.image, p.image, p.image]
-  }, [p?.image])
+  const stock = Number(p?.stock_quantity)
+  const hasStockInfo = Number.isFinite(stock)
+  const inStock = !hasStockInfo || stock > 0
+  const lowStock = hasStockInfo && stock > 0 && stock <= 5
 
   // compute size labels from variants
   const sizes = useMemo(() => {
@@ -64,9 +63,10 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
 
   if (!isOpen || !p) return null
 
-  function increase() { setQty((v) => v + 1) }
+  const maxQty = hasStockInfo && stock > 0 ? stock : Infinity
+  function increase() { setQty((v) => Math.min(maxQty, v + 1)) }
   function decrease() { setQty((v) => Math.max(1, v - 1)) }
-  const purchasable = safePrice > 0
+  const purchasable = safePrice > 0 && inStock
 
   return createPortal(
     <div
@@ -89,23 +89,9 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
         {/* two column layout: images on the left, product info on the right */}
         {/* collapses to a single column on mobile */}
         <div className="grid grid-cols-1 gap-4 p-4 sm:gap-6 sm:p-6 md:grid-cols-2">
-          <div className="flex gap-3">
-            {/* thumbnail previews on the side, hidden on small screens to save space */}
-            <div className="hidden flex-col gap-2 sm:flex">
-              {previews.map((img, idx) => (
-                <button
-                  key={`${img}-${idx}`}
-                  type="button"
-                  className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 transition hover:border-[#0b2e59]"
-                >
-                  <img src={img} alt={`${p.name} preview ${idx + 1}`} className="h-full w-full object-contain p-1" />
-                </button>
-              ))}
-            </div>
-            {/* main product image */}
-            <div className="flex flex-1 items-center justify-center rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 p-4">
-              <img src={p.image} alt={p.name} loading="lazy" className="max-h-[220px] w-full object-contain sm:max-h-[280px]" />
-            </div>
+          {/* main product image */}
+          <div className="flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 p-4">
+            <img src={p.image} alt={p.name} loading="lazy" className="max-h-[220px] w-full object-contain sm:max-h-[280px]" />
           </div>
 
           {/* product details, price, description, quantity picker, and action buttons */}
@@ -116,6 +102,13 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
               <p className="mt-3 text-3xl font-bold text-[#e4406a]">PHP {safePrice.toFixed(2)}</p>
             ) : (
               <p className="mt-3 text-lg font-semibold text-gray-500 dark:text-gray-400">Price not yet set</p>
+            )}
+
+            {/* stock line */}
+            {hasStockInfo && (
+              <p className={`mt-1 text-xs font-semibold ${!inStock ? 'text-red-600 dark:text-red-400' : lowStock ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'}`}>
+                {!inStock ? 'Out of stock' : lowStock ? `Only ${stock} left in stock` : 'In stock'}
+              </p>
             )}
 
             <div className="mt-4">

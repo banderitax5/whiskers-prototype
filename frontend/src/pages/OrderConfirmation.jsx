@@ -4,7 +4,7 @@ import { useShop } from '../context/ShopContext.jsx'
 import { extractSizeLabel, getBaseName } from '../lib/productUtils.js'
 import {
   fetchOrderById, peso, orderCode, trackingCode, formatOrderDateTime,
-  etaWindow, CARRIER, paymentMethodLabel, summarize, paymentPill, fulfillmentPill, deliveryPill,
+  etaWindow, CARRIER, paymentMethodLabel, summarize, paymentPill, fulfillmentPill, deliveryPill, isOnlinePayment,
 } from '../lib/orderDoc.js'
 import { BsArrowLeft, BsDownload, BsCopy, BsCheckLg, BsQuestionCircle } from 'react-icons/bs'
 
@@ -145,7 +145,9 @@ function OrderConfirmation() {
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Customer &amp; Shipping Details</h2>
             <Row label="Shipping Address">{order.address || 'N/A'}</Row>
-            <Row label="Paid On">{formatOrderDateTime(order.payment?.payment_date || order.created_at)}</Row>
+            {isOnlinePayment(order) && (
+              <Row label="Paid On">{formatOrderDateTime(order.payment?.payment_date || order.created_at)}</Row>
+            )}
             <Row label="Payment Method">{paymentMethodLabel(order.payment?.method)}</Row>
             <Row label="Phone Number">{order.phone || 'N/A'}</Row>
           </section>
@@ -234,7 +236,7 @@ function OrderConfirmation() {
               </div>
             </div>
             <div className="-mx-4 sm:-mx-5 -mb-4 sm:-mb-5 mt-3 px-4 sm:px-5 py-4 rounded-b-xl bg-blue-50 dark:bg-blue-900/30 flex items-center justify-between">
-              <span className="text-xs font-black uppercase tracking-widest text-gray-700 dark:text-blue-200">Total Paid</span>
+              <span className="text-xs font-black uppercase tracking-widest text-gray-700 dark:text-blue-200">Order Total</span>
               <span className="text-2xl font-black text-blue-700 dark:text-blue-300">{peso(s.total)}</span>
             </div>
           </section>
@@ -250,7 +252,7 @@ function OrderConfirmation() {
             to={`/receipt/${order.order_id}`}
             className="flex items-center justify-center gap-2 w-full h-11 rounded-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 text-sm font-semibold hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           >
-            <BsDownload className="w-4 h-4" /> Get PDF Receipt
+            <BsDownload className="w-4 h-4" /> Print / Save Receipt
           </Link>
 
           {/* support */}
@@ -258,7 +260,9 @@ function OrderConfirmation() {
             <BsQuestionCircle className="w-5 h-5 shrink-0 text-yellow-500 mt-0.5" />
             <div>
               <p className="text-sm font-bold text-gray-900 dark:text-gray-100">Need support with this order?</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Call us at 420-400-10 or visit our help center.</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                Call us at <a href="tel:+639123456789" className="font-semibold hover:underline">+63 912 345 6789</a> or <Link to="/support" className="font-semibold text-[#0b2e59] dark:text-yellow-300 hover:underline">visit our help center</Link>.
+              </p>
             </div>
           </div>
 

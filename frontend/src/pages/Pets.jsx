@@ -3,6 +3,7 @@ import { usePets } from '../context/PetsContext'
 import { useShop } from '../context/ShopContext'
 import PetProfileForm from '../components/PetProfileForm'
 import RecommendationResults from '../components/RecommendationResults'
+import ConfirmModal from '../components/ConfirmModal'
 import {
   findLabel,
   SPECIES_OPTIONS,
@@ -17,8 +18,9 @@ import ProductQuickViewDialog from '../components/ProductQuickViewDialog'
 // edit an existing pet's profile, or delete one
 function Pets() {
   const { pets, activePetId, setActivePetId, addPet, updatePet, removePet, getActivePet, isAuthenticated } = usePets()
-  const { setOpenLoginFn } = useShop()
+  const { openLogin } = useShop()
   const [mode, setMode] = useState('view')
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const activePet = getActivePet()
 
   function handleAdd(petData) {
@@ -35,27 +37,31 @@ function Pets() {
 
   function handleDelete() {
     if (!activePetId) return
-    if (window.confirm(`Remove ${activePet?.name} from your pets?`)) {
-      removePet(activePetId)
-      setMode('view')
-    }
+    setConfirmDelete(true)
+  }
+
+  function confirmDeletePet() {
+    if (!activePetId) return
+    removePet(activePetId)
+    setMode('view')
+    setConfirmDelete(false)
   }
 
   if (!isAuthenticated) {
     return (
       <div className="max-w-2xl mx-auto py-12 text-center">
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Pet Food Recommendations</h1>
-          <p className="text-gray-600 mb-6">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 dark:bg-[#1a2236] dark:border-gray-700">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Pet Food Recommendations</h1>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">
             Sign in to save your pets&apos; profiles and get personalized food recommendations
             tailored to their health conditions.
           </p>
           <button
             type="button"
-            onClick={() => { if (setOpenLoginFn) { /* handled by navbar */ } }}
+            onClick={openLogin}
             className="px-6 py-2.5 rounded-lg bg-[#0b2e59] hover:bg-[#0d3a6e] text-white text-sm font-semibold transition-colors"
           >
-            Sign in from the top navigation to continue
+            Sign In
           </button>
         </div>
       </div>
@@ -216,6 +222,16 @@ function Pets() {
           )}
         </section>
       </div>
+
+      <ConfirmModal
+        isOpen={confirmDelete}
+        title={`Remove ${activePet?.name}?`}
+        message="This pet profile and its food recommendations will be removed from your account. This cannot be undone."
+        confirmLabel="Remove"
+        danger
+        onConfirm={confirmDeletePet}
+        onCancel={() => setConfirmDelete(false)}
+      />
     </div>
   )
 }

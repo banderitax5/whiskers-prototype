@@ -31,13 +31,16 @@ function Home() {
   const [loadFailed, setLoadFailed] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const [currentSlide, setCurrentSlide] = useState(0)
+  const [heroPaused, setHeroPaused] = useState(false)
 
+  // auto-rotate the hero, but pause on hover/focus (WCAG 2.2.2)
   useEffect(() => {
+    if (heroPaused) return undefined
     const timer = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % CAROUSEL_SLIDES.length)
     }, 5000)
     return () => clearInterval(timer)
-  }, [])
+  }, [heroPaused])
 
   const goToSlide = useCallback((idx) => setCurrentSlide(idx), [])
   const prevSlide = useCallback(() => setCurrentSlide((p) => (p - 1 + CAROUSEL_SLIDES.length) % CAROUSEL_SLIDES.length), [])
@@ -156,7 +159,13 @@ function Home() {
   return (
     <div className={SHELL}>
       <section className="pt-2">
-        <div className={`relative overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-800 ${HERO_HEIGHT}`}>
+        <div
+          className={`relative overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-800 ${HERO_HEIGHT}`}
+          onMouseEnter={() => setHeroPaused(true)}
+          onMouseLeave={() => setHeroPaused(false)}
+          onFocus={() => setHeroPaused(true)}
+          onBlur={() => setHeroPaused(false)}
+        >
           {CAROUSEL_SLIDES.map((slide, idx) => (
             <div
               key={idx}
@@ -165,10 +174,10 @@ function Home() {
               <img src={slide.image} alt={slide.alt} className="h-full w-full object-cover" />
             </div>
           ))}
-          <button type="button" onClick={prevSlide} className="absolute left-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-black/30 text-white flex items-center justify-center hover:bg-black/50 transition-all duration-200 hover:scale-110">
+          <button type="button" onClick={prevSlide} aria-label="Previous slide" className="absolute left-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-black/30 text-white flex items-center justify-center hover:bg-black/50 transition-all duration-200 hover:scale-110">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
-          <button type="button" onClick={nextSlide} className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-black/30 text-white flex items-center justify-center hover:bg-black/50 transition-all duration-200 hover:scale-110">
+          <button type="button" onClick={nextSlide} aria-label="Next slide" className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-black/30 text-white flex items-center justify-center hover:bg-black/50 transition-all duration-200 hover:scale-110">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
           </button>
           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
@@ -177,6 +186,7 @@ function Home() {
                 key={idx}
                 type="button"
                 onClick={() => goToSlide(idx)}
+                aria-label={`Go to slide ${idx + 1}`}
                 className={`h-1.5 rounded-full transition-all duration-300 ${idx === currentSlide ? 'w-5 bg-white' : 'w-1.5 bg-white/50 hover:bg-white/75'}`}
               />
             ))}
@@ -188,7 +198,7 @@ function Home() {
         <div key={category} className="mt-6 sm:mt-8 md:mt-10">
           <div className={HEADING_ROW}>
             <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-red-600 dark:text-red-400 tracking-wide">{category.toUpperCase()}</h2>
-            <a href="/menu" className="text-blue-600 dark:text-blue-400 hover:underline text-xs sm:text-sm font-semibold uppercase whitespace-nowrap transition-colors hover:text-blue-800 dark:hover:text-blue-300">VIEW ALL</a>
+            <button type="button" onClick={() => navigate('/menu')} className="text-blue-600 dark:text-blue-400 hover:underline text-xs sm:text-sm font-semibold uppercase whitespace-nowrap transition-colors hover:text-blue-800 dark:hover:text-blue-300">VIEW ALL</button>
           </div>
           <div className={`${CARD_ROW} overflow-x-auto scrollbar-hide snap-x snap-mandatory touch-pan-x scroll-smooth`}>
             {catProducts.slice(0, 7).map((product) => (

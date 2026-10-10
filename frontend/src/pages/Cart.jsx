@@ -126,6 +126,7 @@ function Cart() {
                           min="1"
                           value={item.quantity}
                           onChange={(e) => updateQuantity(item.id, Number(e.target.value))}
+                          aria-label={`Quantity for ${item.name}`}
                           className="h-8 w-16 sm:w-20 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 text-sm text-center dark:text-gray-100"
                         />
                       </div>

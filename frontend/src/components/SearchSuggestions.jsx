@@ -124,7 +124,7 @@ export default function SearchSuggestions({ className = '' }) {
           value={query}
           onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
           onFocus={() => setOpen(true)}
-          placeholder="Search over 500 Pet products..."
+          placeholder="Search products..."
           className="w-full h-11 px-5 rounded-l-full bg-white text-gray-800 placeholder-gray-400 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 focus:outline-none"
         />
         <button

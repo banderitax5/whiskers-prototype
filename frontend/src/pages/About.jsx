@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { BsChevronDown } from 'react-icons/bs'
 
 const FAQ_ITEMS = [
@@ -8,11 +9,11 @@ const FAQ_ITEMS = [
   },
   {
     q: 'How do I place an order?',
-    a: 'Simply browse our menu, add items to your cart, and proceed to checkout. You can pay via GCash, PayMaya, or debit card.',
+    a: 'Simply browse our menu, add items to your cart, and proceed to checkout. You can pay via GCash, PayMaya, or cash on delivery (COD).',
   },
   {
     q: 'What payment methods do you accept?',
-    a: 'We accept GCash, PayMaya, and debit card payments. All transactions are securely processed.',
+    a: 'We accept GCash, PayMaya, and cash on delivery (COD). Online payments are securely processed.',
   },
   {
     q: 'How long does delivery take?',
@@ -81,6 +82,13 @@ function About() {
             <FaqItem key={idx} item={item} />
           ))}
         </div>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Still have questions?{' '}
+          <Link to="/support" className="font-semibold text-[#0b2e59] dark:text-yellow-300 hover:underline">
+            Contact our support team
+          </Link>
+          .
+        </p>
       </div>
     </div>
   )

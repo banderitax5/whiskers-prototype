@@ -1,7 +1,10 @@
 import React from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 function NavLinks() {
+  const [searchParams] = useSearchParams()
+  const activeBrand = searchParams.get('brand') || ''
+
   const placeholderLinks = [
     { label: 'Menu', to: '/menu' },
     { label: 'Cats', to: '/menu?category=Cats' },
@@ -18,9 +21,6 @@ function NavLinks() {
     { key: 'vitality', image: '/brands/vitality.png', label: 'Vitality' },
     { key: 'topbreed', image: '/brands/topbreed.png', label: 'Top Breed' },
     { key: 'special', image: '/brands/special.png', label: 'Special' },
-    { key: 'empty-1', image: null, label: '' },
-    { key: 'empty-2', image: null, label: '' },
-    { key: 'empty-3', image: null, label: '' },
   ]
 
   return (
@@ -48,9 +48,13 @@ function NavLinks() {
           {brands.map((brand) => (
             <Link
               key={brand.key}
-              to="/menu"
-              className="h-8 min-h-[2rem] min-w-0 flex-1 cursor-pointer rounded-lg bg-gray-200 transition-all duration-200 hover:bg-gray-300 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0b2e59] focus:ring-offset-2 sm:h-12 md:h-14 dark:bg-gray-700 dark:hover:bg-gray-600 dark:hover:shadow-sm flex items-center justify-center overflow-hidden"
-              aria-label={brand.label || 'Brand slot'}
+              to={`/menu?brand=${encodeURIComponent(brand.label)}`}
+              className={`h-8 min-h-[2rem] min-w-0 flex-1 cursor-pointer rounded-lg transition-all duration-200 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0b2e59] focus:ring-offset-2 sm:h-12 md:h-14 flex items-center justify-center overflow-hidden ${
+                activeBrand === brand.label
+                  ? 'bg-[#0b2e59] ring-2 ring-[#ffd21e] dark:bg-[#0b2e59]'
+                  : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600'
+              }`}
+              aria-label={`Shop ${brand.label}`}
             >
               {brand.image && (
                 <img src={brand.image} alt={brand.label} className="h-full w-full object-cover p-0 transition-transform duration-200 hover:scale-105" />
