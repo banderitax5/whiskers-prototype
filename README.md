@@ -70,15 +70,29 @@ npm run dev --prefix frontend
 
 Open http://localhost:5173 — the Vite dev server proxies `/api` requests to the backend, so no CORS setup is needed locally.
 
+## Demo accounts
+
+Pre-seeded in Supabase for demos and panel review:
+
+| Role | Email | Password | Lands on |
+|------|-------|----------|----------|
+| User | demo-user@example.com | `DemoUser!123` | Storefront |
+| Staff | demo-staff@example.com | `DemoStaff!123` | Staff Panel — orders, products, payments, support |
+| Admin | demo-admin@example.com | `DemoAdmin!123` | Admin Dashboard — analytics, customers, audit logs |
+
+Staff and admin panels ask for password re-verification (step-up) before
+state-changing actions — type the same account password.
+
 ## Tests, lint, and build
 
 ```bash
 # Backend API tests (Node's built-in test runner)
 npm test --prefix backend
 
-# Full API end-to-end suite: 25 checks against a running backend.
+# Full API end-to-end suite: 37 checks against a running backend.
 # Creates a throwaway Supabase user, exercises orders, stock, feedback,
-# support, admin, and the step-up gate, then cleans everything up.
+# support, staff/admin role gates, and the step-up re-auth round-trip,
+# then cleans everything up.
 npm run test:e2e --prefix backend
 
 # Frontend lint
