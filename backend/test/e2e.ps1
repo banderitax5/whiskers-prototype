@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Stop'
 $base = 'http://localhost:4141'
 $envLines = Get-Content (Join-Path $PSScriptRoot '..\.env')
 function Get-EnvVal($name) {
@@ -148,94 +148,39 @@ try {
   Step 'admin reply hits step-up gate' $false 'got 2xx without password re-auth'
 } catch { Step 'admin reply hits step-up gate (403 expected)' ($_.Exception.Response.StatusCode.value__ -eq 403) $_.Exception.Response.StatusCode.value__ }
 
+# full step-up round-trip with the temp user's own password (closes the write-path gap)
+try {
+  $stepUpRes = Invoke-RestMethod -Uri "$base/api/auth/step-up" -Method Post -Headers $authH -ContentType 'application/json' `
+    -Body (@{ password = $pw } | ConvertTo-Json -Compress)
+  Step 'step-up issues token' ([bool]$stepUpRes.stepUpToken) "expiresAt=$($stepUpRes.expiresAt)"
+  $stepUpH = @{ Authorization = "Bearer $AT"; 'X-Step-Up-Token' = $stepUpRes.stepUpToken }
+} catch { Step 'step-up issues token' $false (Get-ErrBody $_.Exception.Response); $stepUpH = $null }
+try {
+  Invoke-RestMethod -Uri "$base/api/auth/step-up" -Method Post -Headers $authH -ContentType 'application/json' `
+    -Body (@{ password = 'WrongPassword!123' } | ConvertTo-Json -Compress) | Out-Null
+  Step 'step-up rejects wrong password' $false 'got 2xx'
+} catch { Step 'step-up rejects wrong password' ($_.Exception.Response.StatusCode.value__ -eq 401) $_.Exception.Response.StatusCode.value__ }
+if ($stepUpH) {
+  try {
+    $reply = Invoke-RestMethod -Uri "$base/api/admin/supports/$supId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ response = 'We are checking your order now.' } | ConvertTo-Json -Compress)
+    Step 'admin reply succeeds with step-up' ([bool]$reply.item.support_id) $reply.item.support_id
+  } catch { Step 'admin reply succeeds with step-up' $false (Get-ErrBody $_.Exception.Response) }
+  try {
+    $supCheck = Invoke-RestMethod -Uri "$base/api/support" -Headers $authH
+    Step 'step-up reply persisted' ($supCheck.items[0].response -eq 'We are checking your order now.') "response=$($supCheck.items[0].response)"
+  } catch { Step 'step-up reply persisted' $false (Get-ErrBody $_.Exception.Response) }
+} else {
+  Step 'admin reply succeeds with step-up' $false 'no step-up token'
+  Step 'step-up reply persisted' $false 'no step-up token'
+}
+
 # stats/customers sanity with escalated admin (no step-up on GET)
 try {
   $stats = Invoke-RestMethod -Uri "$base/api/admin/stats" -Headers $authH
   Step 'admin stats GET' ([int]$stats.totalUsers -gt 0) "users=$($stats.totalUsers) sales=$($stats.totalSales)"
 } catch { Step 'admin stats GET' ($false) (Get-ErrBody $_.Exception.Response) }
 
-# ── 8b. booking flow (skipped until 001_services_bookings.sql is run) ──
-$bookingId = $null
-$svcId = $null
-$hasBookingTables = $true
-try {
-  Invoke-RestMethod -Uri "$SU/rest/v1/services?select=service_id&limit=1" -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
-} catch { $hasBookingTables = $false }
-
-if (-not $hasBookingTables) {
-  Step 'booking flow' $true 'run backend/db/migrations/001_services_bookings.sql first' 'SKIP'
-} else {
-  # public catalog
-  try {
-    $svcList = Invoke-RestMethod -Uri "$base/api/services"
-    Step 'services list GET' ($null -ne $svcList.items) "count=$(@($svcList.items).Count)"
-  } catch { Step 'services list GET' $false (Get-ErrBody $_.Exception.Response) }
-
-  # seed a throwaway service
-  $svcId = [guid]::NewGuid().ToString()
-  try {
-    Invoke-RestMethod -Uri "$SU/rest/v1/services" -Method Post -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' `
-      -Body (@{ service_id = $svcId; name = 'E2E Grooming'; description = 'Throwaway probe service'; price = 500; duration_minutes = 30; is_active = $true } | ConvertTo-Json -Compress) | Out-Null
-    Step 'seed service row' $true $svcId
-  } catch { Step 'seed service row' $false (Get-ErrBody $_.Exception.Response) }
-
-  # new service shows in the public catalog
-  try {
-    $svcList2 = Invoke-RestMethod -Uri "$base/api/services"
-    Step 'service appears in catalog' [bool]($svcList2.items | Where-Object { $_.service_id -eq $svcId })
-  } catch { Step 'service appears in catalog' $false (Get-ErrBody $_.Exception.Response) }
-
-  # customer books it
-  $today = (Get-Date).AddDays(1).ToString('yyyy-MM-dd')
-  try {
-    $bk = Invoke-RestMethod -Uri "$base/api/bookings" -Method Post -Headers $authH -ContentType 'application/json' `
-      -Body (@{ serviceId = $svcId; preferredDate = $today; notes = 'E2E probe booking' } | ConvertTo-Json -Compress)
-    Step 'create booking' ($bk.item.status -eq 'Pending') "status=$($bk.item.status)"
-    $bookingId = $bk.item.booking_id
-  } catch { Step 'create booking' $false (Get-ErrBody $_.Exception.Response) }
-
-  # customer sees their own booking
-  try {
-    $myBk = Invoke-RestMethod -Uri "$base/api/bookings" -Headers $authH
-    Step 'my bookings GET' [bool]($myBk.items | Where-Object { $_.booking_id -eq $bookingId })
-  } catch { Step 'my bookings GET' $false (Get-ErrBody $_.Exception.Response) }
-
-  # validation: past date rejected
-  try {
-    Invoke-RestMethod -Uri "$base/api/bookings" -Method Post -Headers $authH -ContentType 'application/json' `
-      -Body (@{ serviceId = $svcId; preferredDate = '2020-01-01' } | ConvertTo-Json -Compress) | Out-Null
-    Step 'reject past date booking' $false 'got 2xx'
-  } catch { Step 'reject past date booking' ($_.Exception.Response.StatusCode.value__ -eq 400) $_.Exception.Response.StatusCode.value__ }
-
-  # admin list includes it (GET, no step-up)
-  try {
-    $admBk = Invoke-RestMethod -Uri "$base/api/admin/bookings?pageSize=100" -Headers $authH
-    Step 'admin bookings GET' [bool]($admBk.items | Where-Object { $_.booking_id -eq $bookingId }) "total=$($admBk.total)"
-  } catch { Step 'admin bookings GET' $false (Get-ErrBody $_.Exception.Response) }
-
-  # admin approve must hit the step-up gate (403 without re-auth)
-  try {
-    Invoke-RestMethod -Uri "$base/api/admin/bookings/$bookingId" -Method Patch -Headers $authH -ContentType 'application/json' `
-      -Body (@{ status = 'Approved' } | ConvertTo-Json -Compress) | Out-Null
-    Step 'admin approve hits step-up gate' $false 'got 2xx without password re-auth'
-  } catch { Step 'admin approve hits step-up gate (403 expected)' ($_.Exception.Response.StatusCode.value__ -eq 403) $_.Exception.Response.StatusCode.value__ }
-
-  # customer cancels their own Pending booking
-  if ($bookingId) {
-    try {
-      $cancel = Invoke-RestMethod -Uri "$base/api/bookings/$bookingId" -Method Patch -Headers $authH -ContentType 'application/json' -Body '{}'
-      Step 'customer cancels booking' ($cancel.item.status -eq 'Cancelled') "status=$($cancel.item.status)"
-    } catch { Step 'customer cancels booking' $false (Get-ErrBody $_.Exception.Response) }
-  } else { Step 'customer cancels booking' $false 'no booking was created' }
-
-  # admin delete must hit the step-up gate too
-  if ($bookingId) {
-    try {
-      Invoke-RestMethod -Uri "$base/api/admin/bookings/$bookingId" -Method Delete -Headers $authH | Out-Null
-      Step 'admin delete hits step-up gate' $false 'got 2xx without password re-auth'
-    } catch { Step 'admin delete hits step-up gate (403 expected)' ($_.Exception.Response.StatusCode.value__ -eq 403) $_.Exception.Response.StatusCode.value__ }
-  } else { Step 'admin delete hits step-up gate' $false 'no booking was created' }
-}
 
 # ── 9. staff role: allowed reads vs admin-only reads ──
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' `
@@ -247,7 +192,6 @@ try {
 } catch { Step 'me/role reports staff' $false (Get-ErrBody $_.Exception.Response) }
 
 $staffAllowed = @('admin/orders?pageSize=1', 'admin/products?pageSize=1', 'admin/payments?pageSize=1', 'admin/supports?pageSize=1')
-if ($hasBookingTables) { $staffAllowed += 'admin/bookings?pageSize=1' }
 foreach ($ep in $staffAllowed) {
   try {
     Invoke-RestMethod -Uri "$base/api/$ep" -Headers $authH | Out-Null
@@ -265,19 +209,6 @@ foreach ($ep in @('admin/stats', 'admin/customers?pageSize=1', 'admin/audit-logs
 # â”€â”€ 10. cleanup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' -Body (@{ role = 'user' } | ConvertTo-Json -Compress) | Out-Null
 Step 'role reverted to user' $true
-
-if ($bookingId) {
-  try {
-    Invoke-RestMethod -Uri "$SU/rest/v1/bookings?booking_id=eq.$bookingId" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
-    Step 'booking row deleted' $true $bookingId
-  } catch { Step 'booking row deleted' $false (Get-ErrBody $_.Exception.Response) }
-}
-if ($svcId) {
-  try {
-    Invoke-RestMethod -Uri "$SU/rest/v1/services?service_id=eq.$svcId" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
-    Step 'service row deleted' $true $svcId
-  } catch { Step 'service row deleted' $false (Get-ErrBody $_.Exception.Response) }
-}
 
 Invoke-RestMethod -Uri "$SU/rest/v1/feedback?order_id=eq.$orderId" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
 Invoke-RestMethod -Uri "$SU/rest/v1/supports?id=eq.$uid" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null

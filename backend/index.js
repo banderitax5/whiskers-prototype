@@ -16,8 +16,6 @@ import adminRoutes from './src/routes/admin.js'
 import eventsRoutes from './src/routes/events.js'
 import feedbackRoutes from './src/routes/feedback.js'
 import supportRoutes from './src/routes/support.js'
-import servicesRoutes from './src/routes/services.js'
-import bookingsRoutes from './src/routes/bookings.js'
 
 const app = express()
 app.disable('x-powered-by')
@@ -64,8 +62,6 @@ app.use('/api/admin', adminRoutes)
 app.use('/api/events', eventsRoutes)
 app.use('/api/feedback', feedbackRoutes)
 app.use('/api/support', supportRoutes)
-app.use('/api/services', servicesRoutes)
-app.use('/api/bookings', bookingsRoutes)
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', uptime: process.uptime() })

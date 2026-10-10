@@ -18,7 +18,6 @@ import {
   BsXLg,
   BsClockHistory,
   BsChatDots,
-  BsClipboardCheck,
 } from "react-icons/bs"
 
 // the layout wrapper for all admin pages
@@ -65,7 +64,7 @@ function AdminLayout() {
 
   // all the sidebar navigation items in one array so we can loop over them
   // each entry declares which roles may see it (staff = orders, products,
-  // support, payments view, bookings — per the paper's staff DFD)
+  // support, payments view — per the paper's staff DFD)
   const navLinks = [
     { to: "/admin", label: "Data Analytics", icon: <BsBarChart />, end: true, roles: ["admin"] },
     { to: "/admin/products", label: "Product Management", icon: <BsBoxSeam />, roles: ["admin", "staff"] },
@@ -73,7 +72,6 @@ function AdminLayout() {
     { to: "/admin/orders", label: "Orders", icon: <BsReceipt />, roles: ["admin", "staff"] },
     { to: "/admin/payments", label: "Payments", icon: <BsCreditCard />, roles: ["admin", "staff"] },
     { to: "/admin/support", label: "Customer Support", icon: <BsChatDots />, roles: ["admin", "staff"] },
-    { to: "/admin/bookings", label: "Bookings", icon: <BsClipboardCheck />, roles: ["admin", "staff"] },
     { to: "/admin/audit-logs", label: "Audit Logs", icon: <BsClockHistory />, roles: ["admin"] },
   ].filter((link) => link.roles.includes(role))
 

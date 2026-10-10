@@ -41,8 +41,7 @@ export function requireAdmin(req, res, next) {
   next()
 }
 
-// the back office also serves a staff role (orders, products, support,
-// payments view, bookings); admin-only endpoints chain requireAdmin after this
+// the back office also serves a staff role (orders, products, support, payments view);
 export function requireStaff(req, res, next) {
   if (req.userRole !== 'admin' && req.userRole !== 'staff') {
     return res.status(403).json({ error: 'Staff or admin access required' })

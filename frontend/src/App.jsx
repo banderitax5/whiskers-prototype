@@ -27,11 +27,6 @@ const AdminOrders = lazy(() => import('./components/AdminOrders.jsx'))
 const AdminAuditLogs = lazy(() => import('./components/AdminAuditLogs.jsx'))
 const AdminCustomers = lazy(() => import('./components/AdminCustomers.jsx'))
 const AdminSupports = lazy(() => import('./components/AdminSupports.jsx'))
-const AdminBookings = lazy(() => import('./components/AdminBookings.jsx'))
-
-// USER PAGES for services (Q3 booking)
-const Services = lazy(() => import('./pages/Services.jsx'))
-const Bookings = lazy(() => import('./pages/Bookings.jsx'))
 
 import supabase from './lib/supabase'
 
@@ -138,15 +133,6 @@ const router = createBrowserRouter([
         ),
       },
       { path: 'about', element: <About /> },
-      { path: 'services', element: <Services /> },
-      {
-        path: 'bookings',
-        element: (
-          <RequireAuth>
-            <Bookings />
-          </RequireAuth>
-        ),
-      },
       {
         path: 'pets',
         element: (
@@ -192,7 +178,6 @@ const router = createBrowserRouter([
       { path: 'orders', element: <AdminOrders /> },
       { path: 'payments', element: <AdminPayments /> },
       { path: 'support', element: <AdminSupports /> },
-      { path: 'bookings', element: <AdminBookings /> },
       { path: 'audit-logs', element: <RequireRole role="admin" fallback="/admin/orders"><AdminAuditLogs /></RequireRole> },
     ],
   },
