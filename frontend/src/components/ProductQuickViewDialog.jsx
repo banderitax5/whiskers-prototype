@@ -118,7 +118,7 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
           <div className="flex flex-col">
             <h3 className="text-xl font-bold text-gray-900 dark:text-white sm:text-2xl">{p.name}</h3>
             <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{p.brand || p.collection || 'Whiskers'}</p>
-            {purchasable ? (
+            {safePrice > 0 ? (
               <p className="mt-3 text-3xl font-bold text-[#e4406a]">PHP {safePrice.toFixed(2)}</p>
             ) : (
               <p className="mt-3 text-lg font-semibold text-gray-500 dark:text-gray-400">Price not yet set</p>

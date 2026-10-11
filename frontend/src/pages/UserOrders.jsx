@@ -66,14 +66,33 @@ function UserOrders() {
   const [reordering, setReordering] = useState(null)
 
   // re-adds every item from a past order to the cart
-  // stock and price may have changed since purchase, so the backend cart
-  // endpoint is the source of truth; we just queue them optimistically
+  // stock may have changed since purchase, so we check current stock first
+  // and skip anything that is out of stock, telling the user what was left out
   async function buyAgain(order) {
     if (reordering) return
     setReordering(order.order_id)
-    const items = order.items || []
+    const items = (order.items || []).filter((item) => item.prod_id)
+
+    // fetch current stock so we can skip out-of-stock items up front
+    let stockById = {}
+    try {
+      const res = await fetch(`${API_BASE}/products?pageSize=500`)
+      if (res.ok) {
+        const { items: prods } = await res.json()
+        for (const p of prods || []) stockById[p.prod_id] = Number(p.stock_quantity)
+      }
+    } catch { /* stock map stays empty; fall back to adding everything */ }
+
+    const skipped = []
+    let added = 0
     for (const item of items) {
-      if (!item.prod_id) continue
+      const stock = stockById[item.prod_id]
+      // skip only when we positively know the item is out of stock
+      if (Number.isFinite(stock) && stock <= 0) {
+        skipped.push(item.name)
+        continue
+      }
+      const qty = Number(item.quantity) || 1
       await addToCart(
         {
           id: item.prod_id,
@@ -82,11 +101,20 @@ function UserOrders() {
           price: Number(item.subtotal) / Math.max(1, Number(item.quantity)),
           image: item.image || '',
         },
-        Number(item.quantity) || 1,
+        Number.isFinite(stock) && stock > 0 ? Math.min(qty, stock) : qty,
         { notify: false }
       )
+      added += 1
     }
-    pushNotification(`${items.length} item${items.length === 1 ? '' : 's'} added to cart. Check stock before checking out.`, 'success')
+
+    if (skipped.length > 0) {
+      pushNotification(
+        `${added} item${added === 1 ? '' : 's'} added. Out of stock, skipped: ${skipped.join(', ')}.`,
+        'info'
+      )
+    } else {
+      pushNotification(`${added} item${added === 1 ? '' : 's'} added to cart.`, 'success')
+    }
     setReordering(null)
   }
 

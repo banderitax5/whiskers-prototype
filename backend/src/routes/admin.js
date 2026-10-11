@@ -274,12 +274,12 @@ router.get('/customers', requireAdmin, async (req, res) => {
 })
 
 // PATCH /api/admin/customers/:id/role
-// body: { role } — must be 'user' or 'admin'
+// body: { role } — must be 'user', 'staff', or 'admin'
 // step-up (password re-verification) is enforced router-wide for all writes
 // prevents admin from demoting themselves
 router.patch('/customers/:id/role', requireAdmin, async (req, res) => {
   const { role } = req.body ?? {}
-  const ALLOWED_ROLES = ['user', 'admin']
+  const ALLOWED_ROLES = ['user', 'staff', 'admin']
 
   if (!role || !ALLOWED_ROLES.includes(role)) {
     return res.status(400).json({ error: `role must be one of: ${ALLOWED_ROLES.join(', ')}` })

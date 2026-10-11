@@ -24,10 +24,10 @@ const PERIOD_OPTS = [
   { key: 'yearly', label: 'Yearly' },
 ];
 const PERIOD_TITLES = {
-  daily: 'Daily Revenue (30d)',
-  weekly: 'Weekly Revenue (12w)',
-  monthly: 'Monthly Revenue (12m)',
-  yearly: 'Yearly Revenue (3y)',
+  daily: "Today's Revenue",
+  weekly: "This Week's Revenue",
+  monthly: "This Month's Revenue",
+  yearly: "This Year's Revenue",
 };
 
 function PanelSkeleton({ rows = 4 }) {

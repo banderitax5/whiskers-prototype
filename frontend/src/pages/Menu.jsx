@@ -17,6 +17,11 @@ function toggleArrayItem(arr, item) {
   return arr.includes(item) ? arr.filter((v) => v !== item) : [...arr, item]
 }
 
+// comma-separated URL param -> array (e.g. "?category=Food,Toys" -> ["Food","Toys"])
+function parseList(v) {
+  return v ? v.split(',').filter(Boolean) : []
+}
+
 function Menu() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -30,17 +35,12 @@ function Menu() {
   const [brands, setBrands] = useState([])
 
   // category, brand, and search filters can arrive via URL (nav links, brand tiles)
-  const initialCategory = searchParams.get('category')
-    ? [searchParams.get('category')]
-    : []
-  const initialBrand = searchParams.get('brand')
-    ? [searchParams.get('brand')]
-    : []
+  // lists are comma-separated in the URL so multi-select survives refresh and Back
   const [filters, setFilters] = useState({
     search: searchParams.get('search') || '',
-    categories: initialCategory,
-    brands: initialBrand,
-    maxPrice: 'all',
+    categories: parseList(searchParams.get('category')),
+    brands: parseList(searchParams.get('brand')),
+    maxPrice: searchParams.get('maxPrice') || 'all',
   })
   const [sortBy, setSortBy] = useState('name-asc')
   const [viewMode, setViewMode] = useState('grid')
@@ -50,43 +50,51 @@ function Menu() {
   const [currentPage, setCurrentPage] = useState(1)
   const [showFilters, setShowFilters] = useState(true)
 
-  // sync URL search params → filter state when navigating from nav links or brand tiles
+  // URL -> filter state (authoritative). Runs on mount, deep links, and
+  // browser back/forward, so the exact filter set is always restored.
   useEffect(() => {
-    const cat = searchParams.get('category')
-    const brand = searchParams.get('brand')
-    const q = searchParams.get('search')
-    if (cat) {
-      setFilters((prev) => ({
-        ...prev,
-        categories: prev.categories.includes(cat) ? prev.categories : [...prev.categories, cat],
-      }))
-    }
-    if (brand) {
-      setFilters((prev) => ({
-        ...prev,
-        brands: prev.brands.includes(brand) ? prev.brands : [...prev.brands, brand],
-      }))
-    }
-    if (q) {
-      setFilters((prev) => ({ ...prev, search: q }))
-    }
+    const nextSearch = searchParams.get('search') || ''
+    const nextCategories = parseList(searchParams.get('category'))
+    const nextBrands = parseList(searchParams.get('brand'))
+    const nextMaxPrice = searchParams.get('maxPrice') || 'all'
+    setFilters((prev) => {
+      const same =
+        prev.search === nextSearch &&
+        prev.categories.join(',') === nextCategories.join(',') &&
+        prev.brands.join(',') === nextBrands.join(',') &&
+        prev.maxPrice === nextMaxPrice
+      if (same) return prev
+      return { ...prev, search: nextSearch, categories: nextCategories, brands: nextBrands, maxPrice: nextMaxPrice }
+    })
   }, [searchParams])
 
-  // write active filters back to the URL so filtered views are shareable
-  // and survive a refresh; replace avoids flooding the back button
+  // filter state -> URL. Discrete filter changes (category/brand/price) push a
+  // history entry so Back/forward restores them; search text replaces so typing
+  // does not flood the history. no-ops when the URL already matches.
   useEffect(() => {
     const next = {}
     if (filters.search) next.search = filters.search
-    if (filters.categories.length === 1) next.category = filters.categories[0]
-    if (filters.brands.length === 1) next.brand = filters.brands[0]
-    const current = {
-      search: searchParams.get('search') || undefined,
-      category: searchParams.get('category') || undefined,
-      brand: searchParams.get('brand') || undefined,
+    if (filters.categories.length) next.category = filters.categories.join(',')
+    if (filters.brands.length) next.brand = filters.brands.join(',')
+    if (filters.maxPrice !== 'all') next.maxPrice = filters.maxPrice
+    const cur = {
+      search: searchParams.get('search') || '',
+      category: searchParams.get('category') || '',
+      brand: searchParams.get('brand') || '',
+      maxPrice: searchParams.get('maxPrice') || 'all',
     }
-    if (current.search === next.search && current.category === next.category && current.brand === next.brand) return
-    setSearchParams(next, { replace: true })
-  }, [filters.search, filters.categories, filters.brands]) // eslint-disable-line react-hooks/exhaustive-deps
+    const nextNorm = {
+      search: next.search || '',
+      category: next.category || '',
+      brand: next.brand || '',
+      maxPrice: next.maxPrice || 'all',
+    }
+    if (cur.search === nextNorm.search && cur.category === nextNorm.category &&
+        cur.brand === nextNorm.brand && cur.maxPrice === nextNorm.maxPrice) return
+    const discreteChanged = cur.category !== nextNorm.category ||
+      cur.brand !== nextNorm.brand || cur.maxPrice !== nextNorm.maxPrice
+    setSearchParams(next, { replace: !discreteChanged })
+  }, [filters.search, filters.categories, filters.brands, filters.maxPrice]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     async function load() {
