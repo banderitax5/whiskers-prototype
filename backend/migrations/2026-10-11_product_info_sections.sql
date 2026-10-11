@@ -1,0 +1,22 @@
+-- ============================================================================
+-- Migration: structured product information sections
+-- Owner ran this on 2026-10-11. Committed here so the schema change is
+-- reproducible and traceable from the repo.
+--
+-- SHAPE: an ordered JSON array of {label, content} objects, e.g.
+--   [
+--     { "label": "Product Info",   "content": "Suitable for adult dogs..." },
+--     { "label": "Ingredients",    "content": "Wheat, meat and bone meal..." },
+--     { "label": "Feeding Guide",  "content": "Body Weight (kg) | Amount (g/day)\n2-5 | 50-95" }
+--   ]
+--
+-- WHY AN ARRAY (not an object): Postgres jsonb does not preserve object key
+-- order, and the sections must render in a stable, curated order. An array also
+-- means admin-defined / reorderable sections (a stated follow-up) are a UI-only
+-- change - no further schema or API change.
+--
+-- Nullable, so existing products are unaffected; products with no sections
+-- simply render no accordion.
+-- ============================================================================
+
+ALTER TABLE product ADD COLUMN IF NOT EXISTS details jsonb;

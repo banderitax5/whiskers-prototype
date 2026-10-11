@@ -112,17 +112,32 @@ router.get('/brands', async (req, res) => {
 
 // explicit columns only: image_data is bytea and would come back as a huge hex
 // string, so it is never selected (no product currently uses it anyway)
-const BASE_COLUMNS = 'prod_id, prod_name, category, brand, price, stock_quantity, image_url, is_active, created_at'
-// `description` was added by a later migration; include it when present but
-// fall back to the base set so the endpoint never hard-fails if that migration
-// hasn't run yet (see backend/migrations/2026-10-11_product_description_and_rls.sql)
-const WITH_DESCRIPTION = `${BASE_COLUMNS}, description`
+const BASE_COLUMNS = [
+  'prod_id', 'prod_name', 'category', 'brand', 'price',
+  'stock_quantity', 'image_url', 'is_active', 'created_at',
+]
+// columns added by later migrations. The endpoint tolerates their absence so the
+// customer-facing page keeps working against a database that has not run them yet
+// (see backend/migrations/2026-10-11_product_description_and_rls.sql and
+//  backend/migrations/2026-10-11_product_info_sections.sql)
+const OPTIONAL_COLUMNS = ['description', 'details']
 
-// fetches the product + its related items using the given column set
+// PostgREST/PGRST and plain SQL both name the offending column, but the wording
+// differs, so match either shape before deciding this is a missing-column error
+function missingColumnOf(err, candidates) {
+  const text = `${err?.message || ''} ${err?.details || ''}`
+  if (!/does not exist|could not find the .* column|PGRST204/i.test(text)) return null
+  let m = text.match(/'([^']+)' column of/i) || text.match(/column\s+(?:[\w"]+\.)?([\w"]+)\s+does not exist/i)
+  if (m && candidates.includes(m[1])) return m[1]
+  return candidates.find((c) => text.includes(c)) || candidates[0]
+}
+
+// fetches the product + its related items using the given column list
 async function fetchDetail(id, columns) {
+  const select = columns.join(', ')
   const { data, error } = await supabaseAdmin
     .from('product')
-    .select(columns)
+    .select(select)
     .eq('prod_id', id)
     .eq('is_active', true)
     .maybeSingle()
@@ -136,7 +151,7 @@ async function fetchDetail(id, columns) {
   if (data.category) {
     const { data: rel, error: relErr } = await supabaseAdmin
       .from('product')
-      .select(columns)
+      .select(select)
       .eq('category', data.category)
       .eq('is_active', true)
       .neq('prod_id', id)
@@ -158,16 +173,20 @@ router.get('/:id', async (req, res) => {
   }
 
   try {
-    let result
-    try {
-      result = await fetchDetail(id, WITH_DESCRIPTION)
-    } catch (err) {
-      // the description column does not exist yet - retry once without it so
-      // the customer-facing page keeps working before the migration is run
-      if (String(err.message || '').includes('description')) {
-        result = await fetchDetail(id, BASE_COLUMNS)
-      } else {
-        throw err
+    let columns = [...BASE_COLUMNS, ...OPTIONAL_COLUMNS]
+    let result = null
+    // retry, shedding one unavailable optional column at a time, so a pending
+    // migration degrades the payload instead of 500-ing the page
+    for (;;) {
+      try {
+        result = await fetchDetail(id, columns)
+        break
+      } catch (err) {
+        const optional = columns.filter((c) => OPTIONAL_COLUMNS.includes(c))
+        const missing = optional.length ? missingColumnOf(err, optional) : null
+        if (!missing || !columns.includes(missing)) throw err
+        if (columns.length <= BASE_COLUMNS.length) throw err
+        columns = columns.filter((c) => c !== missing)
       }
     }
     if (!result) return res.status(404).json({ error: 'Product not found' })

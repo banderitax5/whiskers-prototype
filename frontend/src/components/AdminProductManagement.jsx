@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import supabase from '../lib/supabase';
 import { apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth, apiUploadAuth } from '../lib/api';
 import { AdminPage, AdminTable, EmptyState, StatCard, btnPrimary, StatusPill, ConfirmDialog } from './adminTheme';
+import { SECTION_LABELS, detailsToFields, fieldsToDetails } from '../lib/productInfo';
 import { BsBoxSeam, BsPlusLg, BsDashLg, BsPencilSquare, BsTrash, BsUpload, BsSearch, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 import toast from 'react-hot-toast';
 
@@ -11,7 +12,7 @@ const AdminProductManagement = () => {
   const [uploading, setUploading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [formData, setFormData] = useState({ prod_name: '', category: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '' });
+  const [formData, setFormData] = useState({ prod_name: '', category: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: {} });
   const [sortKey, setSortKey] = useState('prod_name');
   const [sortDir, setSortDir] = useState('asc');
   const [priceMin, setPriceMin] = useState('');
@@ -23,7 +24,7 @@ const AdminProductManagement = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [mobileEditItem, setMobileEditItem] = useState(null);
-  const [mobileForm, setMobileForm] = useState({ prod_name: '', category: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '' });
+  const [mobileForm, setMobileForm] = useState({ prod_name: '', category: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: {} });
   const [mobileUploading, setMobileUploading] = useState(false);
   const [mobileDragging, setMobileDragging] = useState(false);
   const [mobileUrlInput, setMobileUrlInput] = useState('');
@@ -74,13 +75,14 @@ const AdminProductManagement = () => {
       is_active: item.is_active !== false,
       image_url: item.image_url || '',
       description: item.description || '',
+      details: detailsToFields(item.details),
     });
     setShowForm(true);
   }
 
   function resetForm() {
     setEditing(null);
-    setFormData({ prod_name: '', category: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '' });
+    setFormData({ prod_name: '', category: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: {} });
   }
 
   const handleFileUpload = async (file) => {
@@ -134,6 +136,7 @@ const AdminProductManagement = () => {
         is_active: formData.is_active,
         image_url: formData.image_url,
         description: formData.description || null,
+        details: fieldsToDetails(formData.details),
       };
       if (editing) {
         await apiPatchAuth(`/admin/products/${editing}`, payload, token);
@@ -186,6 +189,7 @@ const AdminProductManagement = () => {
       is_active: item.is_active !== false,
       image_url: item.image_url || '',
       description: item.description || '',
+      details: detailsToFields(item.details),
     });
   }
 
@@ -234,6 +238,7 @@ const AdminProductManagement = () => {
         is_active: mobileForm.is_active,
         image_url: mobileForm.image_url,
         description: mobileForm.description || null,
+        details: fieldsToDetails(mobileForm.details),
       }, token);
       toast.success('Product updated');
       setMobileEditItem(null);
@@ -392,6 +397,33 @@ const AdminProductManagement = () => {
             maxLength={2000}
             className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 text-sm focus:outline-none focus:border-[#0b2e59] resize-y"
           />
+          <details className="rounded-lg border border-gray-200 dark:border-[#1e3a5f] bg-gray-50 dark:bg-[#162d4a]/40 p-3">
+            <summary className="cursor-pointer select-none text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-slate-400">
+              Product information (optional)
+            </summary>
+            <p className="mt-2 text-[11px] leading-relaxed text-gray-500 dark:text-slate-400">
+              Leave a section blank to hide it. Start a line with &quot;- &quot; for a bullet; separate table
+              cells with &quot; | &quot; (the first row becomes the header row).
+            </p>
+            <div className="mt-3 space-y-3">
+              {SECTION_LABELS.map((label, i) => (
+                <div key={label}>
+                  <label htmlFor={`product-info-desktop-${i}`} className="mb-1 block text-xs font-semibold text-gray-700 dark:text-slate-300">
+                    {label}
+                  </label>
+                  <textarea
+                    id={`product-info-desktop-${i}`}
+                    value={formData.details?.[label] || ''}
+                    onChange={(e) => setFormData({ ...formData, details: { ...formData.details, [label]: e.target.value } })}
+                    rows={3}
+                    maxLength={4000}
+                    placeholder={`${label} (optional)`}
+                    className="w-full resize-y rounded-lg border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#162d4a] px-3 py-2 text-sm text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:border-[#0b2e59] focus:outline-none"
+                  />
+                </div>
+              ))}
+            </div>
+          </details>
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-slate-400">Visibility</span>
             <div className="flex gap-1.5">
@@ -579,6 +611,33 @@ const AdminProductManagement = () => {
                 maxLength={2000}
                 className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59] resize-y"
               />
+              <details className="rounded-lg border border-gray-200 dark:border-[#1e3a5f] bg-gray-50 dark:bg-[#162d4a]/40 p-3">
+                <summary className="cursor-pointer select-none text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-slate-400">
+                  Product information (optional)
+                </summary>
+                <p className="mt-2 text-[11px] leading-relaxed text-gray-500 dark:text-slate-400">
+                  Leave a section blank to hide it. Start a line with &quot;- &quot; for a bullet; separate
+                  table cells with &quot; | &quot; (the first row becomes the header row).
+                </p>
+                <div className="mt-3 space-y-3">
+                  {SECTION_LABELS.map((label, i) => (
+                    <div key={label}>
+                      <label htmlFor={`product-info-mobile-${i}`} className="mb-1 block text-xs font-semibold text-gray-700 dark:text-slate-300">
+                        {label}
+                      </label>
+                      <textarea
+                        id={`product-info-mobile-${i}`}
+                        value={mobileForm.details?.[label] || ''}
+                        onChange={(e) => setMobileForm({ ...mobileForm, details: { ...mobileForm.details, [label]: e.target.value } })}
+                        rows={3}
+                        maxLength={4000}
+                        placeholder={`${label} (optional)`}
+                        className="w-full resize-y rounded-lg border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#162d4a] px-3 py-2 text-sm text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:border-[#0b2e59] focus:outline-none"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </details>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-slate-400">Visibility</span>
                 <div className="flex gap-1.5">

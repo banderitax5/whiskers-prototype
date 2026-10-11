@@ -7,7 +7,9 @@ import { trackEvent } from '../lib/appEvents.js'
 import { setProductSeo } from '../lib/seo.js'
 import ProductImage from '../components/ProductImage.jsx'
 import ProductCard from '../components/ProductCard.jsx'
+import ProductInfoAccordion from '../components/ProductInfoAccordion.jsx'
 import { normalizeProduct, formatPrice, getStockStatus, toCartPayload } from '../lib/productDisplay.js'
+import { parseDetails } from '../lib/productInfo.js'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -127,6 +129,9 @@ function ProductDetail() {
   useEffect(() => { load() }, [load, attempt])
 
   const p = status === 'ready' ? normalizeProduct(item) : null
+  // deep-dive sections (ingredients, feeding guide, ...) - empty for products
+  // that carry none, in which case the accordion is not rendered at all
+  const infoSections = status === 'ready' ? parseDetails(item?.details) : []
 
   // per-product SEO meta; restores site defaults on unmount / product change
   useEffect(() => {
@@ -274,6 +279,18 @@ function ProductDetail() {
           </button>
         </div>
       </div>
+
+      {/* detailed product information: ingredients, feeding guide, etc. */}
+      {infoSections.length > 0 && (
+        <section className="mt-8 sm:mt-10" aria-labelledby="product-info-heading">
+          <h2 id="product-info-heading" className="text-lg font-bold text-gray-900 dark:text-white sm:text-xl">
+            Product information
+          </h2>
+          <div className="mt-3">
+            <ProductInfoAccordion sections={infoSections} />
+          </div>
+        </section>
+      )}
 
       {/* related products */}
       {related.length > 0 && (

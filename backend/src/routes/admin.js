@@ -11,6 +11,7 @@ import { supabaseAdmin, supabaseAuth } from '../config/supabase.js'
 import { authMiddleware, requireAdmin, requireStaff, requireStepUp } from '../middleware/auth.js'
 import { decryptText } from '../utils/encryption.js'
 import { PERIODS, windowDays, bucketPayments } from '../utils/salesBuckets.js'
+import { sanitizeDetails } from '../utils/productDetails.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -352,7 +353,7 @@ router.get('/products', async (req, res) => {
 
 // POST /api/admin/products
 router.post('/products', async (req, res) => {
-  const { prod_name, category, price, stock_quantity, is_active, image_url, description } = req.body ?? {}
+  const { prod_name, category, price, stock_quantity, is_active, image_url, description, details } = req.body ?? {}
   if (!prod_name || !category || price == null) {
     return res.status(400).json({ error: 'prod_name, category, and price are required' })
   }
@@ -366,6 +367,8 @@ router.post('/products', async (req, res) => {
   if (is_active !== undefined && typeof is_active !== 'boolean') {
     return res.status(400).json({ error: 'Visibility must be Active or Hidden' })
   }
+  const sanitizedDetails = sanitizeDetails(details)
+  if (sanitizedDetails.error) return res.status(400).json({ error: sanitizedDetails.error })
   try {
     const { data, error } = await supabaseAdmin
       .from('product')
@@ -377,6 +380,7 @@ router.post('/products', async (req, res) => {
         is_active: is_active ?? true,
         image_url: image_url || null,
         description: description ? description.trim().slice(0, 2000) : null,
+        details: sanitizedDetails.value,
       })
       .select()
       .single()
@@ -391,7 +395,7 @@ router.post('/products', async (req, res) => {
 
 // PATCH /api/admin/products/:id
 router.patch('/products/:id', async (req, res) => {
-  const allowed = ['prod_name', 'category', 'price', 'stock_quantity', 'image_url', 'is_active', 'description']
+  const allowed = ['prod_name', 'category', 'price', 'stock_quantity', 'image_url', 'is_active', 'description', 'details']
   const updates = {}
   for (const key of allowed) {
     if (req.body?.[key] !== undefined) updates[key] = req.body[key]
@@ -415,6 +419,12 @@ router.patch('/products/:id', async (req, res) => {
     }
     // empty or whitespace-only clears the description back to null
     updates.description = updates.description ? updates.description.trim().slice(0, 2000) : null
+  }
+  if ('details' in updates) {
+    const sanitizedDetails = sanitizeDetails(updates.details)
+    if (sanitizedDetails.error) return res.status(400).json({ error: sanitizedDetails.error })
+    // an empty list clears the product information back to null
+    updates.details = sanitizedDetails.value
   }
   try {
     const { data, error } = await supabaseAdmin
