@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { authMiddleware } from '../middleware/auth.js'
 import { orderLimiter } from '../middleware/rateLimiter.js'
 import { supabaseAdmin } from '../config/supabase.js'
+import { SHIPPING_FEE_PHP } from '../utils/shopRules.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -11,7 +12,9 @@ router.use(authMiddleware)
 // POST /api/orders — create a new order from cart items
 // body: { items, paymentMethod, shippingFee, customerName, phone, address }
 router.post('/', orderLimiter, async (req, res) => {
-  const { items, paymentMethod, shippingFee, customerName, phone, address } = req.body ?? {}
+  // shippingFee is accepted for backward compatibility but ignored — the
+  // server applies its own rule (see SHIPPING_FEE_PHP)
+  const { items, paymentMethod, customerName, phone, address } = req.body ?? {}
 
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'At least one item is required' })
@@ -20,10 +23,9 @@ router.post('/', orderLimiter, async (req, res) => {
     return res.status(400).json({ error: 'paymentMethod is required' })
   }
 
-  // shipping fee is client-supplied for display — clamp it so a tampered
-  // request can't produce a zero or negative order total
-  const fee = Number(shippingFee)
-  const shipping = Number.isFinite(fee) && fee >= 0 ? Math.min(fee, 1000) : 75
+  // shipping is owned by the server: any client-sent shippingFee is ignored
+  // so a tampered request can never zero out the delivery fee
+  const shipping = SHIPPING_FEE_PHP
 
   try {
     // fetch actual prices from the DB — never trust client-sent prices
@@ -58,7 +60,9 @@ router.post('/', orderLimiter, async (req, res) => {
       if (!(dbPrice > 0)) {
         return res.status(400).json({ error: `"${dbProduct.prod_name}" is not yet priced and cannot be purchased.` })
       }
-      const qty = Math.max(1, Number(item.quantity) || 1)
+      // whole units only — a decimal quantity would corrupt the stock decrement
+      const rawQty = Math.floor(Number(item.quantity))
+      const qty = Number.isFinite(rawQty) && rawQty >= 1 ? rawQty : 1
       if (qty > Number(dbProduct.stock_quantity || 0)) {
         return res.status(400).json({ error: `Only ${dbProduct.stock_quantity} of "${dbProduct.prod_name}" left in stock.` })
       }
