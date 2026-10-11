@@ -8,6 +8,7 @@ const Home = lazy(() => import('./pages/Home.jsx'))
 const About = lazy(() => import('./pages/About.jsx'))
 const Pets = lazy(() => import('./pages/Pets.jsx'))
 const Menu = lazy(() => import('./pages/Menu.jsx'))
+const ProductDetail = lazy(() => import('./pages/ProductDetail.jsx'))
 const Profile = lazy(() => import('./pages/Profile.jsx'))
 const Cart = lazy(() => import('./pages/Cart.jsx'))
 const Checkout = lazy(() => import('./pages/Checkout.jsx'))
@@ -114,6 +115,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Home /> },
       { path: 'menu', element: <Menu /> },
+      { path: 'products/:prod_id', element: <ProductDetail /> },
       { path: 'cart', element: <Cart /> },
       { path: 'checkout', element: <Checkout /> },
       {

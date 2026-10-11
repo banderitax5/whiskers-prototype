@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
+import { Link } from 'react-router-dom'
 import { extractSizeLabel } from '../lib/productUtils.js'
 import { trackEvent } from '../lib/appEvents.js'
+import ProductImage from './ProductImage.jsx'
+import { normalizeProduct, getStockStatus } from '../lib/productDisplay.js'
 
 // full screen product dialog that pops up when you click on a product card
 // uses createPortal to render directly on document.body so it always covers
@@ -59,18 +62,11 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
   // use the selected variant for display, fall back to the product prop
   const current = selectedVariant || product
 
-  // normalize field names so the dialog works with both API products and hardcoded ones
-  const p = current ? {
-    ...current,
-    name: current.name || current.prod_name,
-    image: current.image || current.image_url,
-    collection: current.collection || current.category,
-  } : null
-  const safePrice = Number(p?.price) || 0
-  const stock = Number(p?.stock_quantity)
-  const hasStockInfo = Number.isFinite(stock)
-  const inStock = !hasStockInfo || stock > 0
-  const lowStock = hasStockInfo && stock > 0 && stock <= 5
+  // normalize field names so the dialog works with both API products and
+  // hardcoded ones (shared with the detail page via productDisplay)
+  const p = normalizeProduct(current)
+  const safePrice = p ? p.price : 0
+  const { stock, hasStockInfo, inStock, lowStock } = getStockStatus(current?.stock_quantity)
 
   // compute size labels from variants
   const sizes = useMemo(() => {
@@ -110,13 +106,22 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
         {/* collapses to a single column on mobile */}
         <div className="grid grid-cols-1 gap-4 p-4 sm:gap-6 sm:p-6 md:grid-cols-2">
           {/* main product image */}
-          <div className="flex items-center justify-center rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 p-4">
-            <img src={p.image} alt={p.name} loading="lazy" className="max-h-[220px] w-full object-contain sm:max-h-[280px]" />
-          </div>
+          <ProductImage
+            src={p.image}
+            alt={p.name}
+            className="rounded-xl border border-gray-200 dark:border-gray-600 p-4"
+            imgClassName="max-h-[220px] w-full sm:max-h-[280px]"
+          />
 
-          {/* product details, price, description, quantity picker, and action buttons */}
+          {/* product details, price, quantity picker, and action buttons */}
           <div className="flex flex-col">
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white sm:text-2xl">{p.name}</h3>
+            <Link
+              to={`/products/${p.prod_id}`}
+              onClick={onClose}
+              className="text-xl font-bold text-gray-900 dark:text-white sm:text-2xl hover:text-[#0b2e59] dark:hover:text-blue-400 hover:underline"
+            >
+              {p.name}
+            </Link>
             <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{p.brand || p.collection || 'Whiskers'}</p>
             {safePrice > 0 ? (
               <p className="mt-3 text-3xl font-bold text-[#e4406a]">PHP {safePrice.toFixed(2)}</p>
@@ -130,13 +135,6 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
                 {!inStock ? 'Out of stock' : lowStock ? `Only ${stock} left in stock` : 'In stock'}
               </p>
             )}
-
-            <div className="mt-4">
-              <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Description</p>
-              <p className="mt-1 text-sm leading-relaxed text-gray-500 dark:text-gray-400">
-                {p.description || 'No description available for this product yet.'}
-              </p>
-            </div>
 
             {/* size selector: only show when product has multiple size variants */}
             {sizes.length > 0 && (
@@ -191,6 +189,16 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
                 Buy Now
               </button>
             </div>
+
+            {/* link out to the full product page */}
+            <Link
+              to={`/products/${p.prod_id}`}
+              onClick={onClose}
+              className="mt-3 inline-flex items-center justify-center gap-1.5 h-10 rounded-lg border border-gray-300 dark:border-gray-600 text-xs font-semibold text-gray-700 dark:text-gray-200 transition hover:bg-gray-100 dark:hover:bg-gray-700 sm:h-12 sm:text-sm"
+            >
+              View full details
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            </Link>
           </div>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useCallback } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useShop } from '../context/ShopContext.jsx'
 import ProductQuickViewDialog from '../components/ProductQuickViewDialog.jsx'
 import { apiGet } from '../lib/api.js'
@@ -400,26 +400,24 @@ function Menu() {
               {paginatedProducts.map((product) => (
                 <article
                   key={product.prod_id}
-                  role="button"
-                  tabIndex={0}
                   onClick={() => {
                     setActiveProduct(product)
                     setActiveSizeVariants(product.sizeVariants || [])
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      setActiveProduct(product)
-                      setActiveSizeVariants(product.sizeVariants || [])
-                    }
                   }}
                   className={`group rounded-xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm hover:shadow-md transition cursor-pointer ${
                     viewMode === 'list' ? 'flex items-center gap-4 p-3' : 'overflow-hidden'
                   }`}
                 >
-                  {/* image */}
-                  <div className={`flex items-center justify-center bg-gray-50 dark:bg-gray-700/50 ${
-                    viewMode === 'grid' ? 'h-24 sm:h-36' : 'h-16 w-16 flex-shrink-0 rounded-lg'
-                  }`}>
+                  {/* image — links to the product detail page */}
+                  <Link
+                    to={`/products/${product.prod_id}`}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={`View details for ${product.prod_name}`}
+                    tabIndex={-1}
+                    className={`flex items-center justify-center bg-gray-50 dark:bg-gray-700/50 ${
+                      viewMode === 'grid' ? 'h-24 sm:h-36' : 'h-16 w-16 flex-shrink-0 rounded-lg'
+                    }`}
+                  >
                     {product.image_url ? (
                       <img src={product.image_url} alt={product.prod_name} loading="lazy" className="max-h-full max-w-full object-contain p-1.5 sm:p-2 group-hover:scale-105 transition" />
                     ) : (
@@ -427,7 +425,7 @@ function Menu() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                       </svg>
                     )}
-                  </div>
+                  </Link>
 
                   {/* info */}
                   <div className={`${viewMode === 'grid' ? 'p-2 sm:p-4' : 'flex-1 min-w-0'}`}>
@@ -435,7 +433,13 @@ function Menu() {
                       <span className="inline-block text-[9px] sm:text-[10px] font-semibold text-[#0b2e59] dark:text-blue-400 uppercase tracking-wider mb-0.5 sm:mb-1">{product.brand}</span>
                     )}
                     <h3 className={`font-semibold text-gray-800 dark:text-gray-100 leading-tight ${viewMode === 'grid' ? 'text-xs sm:text-sm line-clamp-2 min-h-[2rem] sm:min-h-[2.5rem]' : 'text-sm truncate'}`}>
-                      {product.prod_name}
+                      <Link
+                        to={`/products/${product.prod_id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="hover:text-[#0b2e59] dark:hover:text-blue-400 hover:underline"
+                      >
+                        {product.prod_name}
+                      </Link>
                     </h3>
                     <p className="mt-0.5 sm:mt-1 text-[10px] sm:text-[11px] text-gray-400 dark:text-gray-500 truncate">{product.category}</p>
                     {product.price > 0 ? (
@@ -474,6 +478,16 @@ function Menu() {
                         Buy Now
                       </button>
                     </div>
+
+                    {/* keyboard-accessible path to the quick view modal (the
+                        whole card is also clickable for pointer users) */}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setActiveProduct(product); setActiveSizeVariants(product.sizeVariants || []) }}
+                      className="mt-1.5 sm:mt-2 w-full h-7 sm:h-8 rounded-lg border border-gray-200 dark:border-gray-600 text-[10px] sm:text-xs font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
+                    >
+                      Quick view
+                    </button>
                   </div>
                 </article>
               ))}

@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { supabaseAdmin } from '../config/supabase.js'
 import { productLimiter } from '../middleware/rateLimiter.js'
+import { isUuid } from '../utils/uuid.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -106,6 +107,53 @@ router.get('/brands', async (req, res) => {
   } catch (err) {
     logger.error({ err: err.message }, 'Brands fetch error')
     res.status(500).json({ error: 'Failed to fetch brands' })
+  }
+})
+
+// explicit columns only: image_data is bytea and would come back as a huge hex
+// string, so it is never selected (no product currently uses it anyway)
+const PRODUCT_COLUMNS = 'prod_id, prod_name, category, brand, price, stock_quantity, image_url, is_active, created_at'
+
+// GET /api/products/:id - single product detail + related items in one round trip
+// placed after the /categories and /brands static routes so those still match
+router.get('/:id', async (req, res) => {
+  const id = String(req.params.id || '').trim()
+  if (!isUuid(id)) {
+    // malformed id short-circuits before touching the database
+    return res.status(404).json({ error: 'Product not found' })
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('product')
+      .select(PRODUCT_COLUMNS)
+      .eq('prod_id', id)
+      .eq('is_active', true)
+      .maybeSingle()
+    if (error) throw error
+    // missing and inactive products share the same 404 so the API never
+    // distinguishes them (an inactive product should look nonexistent)
+    if (!data) return res.status(404).json({ error: 'Product not found' })
+
+    // related: same category, active, excluding this product, capped at 4
+    let related = []
+    if (data.category) {
+      const { data: rel, error: relErr } = await supabaseAdmin
+        .from('product')
+        .select(PRODUCT_COLUMNS)
+        .eq('category', data.category)
+        .eq('is_active', true)
+        .neq('prod_id', id)
+        .order('prod_name', { ascending: true })
+        .limit(4)
+      if (relErr) throw relErr
+      related = rel || []
+    }
+
+    res.json({ item: data, related })
+  } catch (err) {
+    logger.error({ err: err.message }, 'Product detail fetch error')
+    res.status(500).json({ error: 'Failed to fetch product' })
   }
 })
 
