@@ -41,7 +41,7 @@ function Breadcrumbs({ product }) {
 
 function Skeleton() {
   return (
-    <div className="w-full lg:mx-auto lg:max-w-5xl py-6 sm:py-8" aria-hidden="true">
+    <div className="w-full lg:mx-auto lg:max-w-7xl py-6 sm:py-8" aria-hidden="true">
       <div className="h-4 w-64 bg-gray-200 dark:bg-gray-700 rounded animate-pulse mb-6" />
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <div className="h-64 sm:h-96 bg-gray-200 dark:bg-gray-700 rounded-xl animate-pulse" />
@@ -82,7 +82,7 @@ function NotFoundBlock() {
 
 function ErrorBlock({ onRetry }) {
   return (
-    <div className="w-full lg:mx-auto lg:max-w-5xl py-6 sm:py-8">
+    <div className="w-full lg:mx-auto lg:max-w-7xl py-6 sm:py-8">
       <div className="bg-red-50 border border-red-200 rounded-xl p-8 text-center dark:bg-red-900/30 dark:border-red-800">
         <h2 className="font-semibold text-red-900 dark:text-red-200 mb-1">Could not load product</h2>
         <p className="text-sm text-red-700 dark:text-red-300 mb-4">Check your connection and try again.</p>
@@ -183,7 +183,7 @@ function ProductDetail() {
   const decrease = () => setQty((v) => Math.max(1, v - 1))
 
   return (
-    <div className="w-full lg:mx-auto lg:max-w-5xl py-6 sm:py-8">
+    <div className="w-full lg:mx-auto lg:max-w-7xl py-6 sm:py-8">
       <Breadcrumbs product={p} />
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
