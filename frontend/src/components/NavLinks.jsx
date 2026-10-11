@@ -1,5 +1,31 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+
+// brand tile that hides its image if the file fails to load so a missing
+// asset never renders as a broken grey box (C3)
+function BrandTile({ brand, active }) {
+  const [failed, setFailed] = useState(false)
+  return (
+    <Link
+      to={`/menu?brand=${encodeURIComponent(brand.label)}`}
+      className={`h-8 min-h-[2rem] min-w-0 flex-1 cursor-pointer rounded-lg transition-all duration-200 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0b2e59] focus:ring-offset-2 sm:h-12 md:h-14 flex items-center justify-center overflow-hidden ${
+        active
+          ? 'bg-[#0b2e59] ring-2 ring-[#ffd21e] dark:bg-[#0b2e59]'
+          : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600'
+      }`}
+      aria-label={`Shop ${brand.label}`}
+    >
+      {brand.image && !failed && (
+        <img
+          src={brand.image}
+          alt={brand.label}
+          onError={() => setFailed(true)}
+          className="h-full w-full object-cover p-0 transition-transform duration-200 hover:scale-105"
+        />
+      )}
+    </Link>
+  )
+}
 
 function NavLinks() {
   const [searchParams] = useSearchParams()
@@ -15,9 +41,11 @@ function NavLinks() {
     { label: 'Pet Recommendation', to: '/pets' },
   ]
 
+  // file names must match the case used under public/brands (served files
+  // are case-sensitive on Linux hosts)
   const brands = [
     { key: 'royal', image: '/brands/ROYAL.webp', label: 'Royal Canin' },
-    { key: 'aozi', image: '/brands/AOZI.png', label: 'Aozi' },
+    { key: 'aozi', image: '/brands/aozi.png', label: 'Aozi' },
     { key: 'vitality', image: '/brands/vitality.png', label: 'Vitality' },
     { key: 'topbreed', image: '/brands/topbreed.png', label: 'Top Breed' },
     { key: 'special', image: '/brands/special.png', label: 'Special' },
@@ -46,20 +74,7 @@ function NavLinks() {
           aria-label="Popular brands"
         >
           {brands.map((brand) => (
-            <Link
-              key={brand.key}
-              to={`/menu?brand=${encodeURIComponent(brand.label)}`}
-              className={`h-8 min-h-[2rem] min-w-0 flex-1 cursor-pointer rounded-lg transition-all duration-200 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0b2e59] focus:ring-offset-2 sm:h-12 md:h-14 flex items-center justify-center overflow-hidden ${
-                activeBrand === brand.label
-                  ? 'bg-[#0b2e59] ring-2 ring-[#ffd21e] dark:bg-[#0b2e59]'
-                  : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600'
-              }`}
-              aria-label={`Shop ${brand.label}`}
-            >
-              {brand.image && (
-                <img src={brand.image} alt={brand.label} className="h-full w-full object-cover p-0 transition-transform duration-200 hover:scale-105" />
-              )}
-            </Link>
+            <BrandTile key={brand.key} brand={brand} active={activeBrand === brand.label} />
           ))}
         </div>
       </div>

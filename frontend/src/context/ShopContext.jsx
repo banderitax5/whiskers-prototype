@@ -13,10 +13,16 @@ const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 // how long the server delete is held back so a toast can offer Undo
 const UNDO_WINDOW_MS = 5000
 
-// merges restored cart items back into the list, skipping ids already present
-function mergeBackItems(prev, items) {
-  const missing = items.filter((r) => !prev.some((i) => i.id === r.id))
-  return [...prev, ...missing]
+// puts restored cart rows back at the index they were removed from so Undo
+// does not shuffle the list; skips ids already present again
+function restoreAtIndices(prev, entries) {
+  const next = [...prev]
+  const ordered = [...entries].sort((a, b) => a.index - b.index)
+  for (const { item, index } of ordered) {
+    if (next.some((i) => i.id === item.id)) continue
+    next.splice(Math.min(index, next.length), 0, item)
+  }
+  return next
 }
 
 // info toast with an Undo button; onUndo fires when Undo is pressed
@@ -62,6 +68,7 @@ function normalizeDbItem(row) {
 
 export function ShopProvider({ children }) {
   const [cartItems, setCartItems] = useState([])
+  const [cartStatus, setCartStatus] = useState('loading') // loading | ready | error
   const [session, setSession] = useState(null)
   const [lastAddedAt, setLastAddedAt] = useState(0)
 
@@ -76,24 +83,37 @@ export function ShopProvider({ children }) {
   useEffect(() => { cartItemsRef.current = cartItems }, [cartItems])
 
   // fetches the cart from the backend and updates local state
+  // a failed fetch only surfaces as 'error' when we have nothing to show;
+  // during a post-mutation resync stale items stay visible and the caller
+  // has already toasted the failure
   const loadCart = useCallback(async (token) => {
     const t = token || await getValidToken()
-    if (!t) return false
+    if (!t) {
+      setCartStatus('ready')
+      return false
+    }
+    // show the skeleton only while we have nothing to render yet
+    if (cartItemsRef.current.length === 0) setCartStatus('loading')
     try {
       const res = await fetch(`${API_BASE}/cart`, {
         headers: { Authorization: `Bearer ${t}` },
       })
-      if (!res.ok) return false
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const { items } = await res.json()
       setCartItems((items || []).map(normalizeDbItem))
+      setCartStatus('ready')
       return true
     } catch {
+      setCartStatus((prev) => (cartItemsRef.current.length > 0 ? prev : 'error'))
       return false
     }
   }, [])
 
-  // fires a DELETE for specific cart rows and resyncs local state on failure
-  const deleteCartRows = useCallback(async (productIds) => {
+  // additive: lets Cart/Checkout re-fetch on demand (retry buttons)
+  const reloadCart = useCallback(() => loadCart(), [loadCart])
+
+  // fires a DELETE for specific cart rows, toasts on failure and resyncs
+  const deleteCartRows = useCallback(async (productIds, label = 'items') => {
     const token = await getValidToken()
     if (!token) return
     try {
@@ -105,18 +125,19 @@ export function ShopProvider({ children }) {
         },
         body: JSON.stringify({ productIds }),
       })
-      if (!res.ok) await loadCart(token)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
     } catch {
+      toast.error(`Couldn't remove ${label} from your cart. Please try again.`)
       await loadCart(token)
     }
   }, [loadCart])
 
   // runs after the undo window: delete only rows still absent locally;
   // anything re-added in the meantime is reconciled with a fresh cart load
-  const flushPendingDeletes = useCallback(async (productIds) => {
+  const flushPendingDeletes = useCallback(async (productIds, label = 'items') => {
     const stillGone = productIds.filter((id) => !cartItemsRef.current.some((i) => i.id === id))
     const reAdded = stillGone.length !== productIds.length
-    if (stillGone.length > 0) await deleteCartRows(stillGone)
+    if (stillGone.length > 0) await deleteCartRows(stillGone, label)
     if (reAdded) await loadCart()
   }, [deleteCartRows, loadCart])
 
@@ -134,6 +155,7 @@ export function ShopProvider({ children }) {
       if (!s) {
         cartLoadedRef.current = false
         setCartItems([])
+        setCartStatus('ready')
         return
       }
       if (event === 'SIGNED_IN') {
@@ -178,7 +200,8 @@ export function ShopProvider({ children }) {
       return
     }
 
-    const qty = Math.max(1, Number(quantity) || 1)
+    // quantities are whole units; decimals are floored, never sent through
+    const qty = Math.max(1, Math.floor(Number(quantity) || 1))
 
     // update the local cart right away so the user sees it instantly
     setCartItems((prev) => {
@@ -199,8 +222,15 @@ export function ShopProvider({ children }) {
       }]
     })
     setLastAddedAt(Date.now())
-    if (opts.notify) pushNotification(`${product.name} added to cart`, 'success')
+    // keep the toast handle so a failed sync can dismiss the success message
+    const successToastId = opts.notify ? toast.success(`${product.name} added to cart`) : null
     trackEvent('add_to_cart', { product_id: product.id, name: product.name, price: product.price })
+
+    const rollBack = async () => {
+      if (successToastId) toast.dismiss(successToastId)
+      toast.error(`Couldn't add ${product.name}, please try again.`)
+      await loadCart(token)
+    }
 
     // fire the POST to the backend so the database stays in sync
     try {
@@ -212,28 +242,21 @@ export function ShopProvider({ children }) {
         },
         body: JSON.stringify({
           productId: product.id,
-          name: product.name,
-          price: product.price,
-          image: product.image,
-          collection: product.collection,
-          brand: product.brand,
           quantity: qty,
         }),
       })
-      if (!res.ok) {
-        // backend rejected the add — resync local state with DB
-        await loadCart(token)
-      }
+      if (!res.ok) await rollBack()
     } catch {
-      // network error — resync to undo the optimistic update
-      await loadCart(token)
+      await rollBack()
     }
   }, [loadCart])
 
   // changes the quantity for a specific product in the cart
-  // updates locally first, then tells the backend
+  // updates locally first, then tells the backend; rolls back with a toast
+  // when the server rejects the change
   const updateQuantity = useCallback(async (productId, quantity) => {
-    const qty = Math.max(1, Number(quantity) || 1)
+    const qty = Math.max(1, Math.floor(Number(quantity) || 1))
+    const name = cartItemsRef.current.find((item) => item.id === productId)?.name || 'item'
     setCartItems((prev) =>
       prev.map((item) => (item.id === productId ? { ...item, quantity: qty } : item))
     )
@@ -248,71 +271,81 @@ export function ShopProvider({ children }) {
         },
         body: JSON.stringify({ quantity: qty }),
       })
-      if (!res.ok) await loadCart(token)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
     } catch {
+      toast.error(`Couldn't update the quantity of ${name}. Please try again.`)
       await loadCart(token)
     }
   }, [loadCart])
 
   // removes a single product from the cart by its id
-  // the server delete is held back for a few seconds so the toast can offer Undo
+  // the server delete is held back for a few seconds so the toast can offer
+  // Undo, which restores the row at its original position
   const removeFromCart = useCallback(async (productId) => {
-    const removed = cartItems.find((item) => item.id === productId)
+    const index = cartItems.findIndex((item) => item.id === productId)
+    const removed = index >= 0 ? cartItems[index] : null
     if (!removed) return
     setCartItems((prev) => prev.filter((item) => item.id !== productId))
 
-    const timer = setTimeout(() => { flushPendingDeletes([productId]) }, UNDO_WINDOW_MS)
+    const timer = setTimeout(() => { flushPendingDeletes([productId], removed.name) }, UNDO_WINDOW_MS)
     showUndoToast(`${removed.name} removed from cart`, () => {
       clearTimeout(timer)
-      setCartItems((prev) => mergeBackItems(prev, [removed]))
+      setCartItems((prev) => restoreAtIndices(prev, [{ item: removed, index }]))
     })
   }, [cartItems, flushPendingDeletes])
 
   // removes multiple items at once, or clears the whole cart if no ids are passed
   // with ids: undoable like single remove; { immediate: true } deletes right away
   // (checkout uses immediate so no Undo toast appears after an order is placed)
+  // the server needs an explicit productIds list, so a whole-cart clear sends
+  // every current id instead of an empty body (which the API rejects)
   const clearCart = useCallback(async (ids = null, opts = {}) => {
     if (!ids) {
+      const all = cartItemsRef.current
+      const entries = all.map((item, index) => ({ item, index }))
+      const allIds = all.map((item) => item.id)
       setCartItems([])
-      const token = await getValidToken()
-      if (!token) return
-      try {
-        const res = await fetch(`${API_BASE}/cart`, {
-          method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({}),
-        })
-        if (!res.ok) await loadCart(token)
-      } catch {
-        await loadCart(token)
+      if (allIds.length === 0) return
+      if (opts.immediate) {
+        await deleteCartRows(allIds, 'your cart')
+        return
       }
+      const timer = setTimeout(() => { flushPendingDeletes(allIds, 'your cart') }, UNDO_WINDOW_MS)
+      showUndoToast('Cart cleared', () => {
+        clearTimeout(timer)
+        setCartItems((prev) => restoreAtIndices(prev, entries))
+      })
       return
     }
     if (ids.length === 0) return
 
     const setIds = new Set(ids)
-    const removedItems = cartItems.filter((item) => setIds.has(item.id))
+    const removedEntries = cartItems
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) => setIds.has(item.id))
+    const removedItems = removedEntries.map(({ item }) => item)
     setCartItems((prev) => prev.filter((item) => !setIds.has(item.id)))
 
     if (removedItems.length === 0 || opts.immediate) {
-      await deleteCartRows(ids)
+      await deleteCartRows(
+        ids,
+        removedItems.length === 1 ? removedItems[0].name : `${removedItems.length} items`
+      )
       return
     }
 
-    const timer = setTimeout(() => { flushPendingDeletes(ids) }, UNDO_WINDOW_MS)
+    const flushLabel = removedItems.length === 1 ? removedItems[0].name : `${removedItems.length} items`
+    const timer = setTimeout(() => { flushPendingDeletes(ids, flushLabel) }, UNDO_WINDOW_MS)
     showUndoToast(
       removedItems.length === 1
         ? `${removedItems[0].name} removed from cart`
         : `Removed ${removedItems.length} items from cart`,
       () => {
         clearTimeout(timer)
-        setCartItems((prev) => mergeBackItems(prev, removedItems))
+        setCartItems((prev) => restoreAtIndices(prev, removedEntries))
       }
     )
-  }, [cartItems, deleteCartRows, flushPendingDeletes, loadCart])
+  }, [cartItems, deleteCartRows, flushPendingDeletes])
 
   // total number of individual items in the cart (accounts for quantity)
   // this is what shows up on the cart badge in the navbar
@@ -322,9 +355,12 @@ export function ShopProvider({ children }) {
   )
 
   // everything we expose to the rest of the app through useShop()
+  // cartStatus / reloadCart are additive; existing contracts are unchanged
   const value = {
     cartItems,
     cartCount,
+    cartStatus,
+    reloadCart,
     session,
     lastAddedAt,
     addToCart,

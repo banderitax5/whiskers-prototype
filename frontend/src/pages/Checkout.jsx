@@ -1,33 +1,101 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useShop } from '../context/ShopContext.jsx'
+import useLiveProductRows from '../hooks/useLiveProductRows.js'
+import ProductThumb from '../components/ProductThumb.jsx'
 import { trackEvent } from '../lib/appEvents.js'
 import { philippinesData } from '../data/philippinesData.js'
 import { paymentMethodLabel } from '../lib/orderDoc.js'
+import supabase from '../lib/supabase'
+import {
+  SHIPPING_FEE_PHP,
+  cartTotals,
+  effectiveItems,
+  isPurchasableStatus,
+  unavailableReason,
+  formatPesos,
+  toCentavos,
+} from '../lib/cartLogic.js'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
+const SELECTION_KEY = 'whiskers.cart.selectedIds'
 
 const FIELD_ORDER = ['fullName', 'phone', 'addressLine1', 'city', 'province', 'postalCode']
+
+function readStoredSelection() {
+  try {
+    const raw = JSON.parse(sessionStorage.getItem(SELECTION_KEY) || '[]')
+    return Array.isArray(raw) ? raw : []
+  } catch {
+    return []
+  }
+}
+
+// last-second price/stock re-check before an order is placed (C2). Fails
+// open on network errors: the server recomputes prices and rejects
+// unavailable items anyway, so this is a UX guard, not the security boundary.
+async function verifyPricesAndStock(items) {
+  const ids = items.map((i) => i.id)
+  const { data, error } = await supabase
+    .from('product')
+    .select('prod_id, price, stock_quantity, is_active')
+    .in('prod_id', ids)
+  if (error || !Array.isArray(data)) return []
+  const map = new Map(data.map((row) => [row.prod_id, row]))
+  const problems = []
+  for (const item of items) {
+    const row = map.get(item.id)
+    if (!row || row.is_active === false) {
+      problems.push(`${item.name} is no longer available.`)
+      continue
+    }
+    const price = Number(row.price)
+    const stock = Number(row.stock_quantity || 0)
+    if (!(price > 0)) problems.push(`${item.name} is not yet priced and cannot be purchased.`)
+    else if (stock <= 0) problems.push(`${item.name} is out of stock.`)
+    else if (item.quantity > stock) problems.push(`Only ${stock} of ${item.name} left in stock.`)
+    else if (toCentavos(price) !== toCentavos(item.price)) {
+      problems.push(`The price of ${item.name} changed from PHP ${formatPesos(item.price)} to PHP ${formatPesos(price)}.`)
+    }
+  }
+  return problems
+}
 
 function Checkout() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { cartItems, clearCart, pushNotification, session } = useShop()
+  const { cartItems, cartStatus, clearCart, pushNotification, session, openLogin } = useShop()
 
-  const selectedIds = useMemo(() => location.state?.selectedIds || [], [location.state?.selectedIds])
-  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
+  // ids travel through router state; sessionStorage keeps the selection alive
+  // when the user comes back via the back button (U9)
+  const selectedIds = useMemo(() => {
+    const fromState = location.state?.selectedIds
+    if (Array.isArray(fromState) && fromState.length > 0) return fromState
+    return readStoredSelection()
+  }, [location.state?.selectedIds])
 
-  const checkoutItems = useMemo(() => {
-    if (selectedIds.length === 0) return cartItems
-    return cartItems.filter((item) => selectedSet.has(item.id))
-  }, [cartItems, selectedIds, selectedSet])
-
-  const subtotal = useMemo(
-    () => checkoutItems.reduce((sum, item) => sum + item.price * item.quantity, 0),
-    [checkoutItems]
+  // cart rows with their live status (B6) — same helper the cart page uses
+  const { availability } = useLiveProductRows(cartItems)
+  const pricedItems = useMemo(
+    () => cartItems.map((item) => ({ ...item, price: availability[item.id]?.price ?? item.price })),
+    [cartItems, availability]
   )
-  const shippingFee = checkoutItems.length > 0 ? 75 : 0
-  const total = subtotal + shippingFee
+
+  // only rows that still exist and can be ordered are ever checked out (B2/B6)
+  const checkoutItems = useMemo(
+    () => effectiveItems(selectedIds, pricedItems, availability),
+    [selectedIds, pricedItems, availability]
+  )
+  // selected rows that exist but cannot be ordered right now — surfaced so
+  // the user knows why the order cannot continue
+  const blockedItems = useMemo(() => {
+    const selected = new Set(selectedIds)
+    return pricedItems.filter(
+      (item) => selected.has(item.id) && !isPurchasableStatus(availability[item.id]?.status)
+    )
+  }, [selectedIds, pricedItems, availability])
+
+  const totals = useMemo(() => cartTotals(checkoutItems, availability), [checkoutItems, availability])
 
   const [form, setForm] = useState({
     fullName: '',
@@ -41,6 +109,12 @@ function Checkout() {
   })
   const [submitting, setSubmitting] = useState(false)
   const [fieldErrors, setFieldErrors] = useState({})
+  const [verifyProblems, setVerifyProblems] = useState([])
+  const summaryRef = useRef(null)
+  const redirectedRef = useRef(false)
+  // set once an order is placed so clearing the cart cannot trigger the
+  // "no selection" redirect on the way to the confirmation page
+  const placedRef = useRef(false)
   const accessToken = session?.access_token
 
   // prefill delivery details from the saved profile
@@ -66,9 +140,25 @@ function Checkout() {
     return () => { cancelled = true }
   }, [accessToken])
 
+  // no valid selection once the cart has loaded -> back to the cart (B2).
+  // signed-out visitors get the sign-in prompt instead of a redirect loop.
+  useEffect(() => {
+    if (redirectedRef.current || placedRef.current || !session || cartStatus !== 'ready') return
+    if (checkoutItems.length > 0) return
+    redirectedRef.current = true
+    pushNotification(
+      blockedItems.length > 0
+        ? 'Some selected items are no longer available — please review your cart.'
+        : 'Select at least one item in your cart to check out.',
+      'info'
+    )
+    navigate('/cart', { replace: true })
+  }, [session, cartStatus, checkoutItems.length, blockedItems.length, navigate, pushNotification])
+
   function onChange(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }))
     if (fieldErrors[key]) setFieldErrors((prev) => ({ ...prev, [key]: '' }))
+    if (verifyProblems.length) setVerifyProblems([])
   }
 
   // scrolling to and focusing the first invalid field after a failed submit
@@ -116,6 +206,16 @@ function Checkout() {
 
     setSubmitting(true)
     try {
+      // re-check price and stock right before submitting (C2)
+      const problems = await verifyPricesAndStock(checkoutItems)
+      if (problems.length > 0) {
+        setVerifyProblems(problems)
+        pushNotification('Some items changed — please review your cart.', 'error')
+        return
+      }
+      setVerifyProblems([])
+
+      const orderedIds = checkoutItems.map((i) => i.id)
       const res = await fetch(`${API_BASE}/orders`, {
         method: 'POST',
         headers: {
@@ -123,6 +223,7 @@ function Checkout() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
+          // the server recomputes prices and shipping; these are display hints
           items: checkoutItems.map((i) => ({
             productId: i.id,
             name: i.name,
@@ -130,7 +231,6 @@ function Checkout() {
             quantity: i.quantity,
           })),
           paymentMethod: form.paymentMethod,
-          shippingFee,
           customerName: form.fullName,
           phone: form.phone,
           address: [form.addressLine1, form.addressLine2, form.city, form.province, form.postalCode].filter(Boolean).join(', '),
@@ -143,9 +243,11 @@ function Checkout() {
       }
 
       const { order_id } = await res.json()
-      clearCart(selectedIds.length > 0 ? selectedIds : null, { immediate: true })
+      placedRef.current = true
+      clearCart(orderedIds, { immediate: true })
+      try { sessionStorage.removeItem(SELECTION_KEY) } catch { /* ignore */ }
       pushNotification('Order placed successfully!')
-      trackEvent('checkout_complete', { order_id, total, items: checkoutItems.length })
+      trackEvent('checkout_complete', { order_id, total: totals.totalCents / 100, items: checkoutItems.length })
       navigate(`/orders/${order_id}`)
     } catch (err) {
       pushNotification(err.message, 'error')
@@ -154,33 +256,153 @@ function Checkout() {
     }
   }
 
-  const inputClass = "h-10 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 text-sm dark:text-gray-100"
+  const inputClass = "h-11 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 text-sm dark:text-gray-100"
   const labelClass = "block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1"
+
+  // signed-out visitors see a sign-in prompt instead of the form (C1)
+  if (!session) {
+    return (
+      <div className="lg:mx-auto lg:max-w-7xl py-5 sm:py-6">
+        <h1 className="mb-4 text-2xl font-bold text-[#0b2e59] dark:text-white">Checkout</h1>
+        <div className="rounded-lg border border-gray-200 bg-white p-8 text-center shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Sign in to check out</h2>
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            Your cart is saved — sign in to continue with your order.
+          </p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={openLogin}
+              className="min-h-[44px] rounded-lg bg-[#0b2e59] px-6 text-sm font-semibold text-white hover:bg-[#15407a] transition-colors"
+            >
+              Sign in
+            </button>
+            <Link
+              to="/cart"
+              className="inline-flex min-h-[44px] items-center rounded-lg border border-gray-200 px-6 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700 transition-colors"
+            >
+              Edit cart
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const errorEntries = FIELD_ORDER.filter((k) => fieldErrors[k]).map((k) => [k, fieldErrors[k]])
 
   return (
     <div className="lg:mx-auto lg:max-w-7xl py-5 sm:py-6">
-      <h1 className="mb-4 text-2xl font-bold text-[#0b2e59] dark:text-white">Order Delivery Details</h1>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-2xl font-bold text-[#0b2e59] dark:text-white">Order Delivery Details</h1>
+        <Link to="/cart" className="text-sm font-semibold text-[#0b2e59] hover:text-[#15407a] dark:text-blue-400 dark:hover:text-blue-300">
+          Edit cart
+        </Link>
+      </div>
+
+      {/* items that dropped out of the order (B6) */}
+      {blockedItems.length > 0 && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+          <p className="font-semibold">Some items cannot be ordered:</p>
+          <ul className="mt-1 list-disc pl-5">
+            {blockedItems.map((item) => (
+              <li key={item.id}>{item.name} — {unavailableReason(availability[item.id]?.status)}</li>
+            ))}
+          </ul>
+          <Link to="/cart" className="mt-2 inline-flex font-semibold underline">Review your cart</Link>
+        </div>
+      )}
+
+      {/* re-check failures before submit (C2) */}
+      {verifyProblems.length > 0 && (
+        <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/30 dark:text-red-200">
+          <p className="font-semibold">Please review your cart before placing the order:</p>
+          <ul className="mt-1 list-disc pl-5">
+            {verifyProblems.map((p) => <li key={p}>{p}</li>)}
+          </ul>
+          <Link to="/cart" className="mt-2 inline-flex font-semibold underline">Go to cart</Link>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <form onSubmit={submitOrder} noValidate className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shadow-sm">
+          {/* validation error summary (B9) */}
+          {errorEntries.length > 0 && (
+            <div
+              ref={summaryRef}
+              tabIndex={-1}
+              role="alert"
+              className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/30 dark:text-red-200"
+            >
+              <p className="font-semibold">Please fix the following before placing your order:</p>
+              <ul className="mt-1 list-disc pl-5">
+                {errorEntries.map(([key, message]) => (
+                  <li key={key}>
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={() => {
+                        const el = document.querySelector(`[data-field="${key}"]`)
+                        if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.focus({ preventScroll: true }) }
+                      }}
+                    >
+                      {message}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <h2 className="mb-3 text-lg font-semibold text-gray-800 dark:text-gray-100">Delivery Information</h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label htmlFor="co-fullName" className={labelClass}>Full Name</label>
-              <input id="co-fullName" data-field="fullName" required value={form.fullName} onChange={(e) => onChange('fullName', e.target.value)} placeholder="Juan Dela Cruz" className={`${inputClass} w-full ${fieldErrors.fullName ? 'border-red-500' : ''}`} />
-              {fieldErrors.fullName && <p className="text-xs text-red-500 mt-1">{fieldErrors.fullName}</p>}
+              <input
+                id="co-fullName"
+                data-field="fullName"
+                required
+                value={form.fullName}
+                onChange={(e) => onChange('fullName', e.target.value)}
+                placeholder="Juan Dela Cruz"
+                aria-invalid={fieldErrors.fullName ? 'true' : undefined}
+                aria-describedby={fieldErrors.fullName ? 'co-fullName-err' : undefined}
+                className={`${inputClass} w-full ${fieldErrors.fullName ? 'border-red-500' : ''}`}
+              />
+              {fieldErrors.fullName && <p id="co-fullName-err" className="text-xs text-red-500 mt-1">{fieldErrors.fullName}</p>}
             </div>
             <div>
               <label htmlFor="co-phone" className={labelClass}>Phone Number</label>
-              <input id="co-phone" data-field="phone" required value={form.phone} onChange={(e) => onChange('phone', e.target.value)} placeholder="09XXXXXXXXX" inputMode="numeric" className={`${inputClass} w-full ${fieldErrors.phone ? 'border-red-500' : ''}`} />
-              {fieldErrors.phone && <p className="text-xs text-red-500 mt-1">{fieldErrors.phone}</p>}
+              <input
+                id="co-phone"
+                data-field="phone"
+                required
+                value={form.phone}
+                onChange={(e) => onChange('phone', e.target.value)}
+                placeholder="09XXXXXXXXX"
+                inputMode="numeric"
+                aria-invalid={fieldErrors.phone ? 'true' : undefined}
+                aria-describedby={fieldErrors.phone ? 'co-phone-err' : undefined}
+                className={`${inputClass} w-full ${fieldErrors.phone ? 'border-red-500' : ''}`}
+              />
+              {fieldErrors.phone && <p id="co-phone-err" className="text-xs text-red-500 mt-1">{fieldErrors.phone}</p>}
             </div>
           </div>
           <div className="mt-3 space-y-3">
             <div>
               <label htmlFor="co-addressLine1" className={labelClass}>Address Line 1</label>
-              <input id="co-addressLine1" data-field="addressLine1" required value={form.addressLine1} onChange={(e) => onChange('addressLine1', e.target.value)} placeholder="House no., street, barangay" className={`${inputClass} w-full ${fieldErrors.addressLine1 ? 'border-red-500' : ''}`} />
-              {fieldErrors.addressLine1 && <p className="text-xs text-red-500 mt-1">{fieldErrors.addressLine1}</p>}
+              <input
+                id="co-addressLine1"
+                data-field="addressLine1"
+                required
+                value={form.addressLine1}
+                onChange={(e) => onChange('addressLine1', e.target.value)}
+                placeholder="House no., street, barangay"
+                aria-invalid={fieldErrors.addressLine1 ? 'true' : undefined}
+                aria-describedby={fieldErrors.addressLine1 ? 'co-addressLine1-err' : undefined}
+                className={`${inputClass} w-full ${fieldErrors.addressLine1 ? 'border-red-500' : ''}`}
+              />
+              {fieldErrors.addressLine1 && <p id="co-addressLine1-err" className="text-xs text-red-500 mt-1">{fieldErrors.addressLine1}</p>}
             </div>
             <div>
               <label htmlFor="co-addressLine2" className={labelClass}>Address Line 2 <span className="text-gray-400">(optional)</span></label>
@@ -199,12 +421,14 @@ function Checkout() {
                     setForm((prev) => ({ ...prev, province: value, city: '' }))
                     setFieldErrors((prev) => ({ ...prev, province: value ? '' : 'Province is required.', city: '' }))
                   }}
+                  aria-invalid={fieldErrors.province ? 'true' : undefined}
+                  aria-describedby={fieldErrors.province ? 'co-province-err' : undefined}
                   className={`${inputClass} w-full ${fieldErrors.province ? 'border-red-500' : ''}`}
                 >
                   <option value="">Select Province</option>
                   {Object.keys(philippinesData).map((p) => <option key={p}>{p}</option>)}
                 </select>
-                {fieldErrors.province && <p className="text-xs text-red-500 mt-1">{fieldErrors.province}</p>}
+                {fieldErrors.province && <p id="co-province-err" className="text-xs text-red-500 mt-1">{fieldErrors.province}</p>}
               </div>
               <div>
                 <label htmlFor="co-city" className={labelClass}>City</label>
@@ -215,17 +439,31 @@ function Checkout() {
                   value={form.city}
                   onChange={(e) => onChange('city', e.target.value)}
                   disabled={!form.province}
+                  aria-invalid={fieldErrors.city ? 'true' : undefined}
+                  aria-describedby={fieldErrors.city ? 'co-city-err' : undefined}
                   className={`${inputClass} w-full ${fieldErrors.city ? 'border-red-500' : ''}`}
                 >
                   <option value="">Select City</option>
                   {(philippinesData[form.province] || []).map((c) => <option key={c}>{c}</option>)}
                 </select>
-                {fieldErrors.city && <p className="text-xs text-red-500 mt-1">{fieldErrors.city}</p>}
+                {fieldErrors.city && <p id="co-city-err" className="text-xs text-red-500 mt-1">{fieldErrors.city}</p>}
               </div>
               <div>
                 <label htmlFor="co-postalCode" className={labelClass}>Postal Code</label>
-                <input id="co-postalCode" data-field="postalCode" required value={form.postalCode} onChange={(e) => onChange('postalCode', e.target.value)} placeholder="1234" inputMode="numeric" maxLength={4} className={`${inputClass} w-full ${fieldErrors.postalCode ? 'border-red-500' : ''}`} />
-                {fieldErrors.postalCode && <p className="text-xs text-red-500 mt-1">{fieldErrors.postalCode}</p>}
+                <input
+                  id="co-postalCode"
+                  data-field="postalCode"
+                  required
+                  value={form.postalCode}
+                  onChange={(e) => onChange('postalCode', e.target.value)}
+                  placeholder="1234"
+                  inputMode="numeric"
+                  maxLength={4}
+                  aria-invalid={fieldErrors.postalCode ? 'true' : undefined}
+                  aria-describedby={fieldErrors.postalCode ? 'co-postalCode-err' : undefined}
+                  className={`${inputClass} w-full ${fieldErrors.postalCode ? 'border-red-500' : ''}`}
+                />
+                {fieldErrors.postalCode && <p id="co-postalCode-err" className="text-xs text-red-500 mt-1">{fieldErrors.postalCode}</p>}
               </div>
             </div>
           </div>
@@ -237,7 +475,7 @@ function Checkout() {
               { value: 'paymaya', label: 'PayMaya' },
               { value: 'cod', label: 'Cash on Delivery' },
             ].map((option) => (
-              <label key={option.value} className="flex items-center gap-2 rounded-md border border-gray-200 dark:border-gray-600 px-3 py-2 cursor-pointer has-[:checked]:border-[#0b2e59] has-[:checked]:bg-[#0b2e59]/5">
+              <label key={option.value} className="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-md border border-gray-200 px-3 py-2 has-[:checked]:border-[#0b2e59] has-[:checked]:bg-[#0b2e59]/5 dark:border-gray-600">
                 <input type="radio" name="paymentMethod" value={option.value} checked={form.paymentMethod === option.value} onChange={(e) => onChange('paymentMethod', e.target.value)} />
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{option.label}</span>
               </label>
@@ -256,40 +494,65 @@ function Checkout() {
               <div className="flex justify-between gap-3"><dt>Deliver to</dt><dd className="font-medium text-right truncate">{form.fullName || '—'}{form.city ? `, ${form.city}` : ''}{form.province ? `, ${form.province}` : ''}</dd></div>
               <div className="flex justify-between gap-3"><dt>Phone</dt><dd className="font-medium">{form.phone || '—'}</dd></div>
               <div className="flex justify-between gap-3"><dt>Payment</dt><dd className="font-medium">{paymentMethodLabel(form.paymentMethod)}</dd></div>
-              <div className="flex justify-between gap-3"><dt>Items</dt><dd className="font-medium">{checkoutItems.length}</dd></div>
-              <div className="flex justify-between gap-3 border-t border-gray-200 dark:border-gray-700 pt-1 mt-1"><dt className="font-bold">Total</dt><dd className="font-bold">PHP {total.toFixed(2)}</dd></div>
+              <div className="flex justify-between gap-3">
+                <dt>Items</dt>
+                <dd className="font-medium">
+                  {totals.products} product{totals.products === 1 ? '' : 's'} ({totals.units} item{totals.units === 1 ? '' : 's'})
+                </dd>
+              </div>
+              <div className="flex justify-between gap-3 border-t border-gray-200 pt-1 mt-1 dark:border-gray-700"><dt className="font-bold">Total</dt><dd className="font-bold">PHP {formatPesos(totals.totalCents / 100)}</dd></div>
             </dl>
           </div>
 
           <button
             type="submit"
             disabled={checkoutItems.length === 0 || submitting}
-            className="mt-5 h-10 rounded-md bg-[#0b2e59] px-5 text-sm font-semibold text-white hover:bg-[#15407a] disabled:opacity-40 disabled:cursor-not-allowed"
+            className="mt-5 min-h-[44px] rounded-md bg-[#0b2e59] px-5 text-sm font-semibold text-white hover:bg-[#15407a] disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {submitting ? 'Placing Order...' : 'Place Order'}
           </button>
         </form>
 
-        <aside className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shadow-sm h-max lg:sticky lg:top-24">
-          <h2 className="mb-3 text-lg font-semibold text-gray-800 dark:text-gray-100">Order Summary</h2>
-          <div className="space-y-2">
-            {checkoutItems.map((item) => (
-              <div key={item.id} className="flex items-start justify-between gap-3 text-sm">
-                <div className="min-w-0">
-                  <p className="truncate font-medium text-gray-800 dark:text-gray-100">{item.name}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Qty {item.quantity}</p>
+        <aside className="h-max rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 lg:sticky lg:top-24">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Order Summary</h2>
+            <Link to="/cart" className="text-xs font-semibold text-[#0b2e59] hover:underline dark:text-blue-400">Edit cart</Link>
+          </div>
+          <div className="space-y-3">
+            {checkoutItems.map((item) => {
+              const snapshot = cartItems.find((c) => c.id === item.id)
+              return (
+                <div key={item.id} className="flex items-start justify-between gap-3 text-sm">
+                  <div className="flex min-w-0 items-start gap-2">
+                    <ProductThumb src={item.image} className="h-12 w-12" />
+                    <div className="min-w-0">
+                      <p className="line-clamp-2 font-medium text-gray-800 dark:text-gray-100" title={item.name}>{item.name}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Qty {item.quantity} · PHP {formatPesos(item.price)} each</p>
+                      {snapshot && toCentavos(snapshot.price) !== toCentavos(item.price) && (
+                        <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                          Price updated from PHP {formatPesos(snapshot.price)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <p className="flex-shrink-0 font-semibold text-gray-800 dark:text-gray-100">PHP {formatPesos((toCentavos(item.price) * item.quantity) / 100)}</p>
                 </div>
-                <p className="font-semibold text-gray-800 dark:text-gray-100">PHP {(item.price * item.quantity).toFixed(2)}</p>
-              </div>
-            ))}
+              )
+            })}
             {checkoutItems.length === 0 && (
               <p className="text-sm text-gray-500 dark:text-gray-400">No selected items for checkout.</p>
             )}
           </div>
-          <div className="mt-4 border-t border-gray-200 dark:border-gray-700 pt-3 space-y-1 text-sm dark:text-gray-300">
-            <div className="flex justify-between"><span>Subtotal</span><span>PHP {subtotal.toFixed(2)}</span></div>
-            <div className="flex justify-between"><span>Shipping</span><span>PHP {shippingFee.toFixed(2)}</span></div>
-            <div className="mt-2 flex justify-between text-base font-bold text-[#0b2e59] dark:text-yellow-300"><span>Total</span><span>PHP {total.toFixed(2)}</span></div>
+          <div className="mt-4 space-y-1 border-t border-gray-200 pt-3 text-sm dark:text-gray-300">
+            <div className="flex justify-between"><span>Subtotal</span><span>PHP {formatPesos(totals.subtotalCents / 100)}</span></div>
+            <div className="flex justify-between">
+              <span>Shipping</span>
+              <span>{checkoutItems.length > 0 ? `PHP ${formatPesos(SHIPPING_FEE_PHP)}` : '—'}</span>
+            </div>
+            <div className="mt-2 flex justify-between text-base font-bold text-[#0b2e59] dark:text-yellow-300">
+              <span>Total</span>
+              <span>PHP {formatPesos(totals.totalCents / 100)}</span>
+            </div>
           </div>
         </aside>
       </div>
