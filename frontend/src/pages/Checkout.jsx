@@ -2,8 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useShop } from '../context/ShopContext.jsx'
 import { trackEvent } from '../lib/appEvents.js'
+import { philippinesData } from '../data/philippinesData.js'
+import { paymentMethodLabel } from '../lib/orderDoc.js'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
+
+const FIELD_ORDER = ['fullName', 'phone', 'addressLine1', 'city', 'province', 'postalCode']
 
 function Checkout() {
   const navigate = useNavigate()
@@ -67,6 +71,17 @@ function Checkout() {
     if (fieldErrors[key]) setFieldErrors((prev) => ({ ...prev, [key]: '' }))
   }
 
+  // scrolling to and focusing the first invalid field after a failed submit
+  function focusFirstError(errs) {
+    const firstKey = FIELD_ORDER.find((k) => errs[k])
+    if (!firstKey) return
+    const el = document.querySelector(`[data-field="${firstKey}"]`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      el.focus({ preventScroll: true })
+    }
+  }
+
   function validate() {
     const errs = {}
     if (!form.fullName.trim()) errs.fullName = 'Full name is required.'
@@ -88,7 +103,10 @@ function Checkout() {
 
     const errs = validate()
     setFieldErrors(errs)
-    if (Object.keys(errs).length > 0) return
+    if (Object.keys(errs).length > 0) {
+      focusFirstError(errs)
+      return
+    }
 
     const token = session?.access_token
     if (!token) {
@@ -125,7 +143,7 @@ function Checkout() {
       }
 
       const { order_id } = await res.json()
-      clearCart(selectedIds.length > 0 ? selectedIds : null)
+      clearCart(selectedIds.length > 0 ? selectedIds : null, { immediate: true })
       pushNotification('Order placed successfully!')
       trackEvent('checkout_complete', { order_id, total, items: checkoutItems.length })
       navigate(`/orders/${order_id}`)
@@ -137,58 +155,110 @@ function Checkout() {
   }
 
   const inputClass = "h-10 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 text-sm dark:text-gray-100"
+  const labelClass = "block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1"
 
   return (
     <div className="lg:mx-auto lg:max-w-7xl py-5 sm:py-6">
       <h1 className="mb-4 text-2xl font-bold text-[#0b2e59] dark:text-white">Order Delivery Details</h1>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <form onSubmit={submitOrder} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shadow-sm">
+        <form onSubmit={submitOrder} noValidate className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shadow-sm">
           <h2 className="mb-3 text-lg font-semibold text-gray-800 dark:text-gray-100">Delivery Information</h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <input required value={form.fullName} onChange={(e) => onChange('fullName', e.target.value)} placeholder="Full Name" className={inputClass} />
+              <label htmlFor="co-fullName" className={labelClass}>Full Name</label>
+              <input id="co-fullName" data-field="fullName" required value={form.fullName} onChange={(e) => onChange('fullName', e.target.value)} placeholder="Juan Dela Cruz" className={`${inputClass} w-full ${fieldErrors.fullName ? 'border-red-500' : ''}`} />
               {fieldErrors.fullName && <p className="text-xs text-red-500 mt-1">{fieldErrors.fullName}</p>}
             </div>
             <div>
-              <input required value={form.phone} onChange={(e) => onChange('phone', e.target.value)} placeholder="Phone Number" className={inputClass} />
+              <label htmlFor="co-phone" className={labelClass}>Phone Number</label>
+              <input id="co-phone" data-field="phone" required value={form.phone} onChange={(e) => onChange('phone', e.target.value)} placeholder="09XXXXXXXXX" inputMode="numeric" className={`${inputClass} w-full ${fieldErrors.phone ? 'border-red-500' : ''}`} />
               {fieldErrors.phone && <p className="text-xs text-red-500 mt-1">{fieldErrors.phone}</p>}
             </div>
           </div>
           <div className="mt-3 space-y-3">
             <div>
-              <input required value={form.addressLine1} onChange={(e) => onChange('addressLine1', e.target.value)} placeholder="Address Line 1" className={`${inputClass} w-full`} />
+              <label htmlFor="co-addressLine1" className={labelClass}>Address Line 1</label>
+              <input id="co-addressLine1" data-field="addressLine1" required value={form.addressLine1} onChange={(e) => onChange('addressLine1', e.target.value)} placeholder="House no., street, barangay" className={`${inputClass} w-full ${fieldErrors.addressLine1 ? 'border-red-500' : ''}`} />
               {fieldErrors.addressLine1 && <p className="text-xs text-red-500 mt-1">{fieldErrors.addressLine1}</p>}
             </div>
-            <input value={form.addressLine2} onChange={(e) => onChange('addressLine2', e.target.value)} placeholder="Address Line 2 (optional)" className={`${inputClass} w-full`} />
+            <div>
+              <label htmlFor="co-addressLine2" className={labelClass}>Address Line 2 <span className="text-gray-400">(optional)</span></label>
+              <input id="co-addressLine2" value={form.addressLine2} onChange={(e) => onChange('addressLine2', e.target.value)} placeholder="Building, floor, unit" className={`${inputClass} w-full`} />
+            </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
-                <input required value={form.city} onChange={(e) => onChange('city', e.target.value)} placeholder="City" className={inputClass} />
-                {fieldErrors.city && <p className="text-xs text-red-500 mt-1">{fieldErrors.city}</p>}
-              </div>
-              <div>
-                <input required value={form.province} onChange={(e) => onChange('province', e.target.value)} placeholder="Province" className={inputClass} />
+                <label htmlFor="co-province" className={labelClass}>Province</label>
+                <select
+                  id="co-province"
+                  data-field="province"
+                  required
+                  value={form.province}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    setForm((prev) => ({ ...prev, province: value, city: '' }))
+                    setFieldErrors((prev) => ({ ...prev, province: value ? '' : 'Province is required.', city: '' }))
+                  }}
+                  className={`${inputClass} w-full ${fieldErrors.province ? 'border-red-500' : ''}`}
+                >
+                  <option value="">Select Province</option>
+                  {Object.keys(philippinesData).map((p) => <option key={p}>{p}</option>)}
+                </select>
                 {fieldErrors.province && <p className="text-xs text-red-500 mt-1">{fieldErrors.province}</p>}
               </div>
               <div>
-                <input required value={form.postalCode} onChange={(e) => onChange('postalCode', e.target.value)} placeholder="Postal Code" className={inputClass} />
+                <label htmlFor="co-city" className={labelClass}>City</label>
+                <select
+                  id="co-city"
+                  data-field="city"
+                  required
+                  value={form.city}
+                  onChange={(e) => onChange('city', e.target.value)}
+                  disabled={!form.province}
+                  className={`${inputClass} w-full ${fieldErrors.city ? 'border-red-500' : ''}`}
+                >
+                  <option value="">Select City</option>
+                  {(philippinesData[form.province] || []).map((c) => <option key={c}>{c}</option>)}
+                </select>
+                {fieldErrors.city && <p className="text-xs text-red-500 mt-1">{fieldErrors.city}</p>}
+              </div>
+              <div>
+                <label htmlFor="co-postalCode" className={labelClass}>Postal Code</label>
+                <input id="co-postalCode" data-field="postalCode" required value={form.postalCode} onChange={(e) => onChange('postalCode', e.target.value)} placeholder="1234" inputMode="numeric" maxLength={4} className={`${inputClass} w-full ${fieldErrors.postalCode ? 'border-red-500' : ''}`} />
                 {fieldErrors.postalCode && <p className="text-xs text-red-500 mt-1">{fieldErrors.postalCode}</p>}
               </div>
             </div>
           </div>
 
           <h2 className="mb-3 mt-5 text-lg font-semibold text-gray-800 dark:text-gray-100">Payment Method</h2>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Payment method">
             {[
               { value: 'gcash', label: 'GCash' },
               { value: 'paymaya', label: 'PayMaya' },
               { value: 'cod', label: 'Cash on Delivery' },
             ].map((option) => (
-              <label key={option.value} className="flex items-center gap-2 rounded-md border border-gray-200 dark:border-gray-600 px-3 py-2">
+              <label key={option.value} className="flex items-center gap-2 rounded-md border border-gray-200 dark:border-gray-600 px-3 py-2 cursor-pointer has-[:checked]:border-[#0b2e59] has-[:checked]:bg-[#0b2e59]/5">
                 <input type="radio" name="paymentMethod" value={option.value} checked={form.paymentMethod === option.value} onChange={(e) => onChange('paymentMethod', e.target.value)} />
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{option.label}</span>
               </label>
             ))}
+          </div>
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            {form.paymentMethod === 'cod'
+              ? 'Pay in cash when your order arrives.'
+              : `You will receive payment instructions for ${paymentMethodLabel(form.paymentMethod)} after placing the order.`}
+          </p>
+
+          {/* review summary before placing the order */}
+          <div className="mt-5 rounded-md border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/40 p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-2">Review</p>
+            <dl className="space-y-1 text-sm text-gray-700 dark:text-gray-300">
+              <div className="flex justify-between gap-3"><dt>Deliver to</dt><dd className="font-medium text-right truncate">{form.fullName || '—'}{form.city ? `, ${form.city}` : ''}{form.province ? `, ${form.province}` : ''}</dd></div>
+              <div className="flex justify-between gap-3"><dt>Phone</dt><dd className="font-medium">{form.phone || '—'}</dd></div>
+              <div className="flex justify-between gap-3"><dt>Payment</dt><dd className="font-medium">{paymentMethodLabel(form.paymentMethod)}</dd></div>
+              <div className="flex justify-between gap-3"><dt>Items</dt><dd className="font-medium">{checkoutItems.length}</dd></div>
+              <div className="flex justify-between gap-3 border-t border-gray-200 dark:border-gray-700 pt-1 mt-1"><dt className="font-bold">Total</dt><dd className="font-bold">PHP {total.toFixed(2)}</dd></div>
+            </dl>
           </div>
 
           <button

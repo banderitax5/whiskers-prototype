@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiGet } from '../lib/api'
+import { getCachedProducts } from '../lib/productSearchCache'
 import { BsSearch, BsClockHistory, BsFire, BsX } from 'react-icons/bs'
 
 const RECENT_KEY = 'whiskers_recent_searches'
@@ -32,13 +32,11 @@ export default function SearchSuggestions({ className = '' }) {
   const [recentSearches, setRecentSearches] = useState(getRecent())
 
   useEffect(() => {
-    async function load() {
-      try {
-        const { items } = await apiGet('/products?pageSize=500')
-        setProducts(items || [])
-      } catch { /* ignore */ }
-    }
-    load()
+    let cancelled = false
+    getCachedProducts()
+      .then((items) => { if (!cancelled) setProducts(items) })
+      .catch(() => { /* ignore */ })
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {

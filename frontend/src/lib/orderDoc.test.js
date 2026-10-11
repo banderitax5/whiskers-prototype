@@ -43,7 +43,7 @@ describe('formatters', () => {
     expect(formatShortDate(iso)).toBe('Oct 5, 2026')
   })
 
-  it('builds an eta window two days wide', () => {
+  it('builds an eta window a few days wide', () => {
     const iso = new Date(2026, 9, 5, 14, 30).toISOString()
     const [from, to] = etaWindow(iso).split(' – ')
     expect(from).toMatch(/^[A-Z][a-z]{2} \d{1,2}, \d{4}$/)
@@ -66,8 +66,9 @@ describe('labels and pills', () => {
     expect(paymentMethodLabel('')).toBe('N/A')
   })
 
-  it('derives payment pill from presence of payment', () => {
-    expect(paymentPill({ payment: { amount: 100 } }).label).toBe('PAID')
+  it('derives an honest payment pill from method and payment row', () => {
+    expect(paymentPill({ payment: { method: 'cod', amount: 100 } }).label).toBe('PAY ON DELIVERY')
+    expect(paymentPill({ payment: { method: 'gcash', amount: 100 } }).label).toBe('PAYMENT PENDING')
     expect(paymentPill({}).label).toBe('UNPAID')
   })
 

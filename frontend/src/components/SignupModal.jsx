@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { BsEye, BsEyeSlash } from 'react-icons/bs'
 import supabase from '../lib/supabase'
 import { trackEvent } from '../lib/appEvents.js'
@@ -23,6 +23,40 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
   const [loading, setLoading] = useState(false)
+  const dialogRef = useRef(null)
+  const firstNameRef = useRef(null)
+
+  // focus trap: move focus into the dialog on open and cycle Tab inside it
+  const trapFocus = useCallback((e) => {
+    if (e.key !== 'Tab' || !dialogRef.current) return
+    const focusables = dialogRef.current.querySelectorAll(
+      'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
+    )
+    if (focusables.length === 0) return
+    const first = focusables[0]
+    const last = focusables[focusables.length - 1]
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault()
+      first.focus()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isOpen) return undefined
+    const t = setTimeout(() => firstNameRef.current?.focus(), 50)
+    function onKey(e) {
+      if (e.key === 'Escape') onClose()
+      else trapFocus(e)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      clearTimeout(t)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [isOpen, onClose, trapFocus])
 
   function validateField(field, value) {
     switch (field) {
@@ -108,8 +142,17 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-3 sm:p-4 z-[70]">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md sm:max-w-lg shadow-xl animate-in fade-in duration-300 max-h-[calc(100dvh-1.5rem)] overflow-y-auto">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center p-3 sm:p-4 z-[70]"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Create an account"
+        className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md sm:max-w-lg shadow-xl animate-in fade-in duration-300 max-h-[calc(100dvh-1.5rem)] overflow-y-auto"
+      >
         <div className="w-full p-5 sm:p-6 relative">
           <button
             type="button"
@@ -139,6 +182,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                   FIRST NAME
                 </label>
                 <input
+                  ref={firstNameRef}
                   type="text"
                   id="signup-firstName"
                   placeholder="First name"

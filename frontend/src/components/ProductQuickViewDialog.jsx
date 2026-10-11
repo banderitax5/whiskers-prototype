@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { extractSizeLabel } from '../lib/productUtils.js'
 import { trackEvent } from '../lib/appEvents.js'
@@ -10,6 +10,25 @@ import { trackEvent } from '../lib/appEvents.js'
 function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, onAddToCart, onBuyNow }) {
   const [qty, setQty] = useState(1)
   const [selectedVariant, setSelectedVariant] = useState(null)
+  const dialogRef = useRef(null)
+
+  // focus trap: cycle Tab inside the dialog while it is open
+  const trapFocus = useCallback((e) => {
+    if (e.key !== 'Tab' || !dialogRef.current) return
+    const focusables = dialogRef.current.querySelectorAll(
+      'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
+    )
+    if (focusables.length === 0) return
+    const first = focusables[0]
+    const last = focusables[focusables.length - 1]
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault()
+      first.focus()
+    }
+  }, [])
 
   // reset state when dialog opens with a new product
   // also resets if a different product card is clicked while dialog is already open
@@ -24,9 +43,10 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
   // when the dialog is open, listen for the Escape key and lock body scroll
   // cleanup removes the listener and unlocks scroll when the dialog closes
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen) return undefined
     function onKey(e) {
       if (e.key === 'Escape') onClose()
+      else trapFocus(e)
     }
     document.addEventListener('keydown', onKey)
     document.body.style.overflow = 'hidden'
@@ -34,7 +54,7 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
       document.removeEventListener('keydown', onKey)
       document.body.style.overflow = ''
     }
-  }, [isOpen, onClose])
+  }, [isOpen, onClose, trapFocus])
 
   // use the selected variant for display, fall back to the product prop
   const current = selectedVariant || product
@@ -73,7 +93,7 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
       className="fixed inset-0 z-[10020] flex items-center justify-center overflow-y-auto bg-black/60 backdrop-blur-sm"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="relative mx-2 my-4 w-full max-w-4xl rounded-2xl bg-white dark:bg-gray-800 shadow-2xl sm:mx-6 sm:my-6">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={p.name} className="relative mx-2 my-4 w-full max-w-4xl rounded-2xl bg-white dark:bg-gray-800 shadow-2xl sm:mx-6 sm:my-6">
         {/* close button in the top right corner */}
         <button
           type="button"

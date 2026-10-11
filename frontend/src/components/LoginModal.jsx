@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { BsEye, BsEyeSlash } from 'react-icons/bs'
 import supabase from '../lib/supabase'
 import { trackEvent } from '../lib/appEvents.js'
@@ -16,6 +16,8 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
   const [forgotLoading, setForgotLoading] = useState(false)
   const [forgotError, setForgotError] = useState('')
   const [forgotSent, setForgotSent] = useState(false)
+  const dialogRef = useRef(null)
+  const emailRef = useRef(null)
 
   useEffect(() => {
     if (!isOpen) {
@@ -26,14 +28,38 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
     }
   }, [isOpen])
 
+  // focus trap: move focus into the dialog on open and cycle Tab inside it
+  const trapFocus = useCallback((e) => {
+    if (e.key !== 'Tab' || !dialogRef.current) return
+    const focusables = dialogRef.current.querySelectorAll(
+      'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
+    )
+    if (focusables.length === 0) return
+    const first = focusables[0]
+    const last = focusables[focusables.length - 1]
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault()
+      first.focus()
+    }
+  }, [])
+
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen) return undefined
+    // move focus to the first field when the dialog opens
+    const t = setTimeout(() => emailRef.current?.focus(), 50)
     function onKey(e) {
       if (e.key === 'Escape') onClose()
+      else trapFocus(e)
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [isOpen, onClose])
+    return () => {
+      clearTimeout(t)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [isOpen, onClose, trapFocus])
 
   function validate() {
     const errs = {}
@@ -101,8 +127,17 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-3 sm:p-4 z-[70]">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md sm:max-w-lg shadow-xl animate-in fade-in duration-300 max-h-[calc(100dvh-1.5rem)] overflow-y-auto">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center p-3 sm:p-4 z-[70]"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={view === 'forgot' ? 'Reset password' : 'Sign in'}
+        className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md sm:max-w-lg shadow-xl animate-in fade-in duration-300 max-h-[calc(100dvh-1.5rem)] overflow-y-auto"
+      >
         <div className="w-full p-5 sm:p-6 relative">
           <button
             type="button"
@@ -194,6 +229,7 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
                 EMAIL
               </label>
               <input
+                ref={emailRef}
                 type="email"
                 id="login-email"
                 placeholder="Enter your email"

@@ -4,7 +4,7 @@ import { useShop } from '../context/ShopContext.jsx'
 
 function Cart() {
   const navigate = useNavigate()
-  const { cartItems, updateQuantity, removeFromCart, clearCart, pushNotification } = useShop()
+  const { cartItems, updateQuantity, removeFromCart, clearCart } = useShop()
   const [selectedIds, setSelectedIds] = useState([])
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
@@ -78,7 +78,6 @@ function Cart() {
                   disabled={selectedIds.length === 0}
                   onClick={() => {
                     clearCart(selectedIds)
-                    pushNotification(`Removed ${selectedIds.length} item(s) from cart`, 'info')
                     setSelectedIds([])
                   }}
                   className={`${btnBase} border border-red-300 dark:border-red-500/40 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 disabled:opacity-40 disabled:cursor-not-allowed`}

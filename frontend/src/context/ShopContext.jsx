@@ -10,6 +10,34 @@ import { trackEvent } from '../lib/appEvents.js'
 const ShopContext = createContext(null)
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
+// how long the server delete is held back so a toast can offer Undo
+const UNDO_WINDOW_MS = 5000
+
+// merges restored cart items back into the list, skipping ids already present
+function mergeBackItems(prev, items) {
+  const missing = items.filter((r) => !prev.some((i) => i.id === r.id))
+  return [...prev, ...missing]
+}
+
+// info toast with an Undo button; onUndo fires when Undo is pressed
+function showUndoToast(message, onUndo) {
+  toast.custom(
+    (t) => (
+      <div className="flex max-w-sm items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100">
+        <span className="min-w-0 flex-1">{message}</span>
+        <button
+          type="button"
+          onClick={() => { toast.dismiss(t.id); onUndo() }}
+          className="shrink-0 font-semibold text-[#0b2e59] hover:text-[#0046cc] dark:text-blue-400 dark:hover:text-blue-300"
+        >
+          Undo
+        </button>
+      </div>
+    ),
+    { duration: UNDO_WINDOW_MS }
+  )
+}
+
 // fetches a fresh session from Supabase, which handles token refresh
 // and signature validation internally. Returns the access token or null
 // if the session is invalid / expired and cannot be refreshed.
@@ -43,6 +71,10 @@ export function ShopProvider({ children }) {
   // this ref holds a function that opens the login modal
   const openLoginRef = useRef(null)
 
+  // latest cart snapshot so delayed deletes can spot re-added items
+  const cartItemsRef = useRef(cartItems)
+  useEffect(() => { cartItemsRef.current = cartItems }, [cartItems])
+
   // fetches the cart from the backend and updates local state
   const loadCart = useCallback(async (token) => {
     const t = token || await getValidToken()
@@ -59,6 +91,34 @@ export function ShopProvider({ children }) {
       return false
     }
   }, [])
+
+  // fires a DELETE for specific cart rows and resyncs local state on failure
+  const deleteCartRows = useCallback(async (productIds) => {
+    const token = await getValidToken()
+    if (!token) return
+    try {
+      const res = await fetch(`${API_BASE}/cart`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ productIds }),
+      })
+      if (!res.ok) await loadCart(token)
+    } catch {
+      await loadCart(token)
+    }
+  }, [loadCart])
+
+  // runs after the undo window: delete only rows still absent locally;
+  // anything re-added in the meantime is reconciled with a fresh cart load
+  const flushPendingDeletes = useCallback(async (productIds) => {
+    const stillGone = productIds.filter((id) => !cartItemsRef.current.some((i) => i.id === id))
+    const reAdded = stillGone.length !== productIds.length
+    if (stillGone.length > 0) await deleteCartRows(stillGone)
+    if (reAdded) await loadCart()
+  }, [deleteCartRows, loadCart])
 
   // listen for auth changes so we always know if the user is logged in
   // the cart is loaded once per session, the flag is only set after a successful
@@ -195,53 +255,64 @@ export function ShopProvider({ children }) {
   }, [loadCart])
 
   // removes a single product from the cart by its id
-  // shows a toast so the user knows it was removed
+  // the server delete is held back for a few seconds so the toast can offer Undo
   const removeFromCart = useCallback(async (productId) => {
     const removed = cartItems.find((item) => item.id === productId)
+    if (!removed) return
     setCartItems((prev) => prev.filter((item) => item.id !== productId))
-    if (removed) pushNotification(`${removed.name} removed from cart`, 'info')
-    const token = await getValidToken()
-    if (!token) return
-    try {
-      const res = await fetch(`${API_BASE}/cart`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ productIds: [productId] }),
-      })
-      if (!res.ok) await loadCart(token)
-    } catch {
-      await loadCart(token)
-    }
-  }, [cartItems, loadCart])
+
+    const timer = setTimeout(() => { flushPendingDeletes([productId]) }, UNDO_WINDOW_MS)
+    showUndoToast(`${removed.name} removed from cart`, () => {
+      clearTimeout(timer)
+      setCartItems((prev) => mergeBackItems(prev, [removed]))
+    })
+  }, [cartItems, flushPendingDeletes])
 
   // removes multiple items at once, or clears the whole cart if no ids are passed
-  // the Cart page uses this for the "Remove Selected" button
-  const clearCart = useCallback(async (ids = null) => {
+  // with ids: undoable like single remove; { immediate: true } deletes right away
+  // (checkout uses immediate so no Undo toast appears after an order is placed)
+  const clearCart = useCallback(async (ids = null, opts = {}) => {
     if (!ids) {
       setCartItems([])
-    } else {
-      const setIds = new Set(ids)
-      setCartItems((prev) => prev.filter((item) => !setIds.has(item.id)))
+      const token = await getValidToken()
+      if (!token) return
+      try {
+        const res = await fetch(`${API_BASE}/cart`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({}),
+        })
+        if (!res.ok) await loadCart(token)
+      } catch {
+        await loadCart(token)
+      }
+      return
     }
-    const token = await getValidToken()
-    if (!token) return
-    try {
-      const res = await fetch(`${API_BASE}/cart`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: ids ? JSON.stringify({ productIds: ids }) : JSON.stringify({}),
-      })
-      if (!res.ok) await loadCart(token)
-    } catch {
-      await loadCart(token)
+    if (ids.length === 0) return
+
+    const setIds = new Set(ids)
+    const removedItems = cartItems.filter((item) => setIds.has(item.id))
+    setCartItems((prev) => prev.filter((item) => !setIds.has(item.id)))
+
+    if (removedItems.length === 0 || opts.immediate) {
+      await deleteCartRows(ids)
+      return
     }
-  }, [loadCart])
+
+    const timer = setTimeout(() => { flushPendingDeletes(ids) }, UNDO_WINDOW_MS)
+    showUndoToast(
+      removedItems.length === 1
+        ? `${removedItems[0].name} removed from cart`
+        : `Removed ${removedItems.length} items from cart`,
+      () => {
+        clearTimeout(timer)
+        setCartItems((prev) => mergeBackItems(prev, removedItems))
+      }
+    )
+  }, [cartItems, deleteCartRows, flushPendingDeletes, loadCart])
 
   // total number of individual items in the cart (accounts for quantity)
   // this is what shows up on the cart badge in the navbar
