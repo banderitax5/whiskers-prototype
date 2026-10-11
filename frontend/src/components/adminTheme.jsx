@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { BsChevronExpand, BsArrowUp, BsArrowDown } from 'react-icons/bs';
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -239,6 +240,67 @@ export function AdminTable({ columns, rows, rowKey, loading, empty, colSpan, onR
 
       {pageSize && totalPages > 1 && (
         <Pagination page={current} totalPages={totalPages} rowsLength={rows.length} pageSize={pageSize} onPageChange={onPageChange} />
+      )}
+    </div>
+  );
+}
+
+// Row-level dropdown (status / role pickers) portaled to document.body.
+// The desktop table lives inside an `overflow-x-auto` wrapper, which also clips the
+// vertical axis — so an absolutely-positioned menu on the last row would stretch the
+// table and reveal a scrollbar. Portaling with fixed positioning keeps the menu
+// overlapping the table with zero effect on table height.
+export function AdminRowDropdown({ open, onToggle, onClose, value, options, onSelect, disabled }) {
+  const triggerRef = useRef(null);
+  const [pos, setPos] = useState(null);
+
+  useEffect(() => {
+    if (!open) { setPos(null); return undefined; }
+    const el = triggerRef.current;
+    if (!el) return undefined;
+    const r = el.getBoundingClientRect();
+    const MENU_MAX = 220;
+    // flip above the trigger when there is not enough room below
+    const flip = window.innerHeight - r.bottom < MENU_MAX && r.top > MENU_MAX;
+    setPos({
+      left: r.left,
+      width: r.width,
+      ...(flip ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }),
+    });
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  return (
+    <div className="relative shrink-0">
+      <button
+        ref={triggerRef}
+        type="button"
+        disabled={disabled}
+        onClick={(e) => { e.stopPropagation(); onToggle(); }}
+        className="w-[6rem] bg-white dark:bg-[#162d4a] text-gray-700 dark:text-slate-200 border border-gray-200 dark:border-[#1e3a5f] rounded-lg text-[10px] font-black uppercase tracking-widest px-2 py-1.5 text-left focus:outline-none focus:border-[#0b2e59] cursor-pointer flex items-center justify-between gap-1 disabled:opacity-50"
+      >
+        <span className="truncate">{value}</span>
+        <svg className="w-2.5 h-2.5 shrink-0 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg>
+      </button>
+      {open && pos && createPortal(
+        <div
+          style={{ position: 'fixed', left: pos.left, top: pos.top, bottom: pos.bottom, width: pos.width, zIndex: 10000 }}
+          className="bg-white dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] rounded-lg shadow-lg overflow-hidden"
+        >
+          {options.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onSelect(opt); }}
+              className={`w-full text-left px-2 py-1.5 text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 dark:hover:bg-[#1e3a5f] ${opt === value ? 'text-[#0b2e59] dark:text-yellow-200 bg-gray-50 dark:bg-[#1e3a5f]/50' : 'text-gray-700 dark:text-slate-300'}`}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>,
+        document.body
       )}
     </div>
   );

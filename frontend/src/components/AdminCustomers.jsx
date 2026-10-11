@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import supabase from '../lib/supabase';
 import { apiGetAllPages, apiPatchAuth, apiDeleteAuth } from '../lib/api';
-import { AdminPage, AdminTable, EmptyState, StatCard, StatusPill, ConfirmDialog } from './adminTheme';
+import { AdminPage, AdminTable, AdminRowDropdown, EmptyState, StatCard, StatusPill, ConfirmDialog } from './adminTheme';
 import { BsPeople, BsSearch, BsTrash, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 import toast from 'react-hot-toast';
 
@@ -132,31 +132,15 @@ const AdminCustomers = () => {
           <span className="flex justify-center w-[4.75rem] shrink-0">
             <StatusPill kind={ROLE_KIND[u.role] || 'neutral'}>{u.role}</StatusPill>
           </span>
-          <div className="relative shrink-0">
-            <button
-              type="button"
-              disabled={savingId === u.id}
-              onClick={() => setOpenDropdown(openDropdown === u.id ? null : u.id)}
-              className="w-[6rem] bg-white dark:bg-[#162d4a] text-gray-700 dark:text-slate-200 border border-gray-200 dark:border-[#1e3a5f] rounded-lg text-[10px] font-black uppercase tracking-widest px-2 py-1.5 text-left focus:outline-none focus:border-[#0b2e59] cursor-pointer flex items-center justify-between gap-1"
-            >
-              <span className="truncate">{u.role}</span>
-              <svg className="w-2.5 h-2.5 shrink-0 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg>
-            </button>
-            {openDropdown === u.id && (
-              <div className="absolute z-50 mt-1 w-full bg-white dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] rounded-lg shadow-lg overflow-hidden">
-                {ROLES.map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => changeRole(u, r)}
-                    className={`w-full text-left px-2 py-1.5 text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 dark:hover:bg-[#1e3a5f] ${r === u.role ? 'text-[#0b2e59] dark:text-yellow-200 bg-gray-50 dark:bg-[#1e3a5f]/50' : 'text-gray-700 dark:text-slate-300'}`}
-                  >
-                    {r}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <AdminRowDropdown
+            open={openDropdown === u.id}
+            onToggle={() => setOpenDropdown(openDropdown === u.id ? null : u.id)}
+            onClose={() => setOpenDropdown(null)}
+            value={u.role}
+            options={ROLES}
+            disabled={savingId === u.id}
+            onSelect={(r) => changeRole(u, r)}
+          />
           {u.id !== currentUserId ? (
             <button
               type="button"
