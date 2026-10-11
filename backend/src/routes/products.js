@@ -112,7 +112,41 @@ router.get('/brands', async (req, res) => {
 
 // explicit columns only: image_data is bytea and would come back as a huge hex
 // string, so it is never selected (no product currently uses it anyway)
-const PRODUCT_COLUMNS = 'prod_id, prod_name, category, brand, price, stock_quantity, image_url, is_active, created_at'
+const BASE_COLUMNS = 'prod_id, prod_name, category, brand, price, stock_quantity, image_url, is_active, created_at'
+// `description` was added by a later migration; include it when present but
+// fall back to the base set so the endpoint never hard-fails if that migration
+// hasn't run yet (see backend/migrations/2026-10-11_product_description_and_rls.sql)
+const WITH_DESCRIPTION = `${BASE_COLUMNS}, description`
+
+// fetches the product + its related items using the given column set
+async function fetchDetail(id, columns) {
+  const { data, error } = await supabaseAdmin
+    .from('product')
+    .select(columns)
+    .eq('prod_id', id)
+    .eq('is_active', true)
+    .maybeSingle()
+  if (error) throw error
+  // missing and inactive products share the same 404 so the API never
+  // distinguishes them (an inactive product should look nonexistent)
+  if (!data) return null
+
+  // related: same category, active, excluding this product, capped at 4
+  let related = []
+  if (data.category) {
+    const { data: rel, error: relErr } = await supabaseAdmin
+      .from('product')
+      .select(columns)
+      .eq('category', data.category)
+      .eq('is_active', true)
+      .neq('prod_id', id)
+      .order('prod_name', { ascending: true })
+      .limit(4)
+    if (relErr) throw relErr
+    related = rel || []
+  }
+  return { item: data, related }
+}
 
 // GET /api/products/:id - single product detail + related items in one round trip
 // placed after the /categories and /brands static routes so those still match
@@ -124,33 +158,20 @@ router.get('/:id', async (req, res) => {
   }
 
   try {
-    const { data, error } = await supabaseAdmin
-      .from('product')
-      .select(PRODUCT_COLUMNS)
-      .eq('prod_id', id)
-      .eq('is_active', true)
-      .maybeSingle()
-    if (error) throw error
-    // missing and inactive products share the same 404 so the API never
-    // distinguishes them (an inactive product should look nonexistent)
-    if (!data) return res.status(404).json({ error: 'Product not found' })
-
-    // related: same category, active, excluding this product, capped at 4
-    let related = []
-    if (data.category) {
-      const { data: rel, error: relErr } = await supabaseAdmin
-        .from('product')
-        .select(PRODUCT_COLUMNS)
-        .eq('category', data.category)
-        .eq('is_active', true)
-        .neq('prod_id', id)
-        .order('prod_name', { ascending: true })
-        .limit(4)
-      if (relErr) throw relErr
-      related = rel || []
+    let result
+    try {
+      result = await fetchDetail(id, WITH_DESCRIPTION)
+    } catch (err) {
+      // the description column does not exist yet - retry once without it so
+      // the customer-facing page keeps working before the migration is run
+      if (String(err.message || '').includes('description')) {
+        result = await fetchDetail(id, BASE_COLUMNS)
+      } else {
+        throw err
+      }
     }
-
-    res.json({ item: data, related })
+    if (!result) return res.status(404).json({ error: 'Product not found' })
+    res.json(result)
   } catch (err) {
     logger.error({ err: err.message }, 'Product detail fetch error')
     res.status(500).json({ error: 'Failed to fetch product' })

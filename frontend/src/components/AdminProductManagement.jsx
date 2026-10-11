@@ -11,7 +11,7 @@ const AdminProductManagement = () => {
   const [uploading, setUploading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [formData, setFormData] = useState({ prod_name: '', category: '', price: '', stock_quantity: '0', is_active: true, image_url: '' });
+  const [formData, setFormData] = useState({ prod_name: '', category: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '' });
   const [sortKey, setSortKey] = useState('prod_name');
   const [sortDir, setSortDir] = useState('asc');
   const [priceMin, setPriceMin] = useState('');
@@ -23,7 +23,7 @@ const AdminProductManagement = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [mobileEditItem, setMobileEditItem] = useState(null);
-  const [mobileForm, setMobileForm] = useState({ prod_name: '', category: '', price: '', stock_quantity: '0', is_active: true, image_url: '' });
+  const [mobileForm, setMobileForm] = useState({ prod_name: '', category: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '' });
   const [mobileUploading, setMobileUploading] = useState(false);
   const [mobileDragging, setMobileDragging] = useState(false);
   const [mobileUrlInput, setMobileUrlInput] = useState('');
@@ -73,13 +73,14 @@ const AdminProductManagement = () => {
       stock_quantity: String(item.stock_quantity ?? 0),
       is_active: item.is_active !== false,
       image_url: item.image_url || '',
+      description: item.description || '',
     });
     setShowForm(true);
   }
 
   function resetForm() {
     setEditing(null);
-    setFormData({ prod_name: '', category: '', price: '', stock_quantity: '0', is_active: true, image_url: '' });
+    setFormData({ prod_name: '', category: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '' });
   }
 
   const handleFileUpload = async (file) => {
@@ -132,6 +133,7 @@ const AdminProductManagement = () => {
         stock_quantity: stock,
         is_active: formData.is_active,
         image_url: formData.image_url,
+        description: formData.description || null,
       };
       if (editing) {
         await apiPatchAuth(`/admin/products/${editing}`, payload, token);
@@ -183,6 +185,7 @@ const AdminProductManagement = () => {
       stock_quantity: String(item.stock_quantity ?? 0),
       is_active: item.is_active !== false,
       image_url: item.image_url || '',
+      description: item.description || '',
     });
   }
 
@@ -230,6 +233,7 @@ const AdminProductManagement = () => {
         stock_quantity: stock,
         is_active: mobileForm.is_active,
         image_url: mobileForm.image_url,
+        description: mobileForm.description || null,
       }, token);
       toast.success('Product updated');
       setMobileEditItem(null);
@@ -380,6 +384,14 @@ const AdminProductManagement = () => {
               Fetch
             </button>
           </div>
+          <textarea
+            value={formData.description}
+            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            placeholder="Description (optional, shown on the product page)"
+            rows={3}
+            maxLength={2000}
+            className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 text-sm focus:outline-none focus:border-[#0b2e59] resize-y"
+          />
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-slate-400">Visibility</span>
             <div className="flex gap-1.5">
@@ -559,6 +571,14 @@ const AdminProductManagement = () => {
                 <input value={mobileUrlInput} onChange={(e) => setMobileUrlInput(e.target.value)} placeholder="Or paste image URL..." className="flex-1 px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
                 <button type="button" onClick={handleMobileUrlUpload} disabled={mobileUploading || !mobileUrlInput.trim()} className="px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border border-gray-200 dark:border-[#1e3a5f] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#162d4a] disabled:opacity-30 disabled:cursor-not-allowed transition">Fetch</button>
               </div>
+              <textarea
+                value={mobileForm.description}
+                onChange={(e) => setMobileForm({ ...mobileForm, description: e.target.value })}
+                placeholder="Description (optional)"
+                rows={3}
+                maxLength={2000}
+                className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59] resize-y"
+              />
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-slate-400">Visibility</span>
                 <div className="flex gap-1.5">
