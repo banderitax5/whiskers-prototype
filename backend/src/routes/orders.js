@@ -177,11 +177,18 @@ router.post('/', orderLimiter, async (req, res) => {
 
       let detailRows = validatedItems.map(snapshotDetail)
       if (promoResult && promoResult.lineDiscounts) {
-        const perUnitDiscounts = buildDiscountAmounts(validatedItems, promoResult.lineDiscounts)
-        detailRows = validatedItems.map(i => {
-          const disc = perUnitDiscounts.get(i.productId) || 0
-          return { ...snapshotDetail(i), discount_amount: disc }
-        })
+        // buildDiscountAmounts keys on product_id (the engine's shape) - map
+        // the camelCase checkout rows onto it or every lookup silently misses
+        const promoItems = validatedItems.map((i) => ({
+          product_id: i.productId,
+          quantity: i.quantity,
+          subtotal: i.subtotal,
+        }))
+        const perUnitDiscounts = buildDiscountAmounts(promoItems, promoResult.lineDiscounts)
+        detailRows = validatedItems.map((i) => ({
+          ...snapshotDetail(i),
+          discount_amount: perUnitDiscounts.get(i.productId) || 0,
+        }))
       }
 
       let { error: detErr } = await req.db.from('order_details').insert(detailRows)
