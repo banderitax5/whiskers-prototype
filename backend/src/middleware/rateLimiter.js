@@ -72,6 +72,16 @@ export const productLimiter = rateLimit({
   keyGenerator: clientKey,
 })
 
+// 60 storefront content reads per minute per IP (banners, home sections, nav)
+export const contentLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: { error: 'Too many requests. Please slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+})
+
 // 60 analytics events per minute per IP (anonymous endpoint, keeps the events table clean)
 export const eventLimiter = rateLimit({
   windowMs: 60 * 1000,

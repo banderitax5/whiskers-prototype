@@ -1,7 +1,36 @@
-import React from "react"
+import React, { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
+import { fetchSiteContent, contentNav } from "../lib/siteContent.js"
+
+const LINK_CLASS = "text-gray-600 hover:text-[#0b2e59] dark:text-gray-400 dark:hover:text-white transition-colors duration-200 cursor-pointer"
 
 function Footer() {
+  const [content, setContent] = useState(null)
+
+  // footer link groups come from the content tables when seeded; the
+  // built-in groups below render on a fresh install until then
+  useEffect(() => {
+    let cancelled = false
+    fetchSiteContent().then((data) => { if (!cancelled) setContent(data) })
+    return () => { cancelled = true }
+  }, [])
+
+  const shopLinks = contentNav(content, "footer_shop") || [
+    { id: "dogs", label: "Dog", href: "/menu?category=Dogs" },
+    { id: "cats", label: "Cat", href: "/menu?category=Cats" },
+    { id: "birds", label: "Bird", href: "/menu?category=Birds" },
+    { id: "small", label: "Small Pet", href: "/menu?category=Small Pets" },
+  ]
+  const accountLinks = contentNav(content, "footer_account") || [
+    { id: "profile", label: "My Account", href: "/profile" },
+    { id: "orders", label: "Orders", href: "/orders" },
+    { id: "about", label: "FAQs", href: "/about" },
+  ]
+  const socialLinks = contentNav(content, "footer_social") || [
+    { id: "instagram", label: "Instagram", href: "https://www.instagram.com/petcareswhiskers?igsh=aTN5NXN3Mm5nbXV1&utm_source=qr" },
+    { id: "facebook", label: "Facebook", href: "https://facebook.com/profile.php?id=61561539844519" },
+  ]
+
   return (
     <footer className="bg-gray-100 dark:bg-[#031730] py-8 sm:py-10">
       <div className="px-3 sm:px-4 lg:mx-auto lg:max-w-7xl">
@@ -11,10 +40,9 @@ function Footer() {
               Start Shopping
             </h6>
             <ul className="space-y-2 text-sm">
-              <li><Link to="/menu?category=Dogs" className="text-gray-600 hover:text-[#0b2e59] dark:text-gray-400 dark:hover:text-white transition-colors duration-200 cursor-pointer">Dog</Link></li>
-              <li><Link to="/menu?category=Cats" className="text-gray-600 hover:text-[#0b2e59] dark:text-gray-400 dark:hover:text-white transition-colors duration-200 cursor-pointer">Cat</Link></li>
-              <li><Link to="/menu?category=Birds" className="text-gray-600 hover:text-[#0b2e59] dark:text-gray-400 dark:hover:text-white transition-colors duration-200 cursor-pointer">Bird</Link></li>
-              <li><Link to="/menu?category=Small Pets" className="text-gray-600 hover:text-[#0b2e59] dark:text-gray-400 dark:hover:text-white transition-colors duration-200 cursor-pointer">Small Pet</Link></li>
+              {shopLinks.map((item) => (
+                <li key={item.id || item.label}><Link to={item.href} className={LINK_CLASS}>{item.label}</Link></li>
+              ))}
             </ul>
           </nav>
 
@@ -23,9 +51,9 @@ function Footer() {
               Support
             </h6>
             <ul className="space-y-2 text-sm">
-              <li><Link to="/profile" className="text-gray-600 hover:text-[#0b2e59] dark:text-gray-400 dark:hover:text-white transition-colors duration-200 cursor-pointer">My Account</Link></li>
-              <li><Link to="/orders" className="text-gray-600 hover:text-[#0b2e59] dark:text-gray-400 dark:hover:text-white transition-colors duration-200 cursor-pointer">Orders</Link></li>
-              <li><Link to="/about" className="text-gray-600 hover:text-[#0b2e59] dark:text-gray-400 dark:hover:text-white transition-colors duration-200 cursor-pointer">FAQs</Link></li>
+              {accountLinks.map((item) => (
+                <li key={item.id || item.label}><Link to={item.href} className={LINK_CLASS}>{item.label}</Link></li>
+              ))}
             </ul>
           </nav>
 
@@ -34,27 +62,31 @@ function Footer() {
               Social
             </h6>
             <div className="flex gap-4">
-              <a
-                href="https://www.instagram.com/petcareswhiskers?igsh=aTN5NXN3Mm5nbXV1&utm_source=qr"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-gray-600 hover:text-[#0b2e59] dark:text-gray-400 dark:hover:text-white transition-colors duration-200"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" className="fill-current">
-                  <path d="M7.75 2C4.574 2 2 4.574 2 7.75v8.5C2 19.426 4.574 22 7.75 22h8.5C19.426 22 22 19.426 22 16.25v-8.5C22 4.574 19.426 2 16.25 2h-8.5zm0 2h8.5C18.216 4 20 5.784 20 7.75v8.5c0 1.966-1.784 3.75-3.75 3.75h-8.5C5.784 20 4 18.216 4 16.25v-8.5C4 5.784 5.784 4 7.75 4zm8.75 1.5a1 1 0 100 2 1 1 0 000-2zM12 7a5 5 0 100 10 5 5 0 000-10zm0 2a3 3 0 110 6 3 3 0 010-6z"/>
-                </svg>
-              </a>
-
-              <a
-                href="https://www.facebook.com/profile.php?id=61561539844519"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-gray-600 hover:text-[#0b2e59] dark:text-gray-400 dark:hover:text-white transition-colors duration-200"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" className="fill-current">
-                  <path d="M9 8h-3v4h3v12h5v-12h3.642l.358-4h-4v-1.667c0-.955.192-1.333 1.115-1.333h2.885v-5h-3.808c-3.596 0-5.192 1.583-5.192 4.615v3.385z" />
-                </svg>
-              </a>
+              {socialLinks.map((item) => {
+                const isInstagram = /instagram/i.test(item.label || item.href || "")
+                return (
+                  <a
+                    key={item.id || item.label}
+                    href={item.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={item.label}
+                    className="text-gray-600 hover:text-[#0b2e59] dark:text-gray-400 dark:hover:text-white transition-colors duration-200"
+                  >
+                    {item.image_url ? (
+                      <img src={item.image_url} alt={item.alt_text || item.label} className="h-6 w-6" />
+                    ) : isInstagram ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" className="fill-current">
+                        <path d="M7.75 2C4.574 2 2 4.574 2 7.75v8.5C2 19.426 4.574 22 7.75 22h8.5C19.426 22 22 19.426 22 16.25v-8.5C22 4.574 19.426 2 16.25 2h-8.5zm0 2h8.5C18.216 4 20 5.784 20 7.75v8.5c0 1.966-1.784 3.75-3.75 3.75h-8.5C5.784 20 4 18.216 4 16.25v-8.5C4 5.784 5.784 4 7.75 4zm8.75 1.5a1 1 0 100 2 1 1 0 000-2zM12 7a5 5 0 100 10 5 5 0 000-10zm0 2a3 3 0 110 6 3 3 0 010-6z"/>
+                      </svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" className="fill-current">
+                        <path d="M9 8h-3v4h3v12h5v-12h3.642l.358-4h-4v-1.667c0-.955.192-1.333 1.115-1.333h2.885v-5h-3.808c-3.596 0-5.192 1.583-5.192 4.615v3.385z" />
+                      </svg>
+                    )}
+                  </a>
+                )
+              })}
             </div>
           </nav>
         </div>

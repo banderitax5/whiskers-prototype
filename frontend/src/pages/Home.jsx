@@ -5,7 +5,16 @@ import ProductQuickViewDialog from '../components/ProductQuickViewDialog.jsx'
 import { apiGet } from '../lib/api.js'
 import { attachSizeVariants } from '../lib/productUtils.js'
 import { formatPesos } from '../lib/cartLogic'
+import {
+  fetchSiteContent,
+  contentBanners,
+  contentSections,
+  resolveRowProducts,
+  trackBannerEvent,
+} from '../lib/siteContent.js'
 
+// built-in defaults: used whenever the content endpoint is not seeded yet
+// (fresh install, migration not applied, request failed)
 const CAROUSEL_SLIDES = [
   { image: '/banner.png', alt: 'Whiskers Pet Shop' },
   { image: '/categoryshop/dog.jpg', alt: 'Dog Food Collection' },
@@ -13,6 +22,7 @@ const CAROUSEL_SLIDES = [
   { image: '/categoryshop/fish.png', alt: 'Fish Supplies' },
   { image: '/categoryshop/berd.jpg', alt: 'Bird Supplies' },
 ]
+const FALLBACK_CATEGORY_ROWS = 6
 
 const SHELL = 'space-y-6 sm:space-y-8 lg:mx-auto lg:max-w-7xl'
 const HERO_HEIGHT = 'h-[200px] sm:h-[250px] md:h-[325px]'
@@ -33,19 +43,52 @@ function Home() {
   const [attempt, setAttempt] = useState(0)
   const [currentSlide, setCurrentSlide] = useState(0)
   const [heroPaused, setHeroPaused] = useState(false)
+  const [content, setContent] = useState(null)
+
+  // storefront content (banners, home sections): one cached fetch per load;
+  // null means "not seeded yet", and every caller falls back to built-ins
+  useEffect(() => {
+    let cancelled = false
+    fetchSiteContent().then((data) => { if (!cancelled) setContent(data) })
+    return () => { cancelled = true }
+  }, [])
+
+  // hero slides come from the banner table when published, otherwise the
+  // built-in carousel slides render exactly as before
+  const heroSlides = useMemo(() => {
+    const banners = contentBanners(content, 'banners')
+    if (!banners) return CAROUSEL_SLIDES
+    return banners.map((b) => ({ image: b.desktop_image_url, alt: b.alt, id: b.id }))
+  }, [content])
+
+  // home sections: published product rows from the section editor, otherwise
+  // the derived category rows the page has always shown
+  const rowSections = useMemo(() => contentSections(content, 'product_row'), [content])
 
   // auto-rotate the hero, but pause on hover/focus (WCAG 2.2.2)
   useEffect(() => {
     if (heroPaused) return undefined
     const timer = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % CAROUSEL_SLIDES.length)
+      setCurrentSlide((prev) => (prev + 1) % Math.max(1, heroSlides.length))
     }, 5000)
     return () => clearInterval(timer)
-  }, [heroPaused])
+  }, [heroPaused, heroSlides.length])
 
   const goToSlide = useCallback((idx) => setCurrentSlide(idx), [])
-  const prevSlide = useCallback(() => setCurrentSlide((p) => (p - 1 + CAROUSEL_SLIDES.length) % CAROUSEL_SLIDES.length), [])
-  const nextSlide = useCallback(() => setCurrentSlide((p) => (p + 1) % CAROUSEL_SLIDES.length), [])
+  const prevSlide = useCallback(
+    () => setCurrentSlide((p) => (p - 1 + heroSlides.length) % Math.max(1, heroSlides.length)),
+    [heroSlides.length]
+  )
+  const nextSlide = useCallback(
+    () => setCurrentSlide((p) => (p + 1) % Math.max(1, heroSlides.length)),
+    [heroSlides.length]
+  )
+
+  // record one impression per hero slide when the banner table is driving it
+  useEffect(() => {
+    const slide = heroSlides[currentSlide]
+    if (slide?.id) trackBannerEvent(slide.id, 'impression')
+  }, [currentSlide, heroSlides])
 
   useEffect(() => {
     async function load() {
@@ -72,6 +115,12 @@ function Home() {
     acc[cat].push(product)
     return acc
   }, {})
+
+  // published sections win; otherwise the first six categories as before
+  const fallbackRows = useMemo(
+    () => Object.entries(groupedByCategory).slice(0, FALLBACK_CATEGORY_ROWS),
+    [groupedByCategory]
+  )
 
   function handleAddToCart(product, qty = 1) {
     addToCart({
@@ -167,9 +216,9 @@ function Home() {
           onFocus={() => setHeroPaused(true)}
           onBlur={() => setHeroPaused(false)}
         >
-          {CAROUSEL_SLIDES.map((slide, idx) => (
+          {heroSlides.map((slide, idx) => (
             <div
-              key={idx}
+              key={slide.image + idx}
               className={`absolute inset-0 transition-opacity duration-700 ease-in-out ${idx === currentSlide ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
             >
               <img src={slide.image} alt={slide.alt} className="h-full w-full object-cover" />
@@ -179,10 +228,10 @@ function Home() {
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
           <button type="button" onClick={nextSlide} aria-label="Next slide" className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-black/30 text-white flex items-center justify-center hover:bg-black/50 transition-all duration-200 hover:scale-110">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7-7" /></svg>
           </button>
           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
-            {CAROUSEL_SLIDES.map((_, idx) => (
+            {heroSlides.map((_, idx) => (
               <button
                 key={idx}
                 type="button"
@@ -195,14 +244,27 @@ function Home() {
         </div>
       </section>
 
-      {Object.entries(groupedByCategory).slice(0, 6).map(([category, catProducts]) => (
-        <div key={category} className="mt-6 sm:mt-8 md:mt-10">
+      {(rowSections
+        ? rowSections
+            .map((section) => ({
+              key: section.id,
+              title: section.title || '',
+              products: resolveRowProducts(section, enrichedProducts),
+            }))
+            .filter((row) => row.products.length > 0)
+        : fallbackRows.map(([category, catProducts]) => ({
+            key: category,
+            title: category.toUpperCase(),
+            products: catProducts,
+          }))
+      ).map((row) => (
+        <div key={row.key} className="mt-6 sm:mt-8 md:mt-10">
           <div className={HEADING_ROW}>
-            <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-red-600 dark:text-red-400 tracking-wide">{category.toUpperCase()}</h2>
+            <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-red-600 dark:text-red-400 tracking-wide">{row.title}</h2>
             <button type="button" onClick={() => navigate('/menu')} className="text-blue-600 dark:text-blue-400 hover:underline text-xs sm:text-sm font-semibold uppercase whitespace-nowrap transition-colors hover:text-blue-800 dark:hover:text-blue-300">VIEW ALL</button>
           </div>
           <div className={`${CARD_ROW} overflow-x-auto scrollbar-hide snap-x snap-mandatory touch-pan-x scroll-smooth`}>
-            {catProducts.slice(0, 7).map((product) => (
+            {row.products.slice(0, 7).map((product) => (
               <div
                 key={product.prod_id}
                 role="button"
@@ -230,7 +292,7 @@ function Home() {
                 </div>
                 <div className="p-2 sm:p-4 space-y-1 sm:space-y-2">
                   <span className="inline-block bg-red-800 text-white text-[9px] sm:text-xs font-semibold px-1 py-0.5 rounded leading-tight">
-                    {category}
+                    {rowSections ? (product.category || 'Shop') : row.title}
                   </span>
                   <p className="text-xs sm:text-base font-semibold text-gray-800 dark:text-gray-100 line-clamp-2 leading-tight min-h-[2rem] sm:min-h-[2.5rem]">{product.prod_name}</p>
                   {product.price > 0 ? (

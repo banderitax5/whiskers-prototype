@@ -126,6 +126,35 @@ try {
 $supList2 = Invoke-RestMethod -Uri "$base/api/support" -Headers $authH
 Step 'support GET single thread' (@($supList2.items).Count -eq 1 -and $supList2.items[0].message -like 'Follow-up*') "count=$(@($supList2.items).Count)"
 
+# ── Phase 5: storefront content endpoint (public, seeded from today's content) ──
+try {
+  $sc = Invoke-RestMethod -Uri "$base/api/site-content"
+  if ($sc.seeded) {
+    Step 'content: endpoint serves seeded rows' (([int]@($sc.banners).Count -eq 5) -and ([int]@($sc.nav.navbar).Count -eq 7) -and ([int]@($sc.nav.footer_social).Count -eq 2)) "hero=$(@($sc.banners).Count) navbar=$(@($sc.nav.navbar).Count) social=$(@($sc.nav.footer_social).Count)"
+    Step 'content: drafts stay hidden' (@($sc.sections).Count -eq 0) "published=$(@($sc.sections).Count)"
+  } else {
+    Step 'content: endpoint serves seeded rows' $false 'tables not seeded yet' 'SKIP'
+    Step 'content: drafts stay hidden' $false 'tables not seeded yet' 'SKIP'
+  }
+} catch { Step 'content: endpoint serves seeded rows' $false (Get-ErrBody $_) ; Step 'content: drafts stay hidden' $false 'previous step failed' 'SKIP' }
+
+# banner events are anonymous and best-effort: a bad id must be rejected,
+# a good id must be accepted quietly
+try {
+  Invoke-RestMethod -Uri "$base/api/site-content/events" -Method Post -ContentType 'application/json' -Body (@{ bannerId = 'not-a-uuid'; event = 'impression' } | ConvertTo-Json -Compress) | Out-Null
+  Step 'content: rejects malformed banner event' $false 'got 2xx'
+} catch { Step 'content: rejects malformed banner event' ($_.Exception.Response.StatusCode.value__ -eq 400) $_.Exception.Response.StatusCode.value__ }
+if ($sc -and $sc.seeded -and @($sc.banners).Count -gt 0) {
+  try {
+    Invoke-RestMethod -Uri "$base/api/site-content/events" -Method Post -ContentType 'application/json' `
+      -Body (@{ bannerId = $sc.banners[0].id; event = 'impression' } | ConvertTo-Json -Compress) | Out-Null
+    $ev = Invoke-RestMethod -Uri "$SU/rest/v1/site_banner_events?banner_id=eq.$($sc.banners[0].id)&select=id" -Headers @{ apikey = $SK; Authorization = "Bearer $SK" }
+    Step 'content: banner impression recorded' (@($ev).Count -eq 1) "events=$(@($ev).Count)"
+  } catch { Step 'content: banner impression recorded' $false (Get-ErrBody $_) }
+} else {
+  Step 'content: banner impression recorded' $false 'no seeded banners' 'SKIP'
+}
+
 # â”€â”€ 8. admin supports list (escalate temp user) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 $prof = Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid&select=id,role" -Headers @{ apikey = $SK; Authorization = "Bearer $SK" }
 if (@($prof).Count -eq 0) {
