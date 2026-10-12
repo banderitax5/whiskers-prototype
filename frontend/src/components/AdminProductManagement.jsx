@@ -4,16 +4,42 @@ import { apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth, apiUploadAuth } f
 import { AdminPage, AdminTable, EmptyState, StatCard, btnPrimary, StatusPill, ConfirmDialog } from './adminTheme';
 import { SECTION_LABELS, detailsToFields, fieldsToDetails } from '../lib/productInfo';
 import { formatPesos } from '../lib/cartLogic';
-import { BsBoxSeam, BsPlusLg, BsDashLg, BsPencilSquare, BsTrash, BsUpload, BsSearch, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
+import { formatMargin } from '../lib/adminCosting';
+import { useRole } from '../context/RoleContext';
+import { canSeeCosts, canManageProductLifecycle } from '../lib/permissions';
+import { BsBoxSeam, BsPlusLg, BsDashLg, BsPencilSquare, BsTrash, BsUpload, BsSearch, BsExclamationTriangle, BsArrowClockwise, BsArchive, BsArrowCounterclockwise, BsClockHistory } from 'react-icons/bs';
 import toast from 'react-hot-toast';
 
+// cost/supplier payload rules: filled = send the value; blank with no prior
+// value = omit the key (so a create/edit works against a pre-M2 database);
+// blank with a prior value = explicit null to clear it.
+function costPatchFields(form, original, showCosts) {
+  if (!showCosts) return {};
+  const fields = {};
+  if (form.cost_price !== '') fields.cost_price = Number(form.cost_price);
+  else if (original?.cost_price != null) fields.cost_price = null;
+  if (form.supplier.trim() !== '') fields.supplier = form.supplier.trim();
+  else if (original?.supplier != null) fields.supplier = null;
+  return fields;
+}
+
+function invalidCostValue(value) {
+  if (value === '') return false;
+  const n = Number(value);
+  return !Number.isFinite(n) || n < 0;
+}
+
 const AdminProductManagement = () => {
+  const role = useRole();
+  const showCosts = canSeeCosts(role);
+  const canLifecycle = canManageProductLifecycle(role);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [formData, setFormData] = useState({ prod_name: '', category: '', brand: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: {} });
+  const [editingOriginal, setEditingOriginal] = useState(null);
+  const [formData, setFormData] = useState({ prod_name: '', category: '', brand: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: {}, cost_price: '', supplier: '' });
   const [sortKey, setSortKey] = useState('prod_name');
   const [sortDir, setSortDir] = useState('asc');
   const [priceMin, setPriceMin] = useState('');
@@ -21,11 +47,12 @@ const AdminProductManagement = () => {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
+  const [showArchived, setShowArchived] = useState(false);
   const [page, setPage] = useState(1);
   const [isDragging, setIsDragging] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [mobileEditItem, setMobileEditItem] = useState(null);
-  const [mobileForm, setMobileForm] = useState({ prod_name: '', category: '', brand: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: {} });
+  const [mobileForm, setMobileForm] = useState({ prod_name: '', category: '', brand: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: {}, cost_price: '', supplier: '' });
   const [mobileUploading, setMobileUploading] = useState(false);
   const [mobileDragging, setMobileDragging] = useState(false);
   const [mobileUrlInput, setMobileUrlInput] = useState('');
@@ -33,6 +60,9 @@ const AdminProductManagement = () => {
   const [mobileSubmitting, setMobileSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [historyTarget, setHistoryTarget] = useState(null);
+  const [historyRows, setHistoryRows] = useState(null);
+  const [historyError, setHistoryError] = useState(null);
   const fileInputRef = useRef(null);
   const mobileFileRef = useRef(null);
   const PAGE_SIZE = 10;
@@ -47,6 +77,13 @@ const AdminProductManagement = () => {
     return () => document.removeEventListener('keydown', onKey);
   }, [mobileEditItem]);
 
+  useEffect(() => {
+    if (!historyTarget) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setHistoryTarget(null); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [historyTarget]);
+
   async function getToken() {
     const { data: { session } } = await supabase.auth.getSession();
     return session?.access_token;
@@ -58,8 +95,10 @@ const AdminProductManagement = () => {
     try {
       const token = await getToken(); if (!token) return;
       const all = [];
+      // archived=all: the view split (catalog vs archived) happens client-side
+      // so the Archived toggle needs no refetch
       for (let p = 1; p <= 100; p++) {
-        const { items, total } = await apiGetAuth(`/admin/products?page=${p}&pageSize=100`, token);
+        const { items, total } = await apiGetAuth(`/admin/products?page=${p}&pageSize=100&archived=all`, token);
         all.push(...(items || []));
         if (!items || items.length < 100 || all.length >= (total ?? 0)) break;
       }
@@ -70,6 +109,7 @@ const AdminProductManagement = () => {
 
   function startEdit(item) {
     setEditing(item.prod_id);
+    setEditingOriginal(item);
     setFormData({
       prod_name: item.prod_name || '',
       category: item.category || '',
@@ -80,13 +120,16 @@ const AdminProductManagement = () => {
       image_url: item.image_url || '',
       description: item.description || '',
       details: detailsToFields(item.details),
+      cost_price: item.cost_price != null ? String(item.cost_price) : '',
+      supplier: item.supplier || '',
     });
     setShowForm(true);
   }
 
   function resetForm() {
     setEditing(null);
-    setFormData({ prod_name: '', category: '', brand: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: {} });
+    setEditingOriginal(null);
+    setFormData({ prod_name: '', category: '', brand: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: {}, cost_price: '', supplier: '' });
   }
 
   const handleFileUpload = async (file) => {
@@ -126,6 +169,7 @@ const AdminProductManagement = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (submitting) return;
+    if (!editing && !canLifecycle) return;
     const stock = Number(formData.stock_quantity);
     const price = Number(formData.price);
     if (!formData.prod_name.trim() || !formData.category.trim()) {
@@ -138,6 +182,10 @@ const AdminProductManagement = () => {
     }
     if (!Number.isInteger(stock) || stock < 0) {
       toast.error('Stock quantity must be a whole number of 0 or more');
+      return;
+    }
+    if (invalidCostValue(formData.cost_price)) {
+      toast.error('Cost must be a number of 0 or more');
       return;
     }
     setSubmitting(true);
@@ -153,6 +201,7 @@ const AdminProductManagement = () => {
         image_url: formData.image_url,
         description: formData.description || null,
         details: fieldsToDetails(formData.details),
+        ...costPatchFields(formData, editingOriginal, showCosts),
       };
       if (editing) {
         await apiPatchAuth(`/admin/products/${editing}`, payload, token);
@@ -183,8 +232,36 @@ const AdminProductManagement = () => {
       await apiDeleteAuth(`/admin/products/${deleteTarget.prod_id}`, token);
       setProducts((prev) => prev.filter((p) => p.prod_id !== deleteTarget.prod_id));
       toast.success('Product deleted');
-    } catch (err) { toast.error(err.message); }
+    } catch (err) {
+      // 409 HAS_ORDER_HISTORY: the server message explains archiving instead
+      toast.error(err.message);
+    }
     finally { setDeleteTarget(null); }
+  }
+
+  async function toggleArchive(item) {
+    const archiving = !item.archived_at;
+    try {
+      const token = await getToken(); if (!token) return;
+      await apiPatchAuth(`/admin/products/${item.prod_id}`, { archived: archiving }, token);
+      toast.success(archiving ? 'Product archived' : 'Product restored');
+      await fetchProducts();
+    } catch (err) {
+      toast.error(err.message);
+    }
+  }
+
+  async function loadHistory(item) {
+    setHistoryTarget(item);
+    setHistoryRows(null);
+    setHistoryError(null);
+    try {
+      const token = await getToken(); if (!token) return;
+      const data = await apiGetAuth(`/admin/products/${item.prod_id}/price-history`, token);
+      setHistoryRows(data.items || []);
+    } catch (err) {
+      setHistoryError(err.message || 'Could not load price history.');
+    }
   }
 
   function handleSort(key) {
@@ -208,6 +285,8 @@ const AdminProductManagement = () => {
       image_url: item.image_url || '',
       description: item.description || '',
       details: detailsToFields(item.details),
+      cost_price: item.cost_price != null ? String(item.cost_price) : '',
+      supplier: item.supplier || '',
     });
   }
 
@@ -255,6 +334,10 @@ const AdminProductManagement = () => {
       toast.error('Stock quantity must be a whole number of 0 or more');
       return;
     }
+    if (invalidCostValue(mobileForm.cost_price)) {
+      toast.error('Cost must be a number of 0 or more');
+      return;
+    }
     setMobileSubmitting(true);
     try {
       const token = await getToken(); if (!token) return;
@@ -268,6 +351,7 @@ const AdminProductManagement = () => {
         image_url: mobileForm.image_url,
         description: mobileForm.description || null,
         details: fieldsToDetails(mobileForm.details),
+        ...costPatchFields(mobileForm, mobileEditItem, showCosts),
       }, token);
       toast.success('Product updated');
       setMobileEditItem(null);
@@ -276,13 +360,19 @@ const AdminProductManagement = () => {
     finally { setMobileSubmitting(false); }
   }
 
+  // the archived toggle switches the base list; category/search/price filters
+  // then apply on top of whichever view is active
+  const catalogList = useMemo(() => products.filter((p) => !p.archived_at), [products]);
+  const archivedItems = useMemo(() => products.filter((p) => p.archived_at), [products]);
+  const viewList = showArchived ? archivedItems : catalogList;
+
   const categories = useMemo(() => {
-    const cats = [...new Set(products.map((p) => p.category).filter(Boolean))].sort();
+    const cats = [...new Set(viewList.map((p) => p.category).filter(Boolean))].sort();
     return ['All', ...cats];
-  }, [products]);
+  }, [viewList]);
 
   const displayed = useMemo(() => {
-    let list = [...products];
+    let list = [...viewList];
     if (categoryFilter !== 'All') list = list.filter((p) => p.category === categoryFilter);
     if (search) {
       const q = search.toLowerCase();
@@ -325,14 +415,16 @@ const AdminProductManagement = () => {
       return 0;
     });
     return list;
-  }, [products, sortKey, sortDir, priceMin, priceMax, search, categoryFilter]);
+  }, [viewList, sortKey, sortDir, priceMin, priceMax, search, categoryFilter]);
 
-  const totalProducts = products.length;
-  const lowStockCount = products.filter((p) => p.stock_quantity > 0 && p.stock_quantity <= 10).length;
-  const outOfStockCount = products.filter((p) => p.stock_quantity <= 0).length;
+  // operational stats always describe the live catalog, not the archived view
+  const totalProducts = catalogList.length;
+  const lowStockCount = catalogList.filter((p) => p.stock_quantity > 0 && p.stock_quantity <= 10).length;
+  const outOfStockCount = catalogList.filter((p) => p.stock_quantity <= 0).length;
 
-  // HIDDEN beats OUT beats ACTIVE — matches the admin table badge rules
+  // ARCHIVED beats HIDDEN beats OUT beats ACTIVE — the badge rules
   function productBadge(item) {
+    if (item.archived_at) return { kind: 'info', label: 'ARCHIVED' };
     if (item.is_active === false) return { kind: 'neutral', label: 'HIDDEN' };
     if (Number(item.stock_quantity || 0) <= 0) return { kind: 'danger', label: 'OUT' };
     return { kind: 'success', label: 'ACTIVE' };
@@ -351,6 +443,16 @@ const AdminProductManagement = () => {
       <span className="px-2 py-1 rounded bg-gray-100 dark:bg-[#162d4a] text-gray-700 dark:text-slate-300 text-[10px] font-black uppercase tracking-widest border border-gray-200 dark:border-[#1e3a5f]">{item.category}</span>
     ) },
     { key: 'price', label: 'Price', sortable: true, render: (item) => <span className="font-black text-[#0b2e59] dark:text-yellow-200">PHP {formatPesos(Number(item.price || 0))}</span> },
+    ...(showCosts ? [
+      { key: 'cost_price', label: 'Cost', sortable: true, render: (item) => (
+        <span className="text-gray-700 dark:text-slate-300">{item.cost_price != null ? `PHP ${formatPesos(Number(item.cost_price))}` : '—'}</span>
+      ) },
+      { key: 'margin', label: 'Margin', render: (item) => {
+        const margin = formatMargin(item.price, item.cost_price);
+        const negative = margin.startsWith('-');
+        return <span className={`font-black ${margin === '—' ? 'text-gray-400 dark:text-slate-500' : negative ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>{margin}</span>;
+      } },
+    ] : []),
     { key: 'stock_quantity', label: 'Stock', sortable: true, render: (item) => <span className="text-gray-700 dark:text-slate-300">{item.stock_quantity}</span> },
     { key: 'status', label: 'Status', render: (item) => {
       const s = productBadge(item);
@@ -361,7 +463,15 @@ const AdminProductManagement = () => {
         <button onClick={() => startEdit(item)} className="p-1.5 rounded bg-[#facc15] hover:bg-[#fde047] text-black" title="Edit"><BsPencilSquare /></button>
         <button onClick={() => adjustStock(item, -1)} className="p-1.5 rounded bg-gray-100 dark:bg-[#162d4a] hover:bg-gray-200 dark:hover:bg-[#1e3a5f] text-gray-700 dark:text-slate-300" title="Decrease stock"><BsDashLg /></button>
         <button onClick={() => adjustStock(item, +1)} className="p-1.5 rounded bg-gray-100 dark:bg-[#162d4a] hover:bg-gray-200 dark:hover:bg-[#1e3a5f] text-gray-700 dark:text-slate-300" title="Increase stock"><BsPlusLg /></button>
-        <button onClick={() => setDeleteTarget(item)} className="p-1.5 rounded bg-red-600 hover:bg-red-500 text-white" title="Delete"><BsTrash /></button>
+        <button onClick={() => loadHistory(item)} className="p-1.5 rounded bg-gray-100 dark:bg-[#162d4a] hover:bg-gray-200 dark:hover:bg-[#1e3a5f] text-gray-700 dark:text-slate-300" title="Price history"><BsClockHistory /></button>
+        {canLifecycle && (
+          item.archived_at
+            ? <button onClick={() => toggleArchive(item)} className="p-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white" title="Restore from archive"><BsArrowCounterclockwise /></button>
+            : <button onClick={() => toggleArchive(item)} className="p-1.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white" title="Archive (hide from store, keep order history)"><BsArchive /></button>
+        )}
+        {canLifecycle && (
+          <button onClick={() => setDeleteTarget(item)} className="p-1.5 rounded bg-red-600 hover:bg-red-500 text-white" title="Delete"><BsTrash /></button>
+        )}
       </div>
     ) },
   ];
@@ -375,11 +485,13 @@ const AdminProductManagement = () => {
         <StatCard label="Out of Stock" value={outOfStockCount} loading={loading} />
       </div>
 
-      <div className="flex justify-end mb-4">
-        <button onClick={() => { setShowForm((s) => !s); if (showForm) resetForm(); }} className={btnPrimary}>
-          {showForm ? 'Cancel' : '+ New Product'}
-        </button>
-      </div>
+      {(showForm || canLifecycle) && (
+        <div className="flex justify-end mb-4">
+          <button onClick={() => { setShowForm((s) => !s); if (showForm) resetForm(); }} className={btnPrimary}>
+            {showForm ? 'Cancel' : '+ New Product'}
+          </button>
+        </div>
+      )}
 
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 p-5 rounded-xl border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#0f2137] space-y-4">
@@ -388,6 +500,12 @@ const AdminProductManagement = () => {
             <input value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})} placeholder="Category" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
             <input value={formData.brand} onChange={(e) => setFormData({...formData, brand: e.target.value})} placeholder="Brand (optional)" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
             <input value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} type="number" min="0" step="0.01" placeholder="Price" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
+            {showCosts && (
+              <>
+                <input value={formData.cost_price} onChange={(e) => setFormData({...formData, cost_price: e.target.value})} type="number" min="0" step="0.01" placeholder="Cost (admin only)" aria-label="Cost price" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
+                <input value={formData.supplier} onChange={(e) => setFormData({...formData, supplier: e.target.value})} placeholder="Supplier (admin only)" aria-label="Supplier" maxLength={120} className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
+              </>
+            )}
             <input value={formData.stock_quantity} onChange={(e) => setFormData({...formData, stock_quantity: e.target.value})} type="number" min="0" step="1" placeholder="Stock" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
             <div
               onClick={() => fileInputRef.current?.click()}
@@ -521,6 +639,19 @@ const AdminProductManagement = () => {
             {c}
           </button>
         ))}
+        {!loading && (
+          <button
+            onClick={() => { setShowArchived((v) => !v); setCategoryFilter('All'); setPage(1); }}
+            aria-pressed={showArchived}
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition ml-auto ${
+              showArchived
+                ? 'bg-indigo-600 text-white'
+                : 'bg-white dark:bg-[#162d4a] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#1e3a5f] border border-gray-200 dark:border-[#1e3a5f]'
+            }`}
+          >
+            Archived ({archivedItems.length})
+          </button>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-3 mb-4 items-end">
@@ -553,7 +684,7 @@ const AdminProductManagement = () => {
         rows={displayed}
         rowKey={(p) => p.prod_id}
         loading={loading}
-        colSpan={7}
+        colSpan={showCosts ? 9 : 7}
         sortKey={sortKey}
         sortDir={sortDir}
         onSort={handleSort}
@@ -574,6 +705,11 @@ const AdminProductManagement = () => {
                   PHP {formatPesos(Number(item.price || 0))}
                   <span className="ml-1.5">· {item.category} · Stock {item.stock_quantity}</span>
                 </div>
+                {showCosts && item.cost_price != null && (
+                  <div className="text-xs text-gray-500 dark:text-slate-400">
+                    Cost PHP {formatPesos(Number(item.cost_price))} · Margin {formatMargin(item.price, item.cost_price)}
+                  </div>
+                )}
               </div>
               <StatusPill kind={productBadge(item).kind}>
                 {productBadge(item).label}
@@ -583,7 +719,15 @@ const AdminProductManagement = () => {
               <button onClick={() => openMobileEdit(item)} className="px-2 py-1 rounded bg-yellow-400 text-black text-[10px] font-bold">Edit</button>
               <button onClick={() => adjustStock(item, -1)} className="px-2 py-1 rounded bg-gray-100 dark:bg-[#162d4a] text-gray-700 dark:text-slate-300 text-[10px] font-bold">−1</button>
               <button onClick={() => adjustStock(item, +1)} className="px-2 py-1 rounded bg-gray-100 dark:bg-[#162d4a] text-gray-700 dark:text-slate-300 text-[10px] font-bold">+1</button>
-              <button onClick={() => setDeleteTarget(item)} className="px-2 py-1 rounded bg-red-600 text-white text-[10px] font-bold ml-auto">Delete</button>
+              <button onClick={() => loadHistory(item)} className="px-2 py-1 rounded bg-gray-100 dark:bg-[#162d4a] text-gray-700 dark:text-slate-300 text-[10px] font-bold">History</button>
+              {canLifecycle && (
+                <div className="ml-auto flex items-center gap-1.5">
+                  <button onClick={() => toggleArchive(item)} className={`px-2 py-1 rounded text-[10px] font-bold text-white ${item.archived_at ? 'bg-emerald-600' : 'bg-indigo-600'}`}>
+                    {item.archived_at ? 'Restore' : 'Archive'}
+                  </button>
+                  <button onClick={() => setDeleteTarget(item)} className="px-2 py-1 rounded bg-red-600 text-white text-[10px] font-bold">Delete</button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -602,6 +746,12 @@ const AdminProductManagement = () => {
                   Clear filters
                 </button>
               }
+            />
+          ) : showArchived ? (
+            <EmptyState
+              icon={<BsArchive />}
+              title="No archived products"
+              message="Archived products are hidden from the store but keep their order history. Use Archive on any product to retire it here."
             />
           ) : (
             <EmptyState
@@ -631,6 +781,12 @@ const AdminProductManagement = () => {
                 <input value={mobileForm.price} onChange={(e) => setMobileForm({...mobileForm, price: e.target.value})} type="number" min="0" step="0.01" placeholder="Price" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
                 <input value={mobileForm.stock_quantity} onChange={(e) => setMobileForm({...mobileForm, stock_quantity: e.target.value})} type="number" min="0" step="1" placeholder="Stock" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
               </div>
+              {showCosts && (
+                <div className="grid grid-cols-2 gap-3">
+                  <input value={mobileForm.cost_price} onChange={(e) => setMobileForm({...mobileForm, cost_price: e.target.value})} type="number" min="0" step="0.01" placeholder="Cost (admin)" aria-label="Cost price" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
+                  <input value={mobileForm.supplier} onChange={(e) => setMobileForm({...mobileForm, supplier: e.target.value})} placeholder="Supplier (admin)" aria-label="Supplier" maxLength={120} className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
+                </div>
+              )}
               <div
                 onClick={() => mobileFileRef.current?.click()}
                 onDragOver={(e) => { e.preventDefault(); setMobileDragging(true); }}
@@ -719,6 +875,67 @@ const AdminProductManagement = () => {
             </form>
           </div>
           <form method="dialog" className="modal-backdrop"><button onClick={() => setMobileEditItem(null)}>close</button></form>
+        </dialog>
+      )}
+
+      {/* Price History Dialog */}
+      {historyTarget && (
+        <dialog className="modal modal-open" aria-label="Price History">
+          <div className="modal-box max-w-md bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] p-0 gap-0">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#1e3a5f]">
+              <div className="min-w-0">
+                <h3 className="font-bold text-gray-900 dark:text-slate-100 text-sm">Price History</h3>
+                <p className="text-xs text-gray-500 dark:text-slate-400 truncate">{historyTarget.prod_name}</p>
+              </div>
+              <button onClick={() => setHistoryTarget(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 text-lg leading-none" aria-label="Close">&times;</button>
+            </div>
+            <div className="p-4">
+              {historyRows === null && !historyError && (
+                <div className="space-y-2" aria-live="polite">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="h-10 rounded-lg bg-gray-100 dark:bg-[#162d4a] animate-pulse" aria-hidden="true" />
+                  ))}
+                </div>
+              )}
+              {historyError && (
+                <div className="text-sm">
+                  <p className="text-red-600 dark:text-red-400 mb-3" role="alert">{historyError}</p>
+                  <button
+                    type="button"
+                    onClick={() => loadHistory(historyTarget)}
+                    className="px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest bg-[#0b2e59] dark:bg-yellow-500 text-white dark:text-gray-900 hover:bg-[#15407a] dark:hover:bg-yellow-400 transition"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+              {historyRows !== null && !historyError && historyRows.length === 0 && (
+                <p className="text-sm text-gray-500 dark:text-slate-400">No price changes recorded yet.</p>
+              )}
+              {historyRows !== null && !historyError && historyRows.length > 0 && (
+                <ul className="divide-y divide-gray-100 dark:divide-[#1e3a5f]/50">
+                  {historyRows.map((row, i) => (
+                    <li key={`${row.created_at}-${i}`} className="py-2.5 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-gray-900 dark:text-slate-100">
+                          {row.old_price != null
+                            ? <>PHP {formatPesos(Number(row.old_price))} <span className="text-gray-400 dark:text-slate-500">→</span> PHP {formatPesos(Number(row.new_price))}</>
+                            : <>First listed at PHP {formatPesos(Number(row.new_price))}</>}
+                        </div>
+                        <div className="text-[11px] text-gray-500 dark:text-slate-400 truncate">
+                          {row.changed_by || 'Unknown user'}
+                        </div>
+                      </div>
+                      <time className="text-[11px] text-gray-400 dark:text-slate-500 whitespace-nowrap" dateTime={row.created_at}>
+                        {new Date(row.created_at).toLocaleString()}
+                      </time>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+          <form method="dialog" className="modal-backdrop"><button onClick={() => setHistoryTarget(null)}>close</button></form>
         </dialog>
       )}
 

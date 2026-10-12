@@ -21,6 +21,19 @@ export const ADMIN_NAV = [
 // staff land here when they hit an admin-only page
 export const STAFF_FALLBACK = '/admin/orders'
 
+// costing data (cost price, margin, supplier) is admin-only: staff manage
+// products but must never see purchasing data. Server enforces the same split
+// (admin.js strips cost fields from every non-admin response).
+export function canSeeCosts(role) {
+  return role === 'admin'
+}
+
+// product lifecycle (create, archive, delete) is admin-only per the same
+// matrix; staff edit text/images/price/stock on existing products.
+export function canManageProductLifecycle(role) {
+  return role === 'admin'
+}
+
 export function canSeeNav(item, role) {
   return item.roles.includes(role)
 }

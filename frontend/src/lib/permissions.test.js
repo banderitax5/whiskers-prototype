@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { describe, it, expect } from 'vitest';
-import { ADMIN_NAV, canSeeNav, ADMIN_ONLY_PAGES, STAFF_FALLBACK } from '../lib/permissions';
+import { ADMIN_NAV, canSeeNav, ADMIN_ONLY_PAGES, STAFF_FALLBACK, canSeeCosts, canManageProductLifecycle } from '../lib/permissions';
 
 describe('permissions - admin navigation', () => {
   it('exposes orders, payments, products, support to staff but not customers/audit-logs', () => {
@@ -46,5 +46,16 @@ describe('permissions - role redirects', () => {
     expect(ADMIN_ONLY_PAGES).not.toContain('/orders');
     expect(ADMIN_ONLY_PAGES).not.toContain('/payments');
     expect(ADMIN_ONLY_PAGES).not.toContain('/products');
+  });
+});
+
+describe('permissions - costing and lifecycle gates', () => {
+  it('shows costs and lifecycle actions to admin only', () => {
+    expect(canSeeCosts('admin')).toBe(true);
+    expect(canSeeCosts('staff')).toBe(false);
+    expect(canSeeCosts('user')).toBe(false);
+    expect(canManageProductLifecycle('admin')).toBe(true);
+    expect(canManageProductLifecycle('staff')).toBe(false);
+    expect(canManageProductLifecycle('user')).toBe(false);
   });
 });

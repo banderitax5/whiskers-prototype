@@ -14,8 +14,11 @@ function Step($name, $ok, $detail = '', $tag = '') {
   if (-not $tag) { $tag = if ($ok) { 'PASS' } else { 'FAIL' } }
   $results.Add("[$tag] $name$(if ($detail) { " - $detail" })")
 }
-function Get-ErrBody($resp) {
-  try { $s = $resp.GetResponseStream(); $r = New-Object IO.StreamReader($s); return $r.ReadToEnd() } catch { return '' }
+function Get-ErrBody($er) {
+  # PS 5.1 buffers the response body into ErrorDetails by the time a catch
+  # block runs, so the response stream is already at EOF - try it first.
+  if ($er.ErrorDetails -and $er.ErrorDetails.Message) { return $er.ErrorDetails.Message }
+  try { $s = $er.Exception.Response.GetResponseStream(); $r = New-Object IO.StreamReader($s); return $r.ReadToEnd() } catch { return '' }
 }
 
 # â”€â”€ 1. create throwaway user â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -27,7 +30,7 @@ try {
     -ContentType 'application/json' `
     -Body (@{ email = $email; password = $pw; email_confirm = $true } | ConvertTo-Json -Compress)
   Step 'create user' $true $u.id
-} catch { Step 'create user' ($false) (Get-ErrBody $_.Exception.Response); $results; exit 1 }
+} catch { Step 'create user' ($false) (Get-ErrBody $_); $results; exit 1 }
 $uid = $u.id
 
 # â”€â”€ 2. sign in â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -36,7 +39,7 @@ try {
     -Headers @{ apikey = $AK } -ContentType 'application/json' `
     -Body (@{ email = $email; password = $pw } | ConvertTo-Json -Compress)
   Step 'password grant' $true
-} catch { Step 'password grant' ($false) (Get-ErrBody $_.Exception.Response); $results; exit 1 }
+} catch { Step 'password grant' ($false) (Get-ErrBody $_); $results; exit 1 }
 $AT = $tok.access_token
 $authH = @{ Authorization = "Bearer $AT" }
 
@@ -52,7 +55,7 @@ try {
   $order = Invoke-RestMethod -Uri "$base/api/orders" -Method Post -Headers $authH -ContentType 'application/json' `
     -Body (@{ items = @(@{ productId = $prodId; quantity = 1 }); paymentMethod = 'GCash'; shippingFee = 75; customerName = 'E2E Probe'; phone = '09171234567'; address = '1 Test Street' } | ConvertTo-Json -Depth 5 -Compress)
   Step 'place order' $true $order.order_id
-} catch { Step 'place order' ($false) (Get-ErrBody $_.Exception.Response); $results; exit 1 }
+} catch { Step 'place order' ($false) (Get-ErrBody $_); $results; exit 1 }
 $orderId = $order.order_id
 
 # stock decremented?
@@ -70,12 +73,12 @@ try {
   $fb = Invoke-RestMethod -Uri "$base/api/feedback" -Method Post -Headers $authH -ContentType 'application/json' `
     -Body (@{ orderId = $orderId; items = @(@{ prodId = $prodId; rating = 5; comments = 'Probe five stars' }) } | ConvertTo-Json -Depth 5 -Compress)
   Step 'feedback insert' ($fb.inserted -eq 1 -and $fb.updated -eq 0) "inserted=$($fb.inserted) updated=$($fb.updated)"
-} catch { Step 'feedback insert' ($false) (Get-ErrBody $_.Exception.Response) }
+} catch { Step 'feedback insert' ($false) (Get-ErrBody $_) }
 try {
   $fb2 = Invoke-RestMethod -Uri "$base/api/feedback" -Method Post -Headers $authH -ContentType 'application/json' `
     -Body (@{ orderId = $orderId; items = @(@{ prodId = $prodId; rating = 4; comments = 'Changed my mind' }) } | ConvertTo-Json -Depth 5 -Compress)
   Step 'feedback upsert update' ($fb2.inserted -eq 0 -and $fb2.updated -eq 1) "inserted=$($fb2.inserted) updated=$($fb2.updated)"
-} catch { Step 'feedback upsert update' ($false) (Get-ErrBody $_.Exception.Response) }
+} catch { Step 'feedback upsert update' ($false) (Get-ErrBody $_) }
 
 $fbList = Invoke-RestMethod -Uri "$base/api/feedback?orderId=$orderId" -Headers $authH
 Step 'feedback GET rating=4' (@($fbList.items).Count -eq 1 -and [int]$fbList.items[0].rating -eq 4) "count=$(@($fbList.items).Count)"
@@ -106,7 +109,7 @@ try {
     -Body (@{ message = 'My order is taking long, can you check?' } | ConvertTo-Json -Compress)
   Step 'support POST' ([bool]$sup.item.support_id) $sup.item.support_id
   $supId = $sup.item.support_id
-} catch { Step 'support POST' ($false) (Get-ErrBody $_.Exception.Response); $supId = $null }
+} catch { Step 'support POST' ($false) (Get-ErrBody $_); $supId = $null }
 try {
   Invoke-RestMethod -Uri "$base/api/support" -Method Post -Headers $authH -ContentType 'application/json' -Body (@{ message = '' } | ConvertTo-Json -Compress)
   Step 'support rejects empty' $false 'got 2xx'
@@ -119,7 +122,7 @@ try {
   $sup2 = Invoke-RestMethod -Uri "$base/api/support" -Method Post -Headers $authH -ContentType 'application/json' `
     -Body (@{ message = 'Follow-up: the box arrived damaged' } | ConvertTo-Json -Compress)
   Step 'support replace thread' ($sup2.item.support_id -eq $uid -and $sup2.item.message -like 'Follow-up*') "replaced=$($sup2.replaced)"
-} catch { Step 'support replace thread' ($false) (Get-ErrBody $_.Exception.Response) }
+} catch { Step 'support replace thread' ($false) (Get-ErrBody $_) }
 $supList2 = Invoke-RestMethod -Uri "$base/api/support" -Headers $authH
 Step 'support GET single thread' (@($supList2.items).Count -eq 1 -and $supList2.items[0].message -like 'Follow-up*') "count=$(@($supList2.items).Count)"
 
@@ -130,7 +133,7 @@ if (@($prof).Count -eq 0) {
     Invoke-RestMethod -Uri "$SU/rest/v1/profiles" -Method Post -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' `
       -Body (@{ id = $uid; role = 'user' } | ConvertTo-Json -Compress) | Out-Null
     Step 'profiles row created' $true
-  } catch { Step 'profiles row created' ($false) (Get-ErrBody $_.Exception.Response) }
+  } catch { Step 'profiles row created' ($false) (Get-ErrBody $_) }
 } else { Step 'profiles row exists' $true $prof[0].role }
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' `
   -Body (@{ role = 'admin' } | ConvertTo-Json -Compress) | Out-Null
@@ -139,7 +142,7 @@ try {
   $adminSup = Invoke-RestMethod -Uri "$base/api/admin/supports?pageSize=100" -Headers $authH
   $mine = $adminSup.items | Where-Object { $_.support_id -eq $supId }
   Step 'admin supports GET' (($adminSup.total -ge 1) -and [bool]$mine) "total=$($adminSup.total)"
-} catch { Step 'admin supports GET' ($false) (Get-ErrBody $_.Exception.Response) }
+} catch { Step 'admin supports GET' ($false) (Get-ErrBody $_) }
 
 # PATCH reply must hit step-up gate (403 without re-auth) â€” expected block
 try {
@@ -159,7 +162,7 @@ try {
   # window is an environment limit, not a product failure, so report it as skipped
   $st = $_.Exception.Response.StatusCode.value__
   if ($st -eq 429) { Step 'step-up issues token' $false 'rate limited by an earlier run in the 15-minute window' 'SKIP' }
-  else { Step 'step-up issues token' $false (Get-ErrBody $_.Exception.Response) }
+  else { Step 'step-up issues token' $false (Get-ErrBody $_) }
   $stepUpH = $null
 }
 try {
@@ -177,11 +180,11 @@ if ($stepUpH) {
     $reply = Invoke-RestMethod -Uri "$base/api/admin/supports/$supId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
       -Body (@{ response = 'We are checking your order now.' } | ConvertTo-Json -Compress)
     Step 'admin reply succeeds with step-up' ([bool]$reply.item.support_id) $reply.item.support_id
-  } catch { Step 'admin reply succeeds with step-up' $false (Get-ErrBody $_.Exception.Response) }
+  } catch { Step 'admin reply succeeds with step-up' $false (Get-ErrBody $_) }
   try {
     $supCheck = Invoke-RestMethod -Uri "$base/api/support" -Headers $authH
     Step 'step-up reply persisted' ($supCheck.items[0].response -eq 'We are checking your order now.') "response=$($supCheck.items[0].response)"
-  } catch { Step 'step-up reply persisted' $false (Get-ErrBody $_.Exception.Response) }
+  } catch { Step 'step-up reply persisted' $false (Get-ErrBody $_) }
 } else {
   Step 'admin reply succeeds with step-up' $false 'skipped: step-up was rate limited' 'SKIP'
   Step 'step-up reply persisted' $false 'skipped: step-up was rate limited' 'SKIP'
@@ -191,7 +194,7 @@ if ($stepUpH) {
 try {
   $stats = Invoke-RestMethod -Uri "$base/api/admin/stats" -Headers $authH
   Step 'admin stats GET' ([int]$stats.totalUsers -gt 0) "users=$($stats.totalUsers) sales=$($stats.totalSales)"
-} catch { Step 'admin stats GET' ($false) (Get-ErrBody $_.Exception.Response) }
+} catch { Step 'admin stats GET' ($false) (Get-ErrBody $_) }
 
 # product information sections: create with sections, read back, validate, clean up
 # (all non-GET admin routes sit behind the step-up gate, so writes use $stepUpH)
@@ -200,8 +203,9 @@ if (-not $stepUpH) {
   Step 'details: admin create with sections' $false 'skipped: step-up was rate limited' 'SKIP'
 } else {
   try {
+    $probeName = "E2E Info Probe $([guid]::NewGuid().ToString('N').Substring(0,6))"
     $probeBody = @{
-      prod_name      = "E2E Info Probe $([guid]::NewGuid().ToString('N').Substring(0,6))"
+      prod_name      = $probeName
       category       = 'Dogs - DRY'
       price          = 1
       stock_quantity = 1
@@ -250,6 +254,140 @@ if ($probeId) {
 }
 
 
+# ── Phase 2: costings, archive, price history ──────────────────────────────
+# M2 (owner-run migration) adds cost_price/supplier/archived_at + the history
+# table. Pre-migration runs must stay green: probe the schema once, then SKIP
+# the dependent steps with an explicit reason.
+$m2Ready = $false
+$m2Reason = 'M2 migration not applied yet (owner pending)'
+try {
+  Invoke-RestMethod -Uri "$base/api/admin/products?archived=true&pageSize=1" -Headers $authH | Out-Null
+  $m2Ready = $true
+  Step 'costing: M2 schema present' $true 'archived=true query accepted'
+} catch {
+  $st = $_.Exception.Response.StatusCode.value__
+  $m2Body = Get-ErrBody $_
+  if ($st -eq 503 -and $m2Body -like '*MIGRATION_REQUIRED*') { Step 'costing: M2 schema present' $false $m2Reason 'SKIP' }
+  else { Step 'costing: M2 schema present' $false "$st $m2Body" }
+}
+
+if ($probeId) {
+  # admin writes cost + supplier, then reads them back from the admin list
+  if (-not $stepUpH) { Step 'costing: admin writes cost and supplier' $false 'skipped: step-up was rate limited' 'SKIP' }
+  elseif (-not $m2Ready) { Step 'costing: admin writes cost and supplier' $false $m2Reason 'SKIP' }
+  else {
+    try {
+      Invoke-RestMethod -Uri "$base/api/admin/products/$probeId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+        -Body (@{ cost_price = 5.5; supplier = 'E2E Supplier' } | ConvertTo-Json -Compress) | Out-Null
+      $adm = Invoke-RestMethod -Uri "$base/api/admin/products?q=$([uri]::EscapeDataString($probeName))&pageSize=5" -Headers $authH
+      $row = $adm.items | Where-Object { $_.prod_id -eq $probeId } | Select-Object -First 1
+      $costOk = ([math]::Abs([double]$row.cost_price - 5.5) -lt 0.001) -and ($row.supplier -eq 'E2E Supplier')
+      Step 'costing: admin writes cost and supplier' $costOk "cost=$($row.cost_price) supplier=$($row.supplier)"
+    } catch { Step 'costing: admin writes cost and supplier' $false (Get-ErrBody $_) }
+  }
+
+  # costing fields must never reach an unauthenticated caller (also true pre-M2)
+  try {
+    $pub = Invoke-RestMethod -Uri "$base/api/products/$probeId"
+    $leaks = ($null -ne $pub.item.cost_price) -or ($null -ne $pub.item.supplier)
+    Step 'costing: public detail hides cost' (-not $leaks) "cost leaked=$($null -ne $pub.item.cost_price)"
+  } catch { Step 'costing: public detail hides cost' $false (Get-ErrBody $_) }
+
+  # validation runs before any DB access, so this holds with or without M2
+  if (-not $stepUpH) { Step 'costing: rejects negative cost' $false 'skipped: step-up was rate limited' 'SKIP' }
+  else {
+    try {
+      Invoke-RestMethod -Uri "$base/api/admin/products/$probeId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+        -Body (@{ cost_price = -1 } | ConvertTo-Json -Compress) | Out-Null
+      Step 'costing: rejects negative cost' $false 'got 2xx'
+    } catch { Step 'costing: rejects negative cost' ($_.Exception.Response.StatusCode.value__ -eq 400) $_.Exception.Response.StatusCode.value__ }
+  }
+
+  # price changes land in product_price_history (create records null -> price)
+  if (-not $stepUpH) { Step 'costing: price history records changes' $false 'skipped: step-up was rate limited' 'SKIP' }
+  elseif (-not $m2Ready) { Step 'costing: price history records changes' $false $m2Reason 'SKIP' }
+  else {
+    try {
+      Invoke-RestMethod -Uri "$base/api/admin/products/$probeId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+        -Body (@{ price = 2 } | ConvertTo-Json -Compress) | Out-Null
+      $hist = Invoke-RestMethod -Uri "$base/api/admin/products/$probeId/price-history" -Headers $authH
+      $histItems = @($hist.items)
+      $changed = @($histItems | Where-Object { $null -ne $_.old_price -and [double]$_.old_price -eq 1 -and [double]$_.new_price -eq 2 }).Count
+      Step 'costing: price history records changes' (($histItems.Count -ge 2) -and ($changed -ge 1)) "count=$($histItems.Count) changed=$changed"
+    } catch { Step 'costing: price history records changes' $false (Get-ErrBody $_) }
+  }
+
+  # archive roundtrip: leaves the public store, shows under archived=true,
+  # comes back under archived=false after restore (restore keeps it hidden
+  # from shoppers - is_active stays false - which is the intended behavior)
+  if (-not $stepUpH) {
+    Step 'archive: product hidden from public store' $false 'skipped: step-up was rate limited' 'SKIP'
+    Step 'archive: admin archived filter roundtrip' $false 'skipped: step-up was rate limited' 'SKIP'
+  } elseif (-not $m2Ready) {
+    Step 'archive: product hidden from public store' $false $m2Reason 'SKIP'
+    Step 'archive: admin archived filter roundtrip' $false $m2Reason 'SKIP'
+  } else {
+    $archPublicOk = $false
+    $archFilterOk = $false
+    $archErr = ''
+    $probeArchived = $false
+    try {
+      Invoke-RestMethod -Uri "$base/api/admin/products/$probeId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+        -Body (@{ archived = $true } | ConvertTo-Json -Compress) | Out-Null
+      $probeArchived = $true
+      try {
+        Invoke-RestMethod -Uri "$base/api/products/$probeId" | Out-Null
+        $archErr = 'public detail still returned the archived product'
+      } catch { $archPublicOk = ($_.Exception.Response.StatusCode.value__ -eq 404) }
+      $archQ = [uri]::EscapeDataString($probeName)
+      $inArch = Invoke-RestMethod -Uri "$base/api/admin/products?archived=true&q=$archQ&pageSize=5" -Headers $authH
+      $archRow = $inArch.items | Where-Object { $_.prod_id -eq $probeId } | Select-Object -First 1
+      Invoke-RestMethod -Uri "$base/api/admin/products/$probeId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+        -Body (@{ archived = $false } | ConvertTo-Json -Compress) | Out-Null
+      $probeArchived = $false
+      $stillArch = Invoke-RestMethod -Uri "$base/api/admin/products?archived=true&q=$archQ&pageSize=5" -Headers $authH
+      $backList = Invoke-RestMethod -Uri "$base/api/admin/products?archived=false&q=$archQ&pageSize=5" -Headers $authH
+      $back = $backList.items | Where-Object { $_.prod_id -eq $probeId } | Select-Object -First 1
+      $stillGone = @($stillArch.items | Where-Object { $_.prod_id -eq $probeId }).Count -eq 0
+      $archFilterOk = ($null -ne $archRow) -and $stillGone -and ($null -ne $back) -and ($null -eq $back.archived_at)
+      if (-not $archFilterOk -and -not $archErr) { $archErr = 'archived=true/false filter mismatch after roundtrip' }
+    } catch { $archErr = Get-ErrBody $_ }
+    finally {
+      # never leave the probe archived for later steps if a check blew up
+      if ($probeArchived) {
+        try {
+          Invoke-RestMethod -Uri "$base/api/admin/products/$probeId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+            -Body (@{ archived = $false } | ConvertTo-Json -Compress) | Out-Null
+        } catch { }
+      }
+    }
+    Step 'archive: product hidden from public store' $archPublicOk $archErr
+    Step 'archive: admin archived filter roundtrip' $archFilterOk $archErr
+  }
+
+  # an ordered product must refuse deletion with a friendly 409 (FK NO ACTION)
+  if (-not $stepUpH) { Step 'delete: ordered product returns 409' $false 'skipped: step-up was rate limited' 'SKIP' }
+  else {
+    $delOk = $false
+    $delErr = ''
+    try {
+      Invoke-RestMethod -Uri "$base/api/admin/products/$prodId" -Method Delete -Headers $stepUpH | Out-Null
+      $delErr = 'got 2xx - the ordered product was deleted!'
+    } catch {
+      $delSt = $_.Exception.Response.StatusCode.value__
+      $delBody = Get-ErrBody $_
+      $delOk = ($delSt -eq 409) -and ($delBody -like '*HAS_ORDER_HISTORY*')
+      if (-not $delOk) { $delErr = "$delSt $delBody" }
+    }
+    # zero-mutation check: the row must survive the refused delete
+    if ($delOk) {
+      try { Invoke-RestMethod -Uri "$base/api/products/$prodId" | Out-Null } catch { $delOk = $false; $delErr = 'product missing after refused delete' }
+    }
+    Step 'delete: ordered product returns 409' $delOk $delErr
+  }
+}
+
+
 # ── 9. staff role: allowed reads vs admin-only reads ──
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' `
   -Body (@{ role = 'staff' } | ConvertTo-Json -Compress) | Out-Null
@@ -257,14 +395,14 @@ Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers 
 try {
   $me = Invoke-RestMethod -Uri "$base/api/me/role" -Headers $authH
   Step 'me/role reports staff' ($me.role -eq 'staff') "role=$($me.role)"
-} catch { Step 'me/role reports staff' $false (Get-ErrBody $_.Exception.Response) }
+} catch { Step 'me/role reports staff' $false (Get-ErrBody $_) }
 
 $staffAllowed = @('admin/orders?pageSize=1', 'admin/products?pageSize=1', 'admin/payments?pageSize=1', 'admin/supports?pageSize=1')
 foreach ($ep in $staffAllowed) {
   try {
     Invoke-RestMethod -Uri "$base/api/$ep" -Headers $authH | Out-Null
     Step "staff GET $ep" $true
-  } catch { Step "staff GET $ep" $false (Get-ErrBody $_.Exception.Response) }
+  } catch { Step "staff GET $ep" $false (Get-ErrBody $_) }
 }
 
 foreach ($ep in @('admin/stats', 'admin/customers?pageSize=1', 'admin/audit-logs')) {
@@ -272,6 +410,57 @@ foreach ($ep in @('admin/stats', 'admin/customers?pageSize=1', 'admin/audit-logs
     Invoke-RestMethod -Uri "$base/api/$ep" -Headers $authH | Out-Null
     Step "staff denied $ep" $false 'got 2xx'
   } catch { Step "staff denied $ep" ($_.Exception.Response.StatusCode.value__ -eq 403) $_.Exception.Response.StatusCode.value__ }
+}
+
+# Phase 2 staff boundaries: costing/lifecycle writes are admin-only; reads stay
+# staff-legal (cost fields are stripped from every staff-facing product list)
+if ($probeId) {
+  try {
+    $staffQ = [uri]::EscapeDataString($probeName)
+    $slist = Invoke-RestMethod -Uri "$base/api/admin/products?q=$staffQ&pageSize=5" -Headers $authH
+    $srow = $slist.items | Where-Object { $_.prod_id -eq $probeId } | Select-Object -First 1
+    $staffLeak = ($null -ne $srow.cost_price) -or ($null -ne $srow.supplier)
+    Step 'staff GET strips cost fields' (-not $staffLeak) "cost leaked=$($null -ne $srow.cost_price)"
+  } catch { Step 'staff GET strips cost fields' $false (Get-ErrBody $_) }
+
+  # step-up header is still required to get past the router gate; the expected
+  # failure is the route-level admin check, not STEP_UP_REQUIRED
+  if (-not $stepUpH) { Step 'staff PATCH cost denied 403' $false 'skipped: step-up was rate limited' 'SKIP' }
+  else {
+    try {
+      Invoke-RestMethod -Uri "$base/api/admin/products/$probeId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+        -Body (@{ cost_price = 9 } | ConvertTo-Json -Compress) | Out-Null
+      Step 'staff PATCH cost denied 403' $false 'got 2xx'
+    } catch {
+      $spBody = Get-ErrBody $_
+      Step 'staff PATCH cost denied 403' (($_.Exception.Response.StatusCode.value__ -eq 403) -and ($spBody -like '*Admin access required*')) $spBody
+    }
+  }
+
+  if (-not $stepUpH) { Step 'staff POST product denied 403' $false 'skipped: step-up was rate limited' 'SKIP' }
+  else {
+    try {
+      Invoke-RestMethod -Uri "$base/api/admin/products" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+        -Body (@{ prod_name = 'E2E Staff Must Not Create'; category = 'Dogs - DRY'; price = 1; stock_quantity = 1 } | ConvertTo-Json -Compress) | Out-Null
+      Step 'staff POST product denied 403' $false 'got 2xx'
+    } catch { Step 'staff POST product denied 403' ($_.Exception.Response.StatusCode.value__ -eq 403) $_.Exception.Response.StatusCode.value__ }
+  }
+
+  if (-not $stepUpH) { Step 'staff DELETE product denied 403' $false 'skipped: step-up was rate limited' 'SKIP' }
+  else {
+    try {
+      Invoke-RestMethod -Uri "$base/api/admin/products/$probeId" -Method Delete -Headers $stepUpH | Out-Null
+      Step 'staff DELETE product denied 403' $false 'got 2xx'
+    } catch { Step 'staff DELETE product denied 403' ($_.Exception.Response.StatusCode.value__ -eq 403) $_.Exception.Response.StatusCode.value__ }
+  }
+
+  if (-not $m2Ready) { Step 'staff price-history readable' $false $m2Reason 'SKIP' }
+  else {
+    try {
+      $sh = Invoke-RestMethod -Uri "$base/api/admin/products/$probeId/price-history" -Headers $authH
+      Step 'staff price-history readable' ($null -ne $sh.items) "count=$(@($sh.items).Count)"
+    } catch { Step 'staff price-history readable' $false (Get-ErrBody $_) }
+  }
 }
 
 # â”€â”€ 10. cleanup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -291,13 +480,13 @@ if ($probeId) {
   try {
     Invoke-RestMethod -Uri "$SU/rest/v1/product?prod_id=eq.$probeId" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
     Step 'details: probe product deleted' $true $probeId
-  } catch { Step 'details: probe product deleted' $false (Get-ErrBody $_.Exception.Response) }
+  } catch { Step 'details: probe product deleted' $false (Get-ErrBody $_) }
 }
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
 try {
   Invoke-RestMethod -Uri "$SU/auth/v1/admin/users/$uid" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
   Step 'auth user deleted' $true
-} catch { Step 'auth user deleted' ($false) (Get-ErrBody $_.Exception.Response) }
+} catch { Step 'auth user deleted' ($false) (Get-ErrBody $_) }
 Write-Output '---- E2E RESULTS ----'
 $results | ForEach-Object { Write-Output $_ }
 $pass = @($results | Where-Object { $_.StartsWith('[PASS]') }).Count

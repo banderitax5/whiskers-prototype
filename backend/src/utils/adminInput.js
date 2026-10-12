@@ -5,10 +5,24 @@ export const MAX_PRICE_PHP = 10_000_000
 const MAX_NAME = 200
 const MAX_CATEGORY = 120
 const MAX_BRAND = 120
+const MAX_SUPPLIER = 120
 const MAX_URL = 1000
 
 function asTrimmedString(value) {
   return typeof value === 'string' ? value.trim() : null
+}
+
+// validates an optional money field (cost_price): undefined/null/'' all mean
+// "no value" and stay null; anything else must be a finite number in range.
+// returns { error } or { value }.
+function sanitizeOptionalMoney(value, label) {
+  if (value === undefined || value === null || value === '') return { value: null }
+  if (typeof value === 'boolean') return { error: `${label} must be a number` }
+  const num = Number(value)
+  if (!Number.isFinite(num) || num < 0 || num > MAX_PRICE_PHP) {
+    return { error: `${label} must be a number between 0 and ${MAX_PRICE_PHP.toLocaleString('en-US')}` }
+  }
+  return { value: num }
 }
 
 // validates a product payload for create. returns { error } or { value }
@@ -41,6 +55,11 @@ export function sanitizeProductCreate(body) {
   const brand = asTrimmedString(body.brand)
   if (brand && brand.length > MAX_BRAND) return { error: `Brand must be ${MAX_BRAND} characters or fewer` }
 
+  const cost = sanitizeOptionalMoney(body.cost_price, 'Cost price')
+  if (cost.error) return cost
+  const supplier = asTrimmedString(body.supplier)
+  if (supplier && supplier.length > MAX_SUPPLIER) return { error: `Supplier must be ${MAX_SUPPLIER} characters or fewer` }
+
   if (body.description != null && typeof body.description !== 'string') {
     return { error: 'Description must be text' }
   }
@@ -48,24 +67,29 @@ export function sanitizeProductCreate(body) {
     return { error: 'Image URL must be text' }
   }
 
-  return {
-    value: {
-      prod_name,
-      category,
-      brand: brand || null,
-      price,
-      stock_quantity: stock,
-      is_active: body.is_active ?? true,
-      image_url: body.image_url ? String(body.image_url).trim().slice(0, MAX_URL) || null : null,
-      description: body.description ? body.description.trim().slice(0, 2000) : null,
-    },
+  const value = {
+    prod_name,
+    category,
+    brand: brand || null,
+    price,
+    stock_quantity: stock,
+    is_active: body.is_active ?? true,
+    image_url: body.image_url ? String(body.image_url).trim().slice(0, MAX_URL) || null : null,
+    description: body.description ? body.description.trim().slice(0, 2000) : null,
   }
+  // cost/supplier are only added to the insert when actually provided, so a
+  // create without costing data works against a database that has not run M2 yet
+  if (body.cost_price !== undefined && body.cost_price !== null && body.cost_price !== '') {
+    value.cost_price = cost.value
+  }
+  if (supplier) value.supplier = supplier
+  return { value }
 }
 
 // validates a partial product update. returns { error } or { updates }.
 // `details` is passed through untouched here; the route runs sanitizeDetails.
 export function sanitizeProductPatch(body) {
-  const allowed = ['prod_name', 'category', 'brand', 'price', 'stock_quantity', 'image_url', 'is_active', 'description', 'details']
+  const allowed = ['prod_name', 'category', 'brand', 'price', 'stock_quantity', 'image_url', 'is_active', 'description', 'details', 'cost_price', 'supplier']
   const updates = {}
   for (const key of allowed) {
     if (body?.[key] !== undefined) updates[key] = body[key]
@@ -127,6 +151,21 @@ export function sanitizeProductPatch(body) {
     }
     updates.description = updates.description ? updates.description.trim().slice(0, 2000) : null
   }
+  if ('cost_price' in updates) {
+    const cost = sanitizeOptionalMoney(updates.cost_price, 'Cost price')
+    if (cost.error) return cost
+    updates.cost_price = cost.value // null clears the cost
+  }
+  if ('supplier' in updates) {
+    if (updates.supplier === null) {
+      updates.supplier = null
+    } else {
+      const supplier = asTrimmedString(updates.supplier)
+      if (!supplier) updates.supplier = null
+      else if (supplier.length > MAX_SUPPLIER) return { error: `Supplier must be ${MAX_SUPPLIER} characters or fewer` }
+      else updates.supplier = supplier
+    }
+  }
   return { updates }
 }
 
@@ -141,16 +180,19 @@ const PRODUCT_SORTS = {
   stock_desc: { column: 'stock_quantity', ascending: false },
 }
 
-// parses ?q=&category=&brand=&active=&sort= for the admin product list.
-// pagination parsing stays with the route's parsePagination.
+// parses ?q=&category=&brand=&active=&archived=&sort= for the admin product list.
+// archived: 'false' (default, hides archived rows), 'true' (archived only),
+// 'all' (no archived filter). pagination stays with the route's parsePagination.
 export function parseProductListQuery(query) {
   const q = typeof query.q === 'string' ? query.q.trim().slice(0, 100) : ''
   const category = typeof query.category === 'string' ? query.category.trim().slice(0, 120) : ''
   const brand = typeof query.brand === 'string' ? query.brand.trim().slice(0, 120) : ''
   let active = null
   if (query.active === 'true' || query.active === 'false') active = query.active === 'true'
+  let archived = 'false'
+  if (query.archived === 'true' || query.archived === 'all') archived = query.archived
   const sort = PRODUCT_SORTS[query.sort] || PRODUCT_SORTS.newest
-  return { q, category, brand, active, sort }
+  return { q, category, brand, active, archived, sort }
 }
 
 // escapes ILIKE wildcards so a user-typed % cannot turn into match-everything

@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { supabaseAdmin } from '../config/supabase.js'
 import { productLimiter } from '../middleware/rateLimiter.js'
 import { isUuid } from '../utils/uuid.js'
+import { missingColumnOf } from '../utils/pgErrors.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -41,36 +42,52 @@ router.get('/', async (req, res) => {
     const from = (pg - 1) * ps
     const to = from + ps - 1
 
-    let query = supabaseAdmin
-      .from('product')
-      .select('*', { count: 'exact' })
-      .eq('is_active', true)
-      .order('prod_name', { ascending: true })
-      .range(from, to)
+    // explicit column list (never *): image_data and the costing columns must
+    // not leave through the public API. description/details shed on a database
+    // that has not run their migration, same as the detail endpoint below.
+    let columns = [...PUBLIC_COLUMNS]
+    let result = null
+    for (;;) {
+      let query = supabaseAdmin
+        .from('product')
+        .select(columns.join(', '), { count: 'exact' })
+        .eq('is_active', true)
+        .order('prod_name', { ascending: true })
+        .range(from, to)
 
-    if (category && typeof category === 'string' && category.length <= 100) {
-      query = query.eq('category', category)
-    }
-    if (brand && typeof brand === 'string' && brand.length <= 100) {
-      query = query.ilike('brand', brand)
-    }
-    const sanitized = sanitizeSearch(search)
-    if (sanitized) {
-      query = query.ilike('prod_name', `%${sanitized}%`)
-    }
-    const min = parsePrice(minPrice)
-    const max = parsePrice(maxPrice)
-    if (min != null) query = query.gte('price', min)
-    if (max != null) query = query.lte('price', max)
+      if (category && typeof category === 'string' && category.length <= 100) {
+        query = query.eq('category', category)
+      }
+      if (brand && typeof brand === 'string' && brand.length <= 100) {
+        query = query.ilike('brand', brand)
+      }
+      const sanitized = sanitizeSearch(search)
+      if (sanitized) {
+        query = query.ilike('prod_name', `%${sanitized}%`)
+      }
+      const min = parsePrice(minPrice)
+      const max = parsePrice(maxPrice)
+      if (min != null) query = query.gte('price', min)
+      if (max != null) query = query.lte('price', max)
 
-    const { data, error, count } = await query
-    if (error) throw error
+      try {
+        const { data, error, count } = await query
+        if (error) throw error
+        result = { data, count }
+        break
+      } catch (err) {
+        const optional = columns.filter((c) => OPTIONAL_COLUMNS.includes(c))
+        const missing = optional.length ? missingColumnOf(err, optional) : null
+        if (!missing || !columns.includes(missing)) throw err
+        columns = columns.filter((c) => c !== missing)
+      }
+    }
 
     res.json({
-      items: data || [],
+      items: result?.data || [],
       page: pg,
       pageSize: ps,
-      total: count ?? 0,
+      total: result?.count ?? 0,
     })
   } catch (err) {
     logger.error({ err: err.message }, 'Products fetch error')
@@ -110,27 +127,23 @@ router.get('/brands', async (req, res) => {
   }
 })
 
-// explicit columns only: image_data is bytea and would come back as a huge hex
-// string, so it is never selected (no product currently uses it anyway)
-const BASE_COLUMNS = [
+// explicit columns only: the public API never exposes image_data (bytea) or
+// the Phase 2 costing columns (cost_price/supplier/archived_at), even though
+// the anon key + table grants would otherwise make them reachable.
+// columns added by later migrations sit in OPTIONAL_COLUMNS; the endpoints
+// shed them and retry so a pending migration degrades the payload instead of
+// 500-ing (see backend/migrations/2026-10-11_product_description_and_rls.sql
+// and backend/migrations/2026-10-11_product_info_sections.sql)
+const REQUIRED_COLUMNS = [
   'prod_id', 'prod_name', 'category', 'brand', 'price',
   'stock_quantity', 'image_url', 'is_active', 'created_at',
 ]
-// columns added by later migrations. The endpoint tolerates their absence so the
-// customer-facing page keeps working against a database that has not run them yet
-// (see backend/migrations/2026-10-11_product_description_and_rls.sql and
-//  backend/migrations/2026-10-11_product_info_sections.sql)
 const OPTIONAL_COLUMNS = ['description', 'details']
+const PUBLIC_COLUMNS = [...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS]
 
 // PostgREST/PGRST and plain SQL both name the offending column, but the wording
 // differs, so match either shape before deciding this is a missing-column error
-function missingColumnOf(err, candidates) {
-  const text = `${err?.message || ''} ${err?.details || ''}`
-  if (!/does not exist|could not find the .* column|PGRST204/i.test(text)) return null
-  let m = text.match(/'([^']+)' column of/i) || text.match(/column\s+(?:[\w"]+\.)?([\w"]+)\s+does not exist/i)
-  if (m && candidates.includes(m[1])) return m[1]
-  return candidates.find((c) => text.includes(c)) || candidates[0]
-}
+// (moved to utils/pgErrors.js — see missingColumnOf)
 
 // fetches the product + its related items using the given column list
 async function fetchDetail(id, columns) {
@@ -173,7 +186,7 @@ router.get('/:id', async (req, res) => {
   }
 
   try {
-    let columns = [...BASE_COLUMNS, ...OPTIONAL_COLUMNS]
+    let columns = [...PUBLIC_COLUMNS]
     let result = null
     // retry, shedding one unavailable optional column at a time, so a pending
     // migration degrades the payload instead of 500-ing the page
@@ -185,7 +198,7 @@ router.get('/:id', async (req, res) => {
         const optional = columns.filter((c) => OPTIONAL_COLUMNS.includes(c))
         const missing = optional.length ? missingColumnOf(err, optional) : null
         if (!missing || !columns.includes(missing)) throw err
-        if (columns.length <= BASE_COLUMNS.length) throw err
+        if (columns.length <= REQUIRED_COLUMNS.length) throw err
         columns = columns.filter((c) => c !== missing)
       }
     }

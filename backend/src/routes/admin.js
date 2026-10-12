@@ -14,6 +14,7 @@ import { PERIODS, windowDays, bucketPayments } from '../utils/salesBuckets.js'
 import { sanitizeDetails } from '../utils/productDetails.js'
 import { sanitizeProductCreate, sanitizeProductPatch, parseProductListQuery, escapeLike } from '../utils/adminInput.js'
 import { isUuid } from '../utils/uuid.js'
+import { missingColumnOf, isSchemaPendingError } from '../utils/pgErrors.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -59,6 +60,31 @@ function formatProfile(u) {
     lastName: decryptText(u.last_name),
     phone: decryptText(u.phone),
     role: u.role,
+  }
+}
+
+// costing fields are admin-only: staff manage products but must never see
+// cost/margin. Applied to every product response before it leaves the API.
+function stripCostFields(row) {
+  if (!row) return row
+  const { cost_price, supplier, ...rest } = row
+  return rest
+}
+
+// best-effort selling-price trail: a failed history insert is logged but never
+// fails the price change itself (the price is the source of truth; history is
+// an audit aid). old_price null = first recorded price (product create).
+async function recordPriceHistory(prodId, oldPrice, newPrice, changedBy) {
+  try {
+    const { error } = await supabaseAdmin.from('product_price_history').insert({
+      prod_id: prodId,
+      old_price: oldPrice,
+      new_price: newPrice,
+      changed_by: changedBy || null,
+    })
+    if (error) throw error
+  } catch (err) {
+    logger.error({ err, prodId }, 'price history insert failed')
   }
 }
 
@@ -414,35 +440,76 @@ router.delete('/customers/:id', requireAdmin, async (req, res) => {
 
 // GET /api/admin/products - paginated product list
 // query: ?q=name-search &category=Dogs &brand=Aozi &active=true|false
+//        &archived=false|true|all  (default false = hide archived)
 //        &sort=newest|name_asc|name_desc|price_asc|price_desc|stock_asc|stock_desc
+// costing columns (cost_price/supplier) are stripped for non-admin callers.
 router.get('/products', async (req, res) => {
   try {
     const { page, pageSize, from, to } = parsePagination(req.query)
-    const { q, category, brand, active, sort } = parseProductListQuery(req.query)
+    const { q, category, brand, active, archived, sort } = parseProductListQuery(req.query)
+    const isAdmin = req.userRole === 'admin'
 
-    let query = supabaseAdmin
-      .from('product')
-      .select('*', { count: 'exact' })
-      .order(sort.column, { ascending: sort.ascending })
-      .range(from, to)
-    if (q) {
-      query = query.or(`prod_name.ilike.%${escapeLike(q)}%,brand.ilike.%${escapeLike(q)}%`)
+    // explicit columns: never select image_data (bytea); cost/supplier/
+    // archived_at shed automatically on a database that has not run M2 yet
+    let columns = [
+      'prod_id', 'created_at', 'prod_name', 'category', 'price', 'stock_quantity',
+      'brand', 'image_url', 'is_active', 'description', 'details',
+      'archived_at', 'cost_price', 'supplier',
+    ]
+    const M2_COLUMNS = ['archived_at', 'cost_price', 'supplier']
+    let archivedFilter = archived // 'true' | 'false' | 'all'
+
+    const build = () => {
+      let query = supabaseAdmin
+        .from('product')
+        .select(columns.join(', '), { count: 'exact' })
+        .order(sort.column, { ascending: sort.ascending })
+        .range(from, to)
+      if (q) {
+        query = query.or(`prod_name.ilike.%${escapeLike(q)}%,brand.ilike.%${escapeLike(q)}%`)
+      }
+      if (category) query = query.ilike('category', `%${escapeLike(category)}%`)
+      if (brand) query = query.eq('brand', brand)
+      if (active !== null) query = query.eq('is_active', active)
+      if (archivedFilter === 'true') query = query.not('archived_at', 'is', null)
+      else if (archivedFilter === 'false') query = query.is('archived_at', null)
+      return query
     }
-    if (category) query = query.ilike('category', `%${escapeLike(category)}%`)
-    if (brand) query = query.eq('brand', brand)
-    if (active !== null) query = query.eq('is_active', active)
 
-    const { data, error, count } = await query
-    if (error) throw error
-    res.json({ items: data || [], page, pageSize, total: count ?? 0 })
+    let result = null
+    for (;;) {
+      const { data, error, count } = await build()
+      if (!error) { result = { data, count }; break }
+      // M2 columns missing: drop them from the select and retry. The default
+      // archived filter degrades to "all" (nothing can be archived before M2
+      // anyway); asking for archived rows explicitly gets a clear 503 instead.
+      const missing = missingColumnOf(error, M2_COLUMNS)
+      if (!missing) throw error
+      const colsBefore = columns.length
+      const filterBefore = archivedFilter
+      if (missing === 'archived_at') {
+        if (archivedFilter === 'true') {
+          return res.status(503).json({ error: 'Archiving requires a pending database migration (M2).', code: 'MIGRATION_REQUIRED' })
+        }
+        archivedFilter = 'all'
+      }
+      columns = columns.filter((c) => c !== missing)
+      // no progress means the error names something else entirely: rethrow
+      // instead of spinning (the helper falls back to the first candidate)
+      if (columns.length === colsBefore && archivedFilter === filterBefore) throw error
+    }
+
+    const items = (result?.data || []).map((row) => (isAdmin ? row : stripCostFields(row)))
+    res.json({ items, page, pageSize, total: result?.count ?? 0 })
   } catch (err) {
     logger.error({ err }, 'Admin products list error')
     res.status(500).json({ error: 'Server error' })
   }
 })
 
-// POST /api/admin/products
-router.post('/products', async (req, res) => {
+// POST /api/admin/products - creating products is an admin action (matrix:
+// staff edit text/images/price/stock, only admin adds or removes products)
+router.post('/products', requireAdmin, async (req, res) => {
   const { error: inputErr, value } = sanitizeProductCreate(req.body ?? {})
   if (inputErr) return res.status(400).json({ error: inputErr })
   const sanitizedDetails = sanitizeDetails(req.body?.details)
@@ -453,9 +520,16 @@ router.post('/products', async (req, res) => {
       .insert({ ...value, details: sanitizedDetails.value })
       .select()
       .single()
-    if (error) throw error
+    if (error) {
+      if (isSchemaPendingError(error)) {
+        return res.status(503).json({ error: 'Cost/supplier fields require a pending database migration (M2).', code: 'MIGRATION_REQUIRED' })
+      }
+      throw error
+    }
     res.status(201).json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'create', target: `product:${data.prod_id}`, details: value.prod_name })
+    // M2 may not be applied yet; recordPriceHistory logs and moves on
+    recordPriceHistory(data.prod_id, null, value.price, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Admin product create error')
     res.status(500).json({ error: 'Server error' })
@@ -463,9 +537,20 @@ router.post('/products', async (req, res) => {
 })
 
 // PATCH /api/admin/products/:id
+// cost_price/supplier/archived are admin-only: staff edit text/images/price/
+// stock but must never see or set costing data, nor change product lifecycle.
 router.patch('/products/:id', async (req, res) => {
   if (!requireUuidParam(req, res)) return
-  const { error: inputErr, updates } = sanitizeProductPatch(req.body ?? {})
+  const body = req.body ?? {}
+  const touchesCosting = 'cost_price' in body || 'supplier' in body
+  const touchesArchive = 'archived' in body
+  if ((touchesCosting || touchesArchive) && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' })
+  }
+  const { archived, ...rest } = body
+  const { error: inputErr, updates } = Object.keys(rest).length > 0
+    ? sanitizeProductPatch(rest)
+    : { error: null, updates: {} }
   if (inputErr) return res.status(400).json({ error: inputErr })
   if ('details' in updates) {
     const sanitizedDetails = sanitizeDetails(updates.details)
@@ -473,7 +558,30 @@ router.patch('/products/:id', async (req, res) => {
     // an empty list clears the product information back to null
     updates.details = sanitizedDetails.value
   }
+  if (touchesArchive) {
+    if (typeof archived !== 'boolean') return res.status(400).json({ error: 'archived must be true or false' })
+    updates.archived_at = archived ? new Date().toISOString() : null
+    // archiving also hides the product from the public store; restoring keeps
+    // it hidden until an admin explicitly sets it Active again (no accidental
+    // public re-publish)
+    if (archived) updates.is_active = false
+  }
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ error: 'No updatable fields provided' })
+  }
+
   try {
+    // price change? read the current price first so history records old -> new
+    let oldPrice = null
+    if ('price' in updates) {
+      const { data: prev } = await supabaseAdmin
+        .from('product')
+        .select('price')
+        .eq('prod_id', req.params.id)
+        .maybeSingle()
+      oldPrice = prev?.price ?? null
+    }
+
     const { data, error } = await supabaseAdmin
       .from('product')
       .update(updates)
@@ -484,28 +592,83 @@ router.patch('/products/:id', async (req, res) => {
       if (isNoRowError(error)) {
         return res.status(404).json({ error: 'Product not found' })
       }
+      if (isSchemaPendingError(error)) {
+        return res.status(503).json({ error: 'Cost/supplier/archived fields require a pending database migration (M2).', code: 'MIGRATION_REQUIRED' })
+      }
       throw error
     }
-    res.json({ item: data })
+    const isAdmin = req.userRole === 'admin'
+    res.json({ item: isAdmin ? data : stripCostFields(data) })
     logAudit({ adminEmail: req.userEmail, action: 'update', target: `product:${req.params.id}`, details: Object.keys(updates).join(', ') })
+    if ('price' in updates && Number(oldPrice) !== updates.price) {
+      recordPriceHistory(req.params.id, oldPrice, updates.price, req.userEmail)
+    }
   } catch (err) {
     logger.error({ err }, 'Admin product update error')
     res.status(500).json({ error: 'Server error' })
   }
 })
 
-// DELETE /api/admin/products/:id
-// removes the DB row first (it is the source of truth); the storage object is
-// best-effort cleanup afterwards so a storage hiccup cannot orphan a delete
-router.delete('/products/:id', async (req, res) => {
+// GET /api/admin/products/:id/price-history - selling-price trail, newest
+// first. staff can read it (it only contains prices, which staff see anyway);
+// never contains cost.
+router.get('/products/:id/price-history', async (req, res) => {
   if (!requireUuidParam(req, res)) return
   try {
+    const { data, error } = await supabaseAdmin
+      .from('product_price_history')
+      .select('old_price, new_price, changed_by, created_at')
+      .eq('prod_id', req.params.id)
+      .order('created_at', { ascending: false })
+      .limit(50)
+    if (error) {
+      if (isSchemaPendingError(error)) {
+        return res.status(503).json({ error: 'Price history requires a pending database migration (M2).', code: 'MIGRATION_REQUIRED' })
+      }
+      throw error
+    }
+    res.json({ items: data || [] })
+  } catch (err) {
+    logger.error({ err }, 'Product price history error')
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// DELETE /api/admin/products/:id - admin-only lifecycle action.
+// removes the DB row first (it is the source of truth); the storage object is
+// best-effort cleanup afterwards so a storage hiccup cannot orphan a delete.
+// products with order history are protected by a NO ACTION foreign key: offer
+// a friendly 409 pointing at archive instead of a raw FK error.
+router.delete('/products/:id', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const { count: linked, error: linkErr } = await supabaseAdmin
+      .from('order_details')
+      .select('prod_id', { count: 'exact', head: true })
+      .eq('prod_id', req.params.id)
+    if (linkErr) throw linkErr
+    if (linked > 0) {
+      return res.status(409).json({
+        error: 'This product appears in past orders and cannot be deleted. Archive it instead - order history keeps working.',
+        code: 'HAS_ORDER_HISTORY',
+      })
+    }
+
     const { data: deleted, error: delErr } = await supabaseAdmin
       .from('product')
       .delete()
       .eq('prod_id', req.params.id)
       .select('image_url')
-    if (delErr) throw delErr
+    if (delErr) {
+      // race backstop: an order slipped in between the check and the delete
+      if (delErr.code === '23503') {
+        return res.status(409).json({
+          error: 'This product appears in past orders and cannot be deleted. Archive it instead - order history keeps working.',
+          code: 'HAS_ORDER_HISTORY',
+        })
+      }
+      throw delErr
+    }
     if (!deleted || deleted.length === 0) {
       return res.status(404).json({ error: 'Product not found' })
     }

@@ -91,3 +91,70 @@ test('list query: whitelist sort + sane filters', () => {
 test('escapeLike neutralizes % and _', () => {
   assert.equal(escapeLike('50%_off'), '50\\%\\_off')
 })
+
+// ---- Phase 2: costings + archive list param ----
+
+test('create: omits cost/supplier when not provided (pre-M2 compatible)', () => {
+  const { value, error } = sanitizeProductCreate({ prod_name: 'A', category: 'B', price: 10 })
+  assert.equal(error, undefined)
+  assert.ok(!('cost_price' in value))
+  assert.ok(!('supplier' in value))
+})
+
+test('create: includes valid cost and supplier', () => {
+  const { value, error } = sanitizeProductCreate({
+    prod_name: 'A', category: 'B', price: 10, cost_price: '7.50', supplier: ' Aozi PH ',
+  })
+  assert.equal(error, undefined)
+  assert.equal(value.cost_price, 7.5)
+  assert.equal(value.supplier, 'Aozi PH')
+})
+
+test('create: empty cost/supplier stay absent; invalid cost rejected', () => {
+  const { value, error } = sanitizeProductCreate({
+    prod_name: 'A', category: 'B', price: 10, cost_price: '', supplier: '',
+  })
+  assert.equal(error, undefined)
+  assert.ok(!('cost_price' in value))
+  assert.ok(!('supplier' in value))
+
+  assert.ok(sanitizeProductCreate({ prod_name: 'A', category: 'B', price: 10, cost_price: -1 }).error)
+  assert.ok(sanitizeProductCreate({ prod_name: 'A', category: 'B', price: 10, cost_price: 'abc' }).error)
+  assert.ok(sanitizeProductCreate({ prod_name: 'A', category: 'B', price: 10, cost_price: true }).error)
+  assert.ok(sanitizeProductCreate({ prod_name: 'A', category: 'B', price: 10, cost_price: MAX_PRICE_PHP + 1 }).error)
+})
+
+test('create: rejects an over-long supplier', () => {
+  assert.ok(sanitizeProductCreate({ prod_name: 'A', category: 'B', price: 10, supplier: 'x'.repeat(121) }).error)
+})
+
+test('patch: validates and normalizes cost_price', () => {
+  const ok = sanitizeProductPatch({ cost_price: '12.25' })
+  assert.equal(ok.error, undefined)
+  assert.equal(ok.updates.cost_price, 12.25)
+
+  const clear = sanitizeProductPatch({ cost_price: null })
+  assert.equal(clear.updates.cost_price, null)
+
+  assert.ok(sanitizeProductPatch({ cost_price: -5 }).error)
+  assert.ok(sanitizeProductPatch({ cost_price: 'abc' }).error)
+  assert.ok(sanitizeProductPatch({ cost_price: true }).error)
+})
+
+test('patch: normalizes supplier, empty clears to null', () => {
+  const set = sanitizeProductPatch({ supplier: ' PetX Corp ' })
+  assert.equal(set.updates.supplier, 'PetX Corp')
+
+  const clear = sanitizeProductPatch({ supplier: '' })
+  assert.equal(clear.updates.supplier, null)
+
+  assert.ok(sanitizeProductPatch({ supplier: 'x'.repeat(121) }).error)
+})
+
+test('list query: archived defaults to false, accepts true/all, rejects junk', () => {
+  assert.equal(parseProductListQuery({}).archived, 'false')
+  assert.equal(parseProductListQuery({ archived: 'false' }).archived, 'false')
+  assert.equal(parseProductListQuery({ archived: 'true' }).archived, 'true')
+  assert.equal(parseProductListQuery({ archived: 'all' }).archived, 'all')
+  assert.equal(parseProductListQuery({ archived: 'banana' }).archived, 'false')
+})
