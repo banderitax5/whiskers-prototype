@@ -12,7 +12,7 @@ const AdminProductManagement = () => {
   const [uploading, setUploading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [formData, setFormData] = useState({ prod_name: '', category: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: {} });
+  const [formData, setFormData] = useState({ prod_name: '', category: '', brand: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: {} });
   const [sortKey, setSortKey] = useState('prod_name');
   const [sortDir, setSortDir] = useState('asc');
   const [priceMin, setPriceMin] = useState('');
@@ -24,10 +24,12 @@ const AdminProductManagement = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [mobileEditItem, setMobileEditItem] = useState(null);
-  const [mobileForm, setMobileForm] = useState({ prod_name: '', category: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: {} });
+  const [mobileForm, setMobileForm] = useState({ prod_name: '', category: '', brand: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: {} });
   const [mobileUploading, setMobileUploading] = useState(false);
   const [mobileDragging, setMobileDragging] = useState(false);
   const [mobileUrlInput, setMobileUrlInput] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [mobileSubmitting, setMobileSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const fileInputRef = useRef(null);
@@ -70,6 +72,7 @@ const AdminProductManagement = () => {
     setFormData({
       prod_name: item.prod_name || '',
       category: item.category || '',
+      brand: item.brand || '',
       price: String(item.price ?? ''),
       stock_quantity: String(item.stock_quantity ?? 0),
       is_active: item.is_active !== false,
@@ -82,7 +85,7 @@ const AdminProductManagement = () => {
 
   function resetForm() {
     setEditing(null);
-    setFormData({ prod_name: '', category: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: {} });
+    setFormData({ prod_name: '', category: '', brand: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: {} });
   }
 
   const handleFileUpload = async (file) => {
@@ -121,17 +124,29 @@ const AdminProductManagement = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting) return;
     const stock = Number(formData.stock_quantity);
+    const price = Number(formData.price);
+    if (!formData.prod_name.trim() || !formData.category.trim()) {
+      toast.error('Product name and category are required');
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      toast.error('Price must be a number of 0 or more');
+      return;
+    }
     if (!Number.isInteger(stock) || stock < 0) {
       toast.error('Stock quantity must be a whole number of 0 or more');
       return;
     }
+    setSubmitting(true);
     try {
       const token = await getToken(); if (!token) return;
       const payload = {
-        prod_name: formData.prod_name,
-        category: formData.category,
-        price: Number(formData.price),
+        prod_name: formData.prod_name.trim(),
+        category: formData.category.trim(),
+        brand: formData.brand?.trim() || null,
+        price,
         stock_quantity: stock,
         is_active: formData.is_active,
         image_url: formData.image_url,
@@ -147,6 +162,7 @@ const AdminProductManagement = () => {
       }
       resetForm(); setShowForm(false); await fetchProducts();
     } catch (error) { toast.error(error.message); }
+    finally { setSubmitting(false); }
   };
 
   async function adjustStock(item, delta) {
@@ -184,6 +200,7 @@ const AdminProductManagement = () => {
     setMobileForm({
       prod_name: item.prod_name || '',
       category: item.category || '',
+      brand: item.brand || '',
       price: String(item.price ?? ''),
       stock_quantity: String(item.stock_quantity ?? 0),
       is_active: item.is_active !== false,
@@ -222,18 +239,29 @@ const AdminProductManagement = () => {
 
   async function handleMobileSubmit(e) {
     e.preventDefault();
-    if (!mobileEditItem) return;
+    if (!mobileEditItem || mobileSubmitting) return;
     const stock = Number(mobileForm.stock_quantity);
+    const price = Number(mobileForm.price);
+    if (!mobileForm.prod_name.trim() || !mobileForm.category.trim()) {
+      toast.error('Product name and category are required');
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      toast.error('Price must be a number of 0 or more');
+      return;
+    }
     if (!Number.isInteger(stock) || stock < 0) {
       toast.error('Stock quantity must be a whole number of 0 or more');
       return;
     }
+    setMobileSubmitting(true);
     try {
       const token = await getToken(); if (!token) return;
       await apiPatchAuth(`/admin/products/${mobileEditItem.prod_id}`, {
-        prod_name: mobileForm.prod_name,
-        category: mobileForm.category,
-        price: Number(mobileForm.price),
+        prod_name: mobileForm.prod_name.trim(),
+        category: mobileForm.category.trim(),
+        brand: mobileForm.brand?.trim() || null,
+        price,
         stock_quantity: stock,
         is_active: mobileForm.is_active,
         image_url: mobileForm.image_url,
@@ -244,6 +272,7 @@ const AdminProductManagement = () => {
       setMobileEditItem(null);
       await fetchProducts();
     } catch (error) { toast.error(error.message); }
+    finally { setMobileSubmitting(false); }
   }
 
   const categories = useMemo(() => {
@@ -353,10 +382,11 @@ const AdminProductManagement = () => {
 
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 p-5 rounded-xl border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#0f2137] space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             <input value={formData.prod_name} onChange={(e) => setFormData({...formData, prod_name: e.target.value})} placeholder="Product Name" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
             <input value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})} placeholder="Category" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
-            <input value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} type="number" placeholder="Price" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
+            <input value={formData.brand} onChange={(e) => setFormData({...formData, brand: e.target.value})} placeholder="Brand (optional)" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
+            <input value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} type="number" min="0" step="0.01" placeholder="Price" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
             <input value={formData.stock_quantity} onChange={(e) => setFormData({...formData, stock_quantity: e.target.value})} type="number" min="0" step="1" placeholder="Stock" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
             <div
               onClick={() => fileInputRef.current?.click()}
@@ -449,8 +479,8 @@ const AdminProductManagement = () => {
               <button type="button" onClick={() => setFormData((f) => ({ ...f, image_url: '' }))} className="text-xs text-red-500 hover:text-red-600 font-black uppercase tracking-widest">Remove</button>
             </div>
           )}
-          <button type="submit" disabled={uploading} className={`${btnPrimary} w-full disabled:opacity-50`}>
-            {editing ? 'Update Product' : (uploading ? 'Processing...' : 'Save Product')}
+          <button type="submit" disabled={uploading || submitting} className={`${btnPrimary} w-full disabled:opacity-50`}>
+            {submitting ? 'Saving...' : editing ? 'Update Product' : (uploading ? 'Processing...' : 'Save Product')}
           </button>
         </form>
       )}
@@ -557,11 +587,28 @@ const AdminProductManagement = () => {
           </div>
         )}
         empty={
-          <EmptyState
-            icon={<BsBoxSeam />}
-            title="No products yet"
-            message="Create your first product to make it available in the store."
-          />
+          (search || categoryFilter !== 'All' || priceMin !== '' || priceMax !== '') ? (
+            <EmptyState
+              icon={<BsSearch />}
+              title="No products match your filters"
+              message="Try a different search term or clear the filters to see the full catalog."
+              action={
+                <button
+                  type="button"
+                  onClick={() => { setSearch(''); setCategoryFilter('All'); setPriceMin(''); setPriceMax(''); setPage(1); }}
+                  className="px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest bg-[#0b2e59] dark:bg-yellow-500 text-white dark:text-gray-900 hover:bg-[#15407a] dark:hover:bg-yellow-400 transition"
+                >
+                  Clear filters
+                </button>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={<BsBoxSeam />}
+              title="No products yet"
+              message="Create your first product to make it available in the store."
+            />
+          )
         }
       />
       </>
@@ -578,8 +625,9 @@ const AdminProductManagement = () => {
             <form onSubmit={handleMobileSubmit} className="p-4 space-y-3">
               <input value={mobileForm.prod_name} onChange={(e) => setMobileForm({...mobileForm, prod_name: e.target.value})} placeholder="Product Name" className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
               <input value={mobileForm.category} onChange={(e) => setMobileForm({...mobileForm, category: e.target.value})} placeholder="Category" className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
+              <input value={mobileForm.brand} onChange={(e) => setMobileForm({...mobileForm, brand: e.target.value})} placeholder="Brand (optional)" className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
               <div className="grid grid-cols-2 gap-3">
-                <input value={mobileForm.price} onChange={(e) => setMobileForm({...mobileForm, price: e.target.value})} type="number" placeholder="Price" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
+                <input value={mobileForm.price} onChange={(e) => setMobileForm({...mobileForm, price: e.target.value})} type="number" min="0" step="0.01" placeholder="Price" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
                 <input value={mobileForm.stock_quantity} onChange={(e) => setMobileForm({...mobileForm, stock_quantity: e.target.value})} type="number" min="0" step="1" placeholder="Stock" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
               </div>
               <div
@@ -665,7 +713,7 @@ const AdminProductManagement = () => {
               )}
               <div className="flex gap-2 pt-2">
                 <button type="button" onClick={() => setMobileEditItem(null)} className="flex-1 px-4 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest border border-gray-200 dark:border-[#1e3a5f] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#162d4a] transition">Cancel</button>
-                <button type="submit" disabled={mobileUploading} className="flex-1 px-4 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest bg-[#0b2e59] text-white hover:bg-[#1a4275] disabled:opacity-50 transition">Save</button>
+                <button type="submit" disabled={mobileUploading || mobileSubmitting} className="flex-1 px-4 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest bg-[#0b2e59] text-white hover:bg-[#1a4275] disabled:opacity-50 transition">{mobileSubmitting ? 'Saving...' : 'Save'}</button>
               </div>
             </form>
           </div>

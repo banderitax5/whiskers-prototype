@@ -256,7 +256,7 @@ const AdminOrders = () => {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-4 mb-6">
         <StatCard label="Orders in View" value={orders.length} loading={loading} />
-        <StatCard label="Total Value" value={`PHP ${totalRevenue.toLocaleString()}`} loading={loading} />
+        <StatCard label="Value in View" value={`PHP ${totalRevenue.toLocaleString()}`} loading={loading} />
         <StatCard label="Pending" value={counts.Pending || 0} loading={loading} />
       </div>
 

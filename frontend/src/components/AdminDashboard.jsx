@@ -103,12 +103,14 @@ function AdminDashboard() {
   const [sales, setSales] = useState(null);
   const [period, setPeriod] = useState('daily');
   const [error, setError] = useState(null);
+  const [chartsError, setChartsError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setError(null);
+      setChartsError(null);
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
@@ -136,9 +138,10 @@ function AdminDashboard() {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
         const sl = await apiGetAuth(`/admin/sales-analytics?days=30&period=${period}`, session.access_token);
-        if (!cancelled && sl) setSales(sl);
-      } catch {
-        // keep the last good snapshot; the panel shows its own empty state
+        if (!cancelled && sl) { setSales(sl); setChartsError(null); }
+      } catch (err) {
+        // surface the failure instead of silently hiding the charts
+        if (!cancelled) setChartsError(err.message || 'Could not load the sales charts.');
       }
     }
     loadSales();
@@ -219,6 +222,19 @@ function AdminDashboard() {
           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
             {cards.map((c) => <StatCard key={c.label} label={c.label} value={c.value} />)}
           </div>
+
+          {chartsError && (
+            <div className="mt-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 text-sm flex flex-wrap items-center justify-between gap-3" role="alert">
+              <span>Sales charts unavailable: {chartsError}</span>
+              <button
+                type="button"
+                onClick={() => { setSales(null); setReloadKey((k) => k + 1); }}
+                className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest bg-white dark:bg-[#162d4a] border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition"
+              >
+                Retry
+              </button>
+            </div>
+          )}
 
           {/* SALES CHARTS */}
           {sales && (

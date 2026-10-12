@@ -142,6 +142,7 @@ const AdminPayments = () => {
     return list;
   }, [payments, sortKey, sortDir, priceMin, priceMax, search]);
 
+  // stats reflect the current filters so the cards match the table below
   const totalRevenue = filteredPayments.reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
   const avgPayment = filteredPayments.length ? totalRevenue / filteredPayments.length : 0;
 
@@ -204,7 +205,7 @@ const AdminPayments = () => {
     <AdminPage title="Payment Transactions" subtitle="Every transaction that flowed through the store.">
 
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4 mb-6">
-        <StatCard label="Total Revenue" value={`PHP ${totalRevenue.toLocaleString()}`} loading={loading} />
+        <StatCard label="Revenue in View" value={`PHP ${totalRevenue.toLocaleString()}`} loading={loading} />
         <StatCard label="Transactions" value={filteredPayments.length} loading={loading} />
         <StatCard label="Avg. Payment" value={filteredPayments.length ? `PHP ${Math.round(avgPayment).toLocaleString()}` : 'PHP 0'} loading={loading} />
       </div>
