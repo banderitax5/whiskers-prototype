@@ -7,6 +7,7 @@ import { clearStepUp } from "../lib/stepUp"
 import { useThemeDetection } from "./adminTheme"
 import { useRole } from "../context/RoleContext"
 import FloatingNotification from "./Toaster.jsx"
+import { ADMIN_NAV, canSeeNav } from "../lib/permissions"
 import {
   BsBarChart,
   BsBoxSeam,
@@ -19,6 +20,17 @@ import {
   BsClockHistory,
   BsChatDots,
 } from "react-icons/bs"
+
+// icon keys map to the react-icons components the sidebar uses
+const NAV_ICONS = {
+  barChart: <BsBarChart />,
+  boxSeam: <BsBoxSeam />,
+  people: <BsPeople />,
+  creditCard: <BsCreditCard />,
+  receipt: <BsReceipt />,
+  clockHistory: <BsClockHistory />,
+  chatDots: <BsChatDots />,
+}
 
 // the layout wrapper for all admin pages
 // has a sidebar with navigation links that slides in on mobile
@@ -62,18 +74,9 @@ function AdminLayout() {
   const activeClass = "bg-white/10 text-yellow-300"
   const inactiveClass = "text-white/80 hover:bg-white/10 hover:text-white"
 
-  // all the sidebar navigation items in one array so we can loop over them
-  // each entry declares which roles may see it (staff = orders, products,
-  // support, payments view — per the paper's staff DFD)
-  const navLinks = [
-    { to: "/admin", label: "Data Analytics", icon: <BsBarChart />, end: true, roles: ["admin"] },
-    { to: "/admin/products", label: "Product Management", icon: <BsBoxSeam />, roles: ["admin", "staff"] },
-    { to: "/admin/customers", label: "Customers", icon: <BsPeople />, roles: ["admin"] },
-    { to: "/admin/orders", label: "Orders", icon: <BsReceipt />, roles: ["admin", "staff"] },
-    { to: "/admin/payments", label: "Payments", icon: <BsCreditCard />, roles: ["admin", "staff"] },
-    { to: "/admin/support", label: "Customer Support", icon: <BsChatDots />, roles: ["admin", "staff"] },
-    { to: "/admin/audit-logs", label: "Audit Logs", icon: <BsClockHistory />, roles: ["admin"] },
-  ].filter((link) => link.roles.includes(role))
+  // all the sidebar navigation items live in lib/permissions.js so the
+  // staff/admin split has one source of truth (see comments there)
+  const navLinks = ADMIN_NAV.filter((link) => canSeeNav(link, role))
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-[#0b1929]">
@@ -126,7 +129,7 @@ function AdminLayout() {
                 `${linkClass} ${isActive ? activeClass : inactiveClass}`
               }
             >
-              {link.icon}
+              {NAV_ICONS[link.iconKey]}
               {link.label}
             </NavLink>
           ))}

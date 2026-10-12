@@ -63,19 +63,39 @@ function RequireAdmin({ children }) {
   const checkedRef = useRef(false)
 
   useEffect(() => {
-    async function checkAdmin(token) {
-      if (!token) return
+    let cancelled = false
+    let timer
+
+    async function checkAdmin(token, attempt = 0) {
+      if (!token || cancelled) return
       try {
         const res = await fetch(`${API_BASE}/me/role`, {
           headers: { Authorization: `Bearer ${token}` },
         })
-        if (!res.ok) return
+        if (cancelled) return
+        if (!res.ok) {
+          // 401/403 mean the token is bad — send them home without retrying
+          if (res.status === 401 || res.status === 403) {
+            checkedRef.current = true
+            setState('denied')
+            return
+          }
+          throw new Error(`role check failed: ${res.status}`)
+        }
         const { role } = await res.json()
+        if (cancelled) return
         checkedRef.current = true
         setRole(role)
         setState(role === 'admin' || role === 'staff' ? 'allowed' : 'denied')
       } catch {
-        // let the next auth event retry
+        if (cancelled) return
+        // network or transient failure — retry up to 3 times with backoff
+        // so a flaky first load does not dump the admin on a blank page
+        if (attempt < 2) {
+          timer = setTimeout(() => checkAdmin(token, attempt + 1), 800 * (attempt + 1))
+        } else {
+          setState('error')
+        }
       }
     }
 
@@ -90,10 +110,42 @@ function RequireAdmin({ children }) {
       }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+      subscription.unsubscribe()
+    }
   }, [])
 
-  if (state === 'loading') return null
+  if (state === 'loading') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900" role="status" aria-live="polite">
+        <div className="flex flex-col items-center gap-3 text-gray-500 dark:text-gray-400">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-yellow-500" aria-hidden="true" />
+          <p className="text-sm">Checking access…</p>
+        </div>
+      </div>
+    )
+  }
+  if (state === 'error') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
+        <div className="max-w-md rounded-lg border border-red-200 bg-white p-6 text-center shadow dark:border-red-800 dark:bg-gray-800">
+          <h1 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">Could not verify your access</h1>
+          <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">
+            We could not reach the server to check your role. Check your connection and refresh the page.
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="rounded bg-yellow-500 px-4 py-2 text-sm font-medium text-[#0b2e59] hover:bg-yellow-400"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
   if (state === 'denied') return <Navigate to="/" replace />
 
   return <RoleContext.Provider value={role}>{children}</RoleContext.Provider>
