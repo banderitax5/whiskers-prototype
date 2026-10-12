@@ -4,18 +4,28 @@ import { orderLimiter } from '../middleware/rateLimiter.js'
 import { supabaseAdmin } from '../config/supabase.js'
 import { SHIPPING_FEE_PHP } from '../utils/shopRules.js'
 import { isSchemaPendingError } from '../utils/pgErrors.js'
+import { validatePromo, buildDiscountAmounts } from '../utils/promoEngine.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
 
 router.use(authMiddleware)
 
+function buildCartItemsForPromo(validatedItems, dbProducts) {
+  const catMap = new Map((dbProducts || []).map(p => [p.prod_id, p.category_id]))
+  return validatedItems.map(i => ({
+    product_id: i.productId,
+    quantity: i.quantity,
+    unit_price: i.price,
+    subtotal: i.subtotal,
+    category: catMap.get(i.productId) ?? null,
+  }))
+}
+
 // POST /api/orders — create a new order from cart items
-// body: { items, paymentMethod, shippingFee, customerName, phone, address }
+// body: { items, paymentMethod, shippingFee, customerName, phone, address, promo_code }
 router.post('/', orderLimiter, async (req, res) => {
-  // shippingFee is accepted for backward compatibility but ignored — the
-  // server applies its own rule (see SHIPPING_FEE_PHP)
-  const { items, paymentMethod, customerName, phone, address } = req.body ?? {}
+  const { items, paymentMethod, customerName, phone, address, promo_code } = req.body ?? {}
 
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'At least one item is required' })
@@ -24,12 +34,9 @@ router.post('/', orderLimiter, async (req, res) => {
     return res.status(400).json({ error: 'paymentMethod is required' })
   }
 
-  // shipping is owned by the server: any client-sent shippingFee is ignored
-  // so a tampered request can never zero out the delivery fee
   const shipping = SHIPPING_FEE_PHP
 
   try {
-    // fetch actual prices from the DB — never trust client-sent prices
     const productIds = items.map(i => i.productId).filter(Boolean)
     if (productIds.length === 0) {
       return res.status(400).json({ error: 'No valid product IDs provided.' })
@@ -37,16 +44,12 @@ router.post('/', orderLimiter, async (req, res) => {
 
     const { data: dbProducts, error: prodErr } = await req.db
       .from('product')
-      .select('prod_id, prod_name, price, stock_quantity, is_active')
+      .select('prod_id, prod_name, price, stock_quantity, is_active, category_id')
       .in('prod_id', productIds)
     if (prodErr) throw prodErr
 
     const productMap = new Map((dbProducts || []).map(p => [p.prod_id, p]))
 
-    // best-effort cost snapshot for the M3 order_details columns. The user
-    // client cannot read cost_price (column grant excludes it), and pre-M3
-    // databases do not have the column at all - both cases must never break
-    // checkout, they only mean unit_cost stays null / keys are omitted.
     let costByProduct = new Map()
     try {
       const { data: costRows, error: costErr } = await supabaseAdmin
@@ -62,7 +65,6 @@ router.post('/', orderLimiter, async (req, res) => {
       logger.warn({ err: costEx }, 'cost snapshot fetch threw')
     }
 
-    // validate every item exists, is visible and in stock, and compute the real total
     let totalAmount = shipping
     const validatedItems = []
     for (const item of items) {
@@ -80,7 +82,6 @@ router.post('/', orderLimiter, async (req, res) => {
       if (!(dbPrice > 0)) {
         return res.status(400).json({ error: `"${dbProduct.prod_name}" is not yet priced and cannot be purchased.` })
       }
-      // whole units only — a decimal quantity would corrupt the stock decrement
       const rawQty = Math.floor(Number(item.quantity))
       const qty = Number.isFinite(rawQty) && rawQty >= 1 ? rawQty : 1
       if (qty > Number(dbProduct.stock_quantity || 0)) {
@@ -98,7 +99,32 @@ router.post('/', orderLimiter, async (req, res) => {
       })
     }
 
-    // insert order + details + payment, decrement stock, clean up on partial failure
+    let promoResult = null
+    let promoRow = null
+    if (promo_code && typeof promo_code === 'string') {
+      const { data: promo, error: promoFetchErr } = await supabaseAdmin
+        .from('promos')
+        .select('*')
+        .eq('code', promo_code.trim().toUpperCase())
+        .maybeSingle()
+      if (promoFetchErr) {
+        logger.warn({ err: promoFetchErr }, 'promo fetch error')
+      } else if (promo) {
+        const { data: usageRows } = await supabaseAdmin
+          .from('promo_usage')
+          .select('id')
+          .eq('promo_code', promo.code)
+          .eq('user_id', req.userId)
+        const userUsageCount = (usageRows || []).length
+        const cartItemsForPromo = buildCartItemsForPromo(validatedItems, dbProducts)
+        promoResult = validatePromo(promo, cartItemsForPromo, req.userId, userUsageCount)
+        if (promoResult.ok) {
+          promoRow = promo
+          totalAmount -= promoResult.discountAmount
+        }
+      }
+    }
+
     let orderId = null
     const decremented = []
     try {
@@ -119,10 +145,6 @@ router.post('/', orderLimiter, async (req, res) => {
       if (orderErr) throw orderErr
       orderId = order.order_id
 
-      // M3 snapshots: write sale-time unit price/cost alongside the line.
-      // Pre-M3 databases reject the unknown columns wholesale (nothing is
-      // inserted), so one retry without the snapshot keys keeps checkout
-      // working until the owner applies the migration.
       const baseDetail = (i) => ({
         order_id: orderId,
         prod_id: i.productId,
@@ -135,10 +157,21 @@ router.post('/', orderLimiter, async (req, res) => {
         unit_cost: i.unitCost ?? null,
         discount_amount: 0,
       })
-      let { error: detErr } = await req.db.from('order_details').insert(validatedItems.map(snapshotDetail))
+
+      let detailRows = validatedItems.map(snapshotDetail)
+      if (promoResult && promoResult.lineDiscounts) {
+        const perUnitDiscounts = buildDiscountAmounts(validatedItems, promoResult.lineDiscounts)
+        detailRows = validatedItems.map(i => {
+          const disc = perUnitDiscounts.get(i.productId) || 0
+          return { ...snapshotDetail(i), discount_amount: disc }
+        })
+      }
+
+      let { error: detErr } = await req.db.from('order_details').insert(detailRows)
       if (detErr && isSchemaPendingError(detErr)) {
         logger.info({ err: detErr }, 'M3 columns missing - retrying order_details insert without snapshots')
-        ;({ error: detErr } = await req.db.from('order_details').insert(validatedItems.map(baseDetail)))
+        detailRows = validatedItems.map(baseDetail)
+        ;({ error: detErr } = await req.db.from('order_details').insert(detailRows))
       }
       if (detErr) throw detErr
 
@@ -149,9 +182,20 @@ router.post('/', orderLimiter, async (req, res) => {
       })
       if (payErr) throw payErr
 
-      // decrement inventory with a guarded update so concurrent orders
-      // can never push stock below zero; runs on the service client because
-      // RLS does not let customers update product rows. failure aborts the order
+      if (promoResult && promoRow) {
+        const { error: usageErr } = await supabaseAdmin.from('promo_usage').insert({
+          promo_code: promoRow.code,
+          user_id: req.userId,
+          order_id: orderId,
+          discount_applied: promoResult.discountAmount,
+        })
+        if (usageErr) logger.warn({ err: usageErr }, 'promo_usage insert failed')
+        await supabaseAdmin
+          .from('promos')
+          .update({ usage_count: promoRow.usage_count + 1 })
+          .eq('code', promoRow.code)
+      }
+
       for (const item of validatedItems) {
         const current = Number(productMap.get(item.productId).stock_quantity)
         const { data: upd, error: updErr } = await supabaseAdmin
@@ -169,14 +213,12 @@ router.post('/', orderLimiter, async (req, res) => {
         decremented.push(item)
       }
     } catch (innerErr) {
-      // partial failure — clean up any rows that were created
       logger.error({ err: innerErr }, 'Order creation failed, cleaning up')
       if (orderId) {
         await req.db.from('payment').delete().eq('order_id', orderId)
         await req.db.from('order_details').delete().eq('order_id', orderId)
         await req.db.from('orders').delete().eq('order_id', orderId)
       }
-      // restore any stock we already decremented before the failure
       for (const item of decremented) {
         try {
           const { data: cur } = await supabaseAdmin
@@ -194,10 +236,19 @@ router.post('/', orderLimiter, async (req, res) => {
           logger.error({ err: restoreErr, productId: item.productId }, 'Stock restore failed')
         }
       }
+      if (promoResult && promoRow) {
+        await supabaseAdmin
+          .from('promo_usage')
+          .delete()
+          .eq('order_id', orderId)
+        await supabaseAdmin
+          .from('promos')
+          .update({ usage_count: Math.max(0, promoRow.usage_count - 1) })
+          .eq('code', promoRow.code)
+      }
       throw innerErr
     }
 
-    // clear purchased items from the cart
     if (productIds.length > 0) {
       await req.db
         .from('cart_items')
@@ -212,6 +263,90 @@ router.post('/', orderLimiter, async (req, res) => {
     }
     logger.error({ err }, 'Order creation error')
     res.status(500).json({ error: 'Failed to create order' })
+  }
+})
+
+// POST /api/orders/validate-promo — check a promo code against cart items
+// without creating an order. Returns the discount preview or 400 with the
+// reason. Auth'd: usage limits are per user, so we need the caller's identity.
+// body: { items, promo_code }
+router.post('/validate-promo', orderLimiter, async (req, res) => {
+  const { items, promo_code } = req.body ?? {}
+
+  if (!promo_code || typeof promo_code !== 'string') {
+    return res.status(400).json({ error: 'promo_code is required' })
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'At least one item is required' })
+  }
+
+  const productIds = items.map((i) => i.productId).filter(Boolean)
+
+  try {
+    const { data: dbProducts, error: prodErr } = await supabaseAdmin
+      .from('product')
+      .select('prod_id, category_id, price, stock_quantity, is_active')
+      .in('prod_id', productIds)
+    if (prodErr) throw prodErr
+    const productMap = new Map((dbProducts || []).map((p) => [p.prod_id, p]))
+
+    const preview = []
+    for (const item of items) {
+      const p = productMap.get(item.productId)
+      if (!p || p.is_active === false) {
+        return res.status(400).json({ error: `Product ${item.productId} is not available.` })
+      }
+      const price = Number(p.price)
+      if (!(price > 0)) {
+        return res.status(400).json({ error: `"${p.prod_name}" is not yet priced and cannot be purchased.` })
+      }
+      const qty = Math.max(1, Math.floor(Number(item.quantity) || 1))
+      preview.push({
+        product_id: item.productId,
+        category: p.category_id ?? null,
+        quantity: qty,
+        unit_price: price,
+        subtotal: price * qty,
+      })
+    }
+
+    const { data: promo, error: promoErr } = await supabaseAdmin
+      .from('promos')
+      .select('*')
+      .eq('code', promo_code.trim().toUpperCase())
+      .maybeSingle()
+    if (promoErr) {
+      if (isSchemaPendingError(promoErr)) {
+        return res.status(503).json({ error: 'Promo system is not available yet', code: 'MIGRATION_REQUIRED' })
+      }
+      throw promoErr
+    }
+
+    let userUsageCount = 0
+    if (promo) {
+      const { data: usageRows, error: usageErr } = await supabaseAdmin
+        .from('promo_usage')
+        .select('id')
+        .eq('promo_code', promo.code)
+        .eq('user_id', req.userId)
+      if (usageErr && !isSchemaPendingError(usageErr)) throw usageErr
+      userUsageCount = (usageRows || []).length
+    }
+
+    const result = validatePromo(promo, preview, req.userId, userUsageCount)
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error })
+    }
+    res.json({
+      ok: true,
+      code: promo.code,
+      discount: result.discountAmount,
+      shipping_discount: result.shippingDiscount || 0,
+      line_discounts: Object.fromEntries(result.lineDiscounts || new Map()),
+    })
+  } catch (err) {
+    logger.error({ err }, 'Promo validation error')
+    res.status(500).json({ error: 'Failed to validate promo code' })
   }
 })
 

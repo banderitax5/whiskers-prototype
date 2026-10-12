@@ -93,16 +93,28 @@ describe('summarize', () => {
       payment: { amount: 200 },
       total_amount: 180,
     }
-    expect(summarize(order)).toEqual({ itemsSubtotal: 150, shipping: 30, total: 200 })
+    expect(summarize(order)).toEqual({ itemsSubtotal: 150, shipping: 30, total: 200, discount: 0 })
   })
 
   it('handles empty orders', () => {
-    expect(summarize(null)).toEqual({ itemsSubtotal: 0, shipping: 0, total: 0 })
+    expect(summarize(null)).toEqual({ itemsSubtotal: 0, shipping: 0, total: 0, discount: 0 })
   })
 
   it('falls back to total_amount when payment is missing', () => {
     const order = { items: [{ subtotal: 80 }], total_amount: 100 }
-    expect(summarize(order)).toEqual({ itemsSubtotal: 80, shipping: 20, total: 100 })
+    expect(summarize(order)).toEqual({ itemsSubtotal: 80, shipping: 20, total: 100, discount: 0 })
+  })
+
+  it('sums per-line discounts for the receipt', () => {
+    const order = {
+      items: [
+        { subtotal: 200, quantity: 2, discount_amount: 10 },
+        { subtotal: 300, quantity: 1, discount_amount: 15 },
+      ],
+      payment: { amount: 500 },
+      total_amount: 495,
+    }
+    expect(summarize(order)).toEqual({ itemsSubtotal: 500, shipping: 0, total: 500, discount: 35 })
   })
 })
 

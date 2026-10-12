@@ -14,6 +14,7 @@ export const ADMIN_NAV = [
   { to: '/admin/customers', label: 'Customers', iconKey: 'people', roles: ['admin'] },
   { to: '/admin/orders', label: 'Orders', iconKey: 'receipt', roles: ['admin', 'staff'] },
   { to: '/admin/payments', label: 'Payments', iconKey: 'creditCard', roles: ['admin', 'staff'] },
+  { to: '/admin/promos', label: 'Promos', iconKey: 'gift', roles: ['admin'] },
   { to: '/admin/support', label: 'Customer Support', iconKey: 'chatDots', roles: ['admin', 'staff'] },
   { to: '/admin/audit-logs', label: 'Audit Logs', iconKey: 'clockHistory', roles: ['admin'] },
 ]

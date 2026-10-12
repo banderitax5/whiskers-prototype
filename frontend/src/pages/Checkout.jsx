@@ -106,10 +106,15 @@ function Checkout() {
     province: '',
     postalCode: '',
     paymentMethod: 'gcash',
+    promoCode: '',
   })
   const [submitting, setSubmitting] = useState(false)
   const [fieldErrors, setFieldErrors] = useState({})
   const [verifyProblems, setVerifyProblems] = useState([])
+  const [promoError, setPromoError] = useState('')
+  const [promoDiscount, setPromoDiscount] = useState(0)
+  const [appliedPromo, setAppliedPromo] = useState('')
+  const [checkingPromo, setCheckingPromo] = useState(false)
   const summaryRef = useRef(null)
   const redirectedRef = useRef(false)
   // set once an order is placed so clearing the cart cannot trigger the
@@ -158,7 +163,48 @@ function Checkout() {
   function onChange(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }))
     if (fieldErrors[key]) setFieldErrors((prev) => ({ ...prev, [key]: '' }))
+    if (key === 'promoCode') {
+      setPromoError('')
+      // editing the code clears a previously applied promo until re-applied
+      if (appliedPromo) {
+        setAppliedPromo('')
+        setPromoDiscount(0)
+      }
+    }
     if (verifyProblems.length) setVerifyProblems([])
+  }
+
+  // validate the typed promo code against the current cart before the order
+  // is placed; the server re-validates at checkout so this is a UX preview
+  async function applyPromo() {
+    const code = form.promoCode.trim().toUpperCase()
+    if (!code || checkingPromo) return
+    setCheckingPromo(true)
+    setPromoError('')
+    try {
+      const res = await fetch(`${API_BASE}/orders/validate-promo`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          items: checkoutItems.map((i) => ({ productId: i.id, quantity: i.quantity })),
+          promo_code: code,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Promo code could not be applied')
+      setAppliedPromo(code)
+      setPromoDiscount(Number(data.discount || 0))
+      trackEvent('promo_applied', { code, discount: data.discount })
+    } catch (err) {
+      setPromoError(err.message)
+      setAppliedPromo('')
+      setPromoDiscount(0)
+    } finally {
+      setCheckingPromo(false)
+    }
   }
 
   // scrolling to and focusing the first invalid field after a failed submit
@@ -234,11 +280,16 @@ function Checkout() {
           customerName: form.fullName,
           phone: form.phone,
           address: [form.addressLine1, form.addressLine2, form.city, form.province, form.postalCode].filter(Boolean).join(', '),
+          promo_code: form.promoCode.trim() || undefined,
         }),
       })
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
+        if (res.status === 400 && data.error && data.error.toLowerCase().includes('promo')) {
+          setPromoError(data.error)
+          throw new Error(data.error)
+        }
         throw new Error(data.error || 'Failed to place order')
       }
 
@@ -500,8 +551,40 @@ function Checkout() {
                   {totals.products} product{totals.products === 1 ? '' : 's'} ({totals.units} item{totals.units === 1 ? '' : 's'})
                 </dd>
               </div>
-              <div className="flex justify-between gap-3 border-t border-gray-200 pt-1 mt-1 dark:border-gray-700"><dt className="font-bold">Total</dt><dd className="font-bold">PHP {formatPesos(totals.totalCents / 100)}</dd></div>
+              <div className="flex justify-between gap-3 border-t border-gray-200 pt-1 mt-1 dark:border-gray-700"><dt className="font-bold">Total</dt><dd className="font-bold">PHP {formatPesos(Math.max(0, totals.totalCents / 100 - promoDiscount))}</dd></div>
             </dl>
+          </div>
+
+          {/* promo code input */}
+          <div className="mt-4">
+            <label htmlFor="co-promoCode" className={labelClass}>Promo Code <span className="text-gray-400">(optional)</span></label>
+            <div className="flex gap-2">
+              <input
+                id="co-promoCode"
+                type="text"
+                value={form.promoCode}
+                onChange={(e) => onChange('promoCode', e.target.value.toUpperCase())}
+                placeholder="Enter promo code"
+                className={`${inputClass} w-full flex-1 ${promoError ? 'border-red-500' : ''}`}
+                aria-invalid={promoError ? 'true' : undefined}
+                aria-describedby={promoError ? 'co-promoCode-err' : undefined}
+                disabled={submitting}
+              />
+              <button
+                type="button"
+                onClick={applyPromo}
+                disabled={!form.promoCode.trim() || checkingPromo || submitting || !!appliedPromo}
+                className="min-h-[44px] shrink-0 rounded-lg border border-gray-300 dark:border-gray-600 px-4 text-xs font-black uppercase tracking-widest text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {checkingPromo ? 'Checking...' : appliedPromo ? 'Applied' : 'Apply'}
+              </button>
+            </div>
+            {promoError && <p id="co-promoCode-err" className="text-xs text-red-500 mt-1">{promoError}</p>}
+            {appliedPromo && promoDiscount > 0 && (
+              <p className="mt-1 text-xs font-semibold text-green-700 dark:text-green-300">
+                {appliedPromo} applied — you save PHP {formatPesos(promoDiscount)}
+              </p>
+            )}
           </div>
 
           <button
@@ -549,9 +632,15 @@ function Checkout() {
               <span>Shipping</span>
               <span>{checkoutItems.length > 0 ? `PHP ${formatPesos(SHIPPING_FEE_PHP)}` : '—'}</span>
             </div>
+            {promoDiscount > 0 && (
+              <div className="flex justify-between text-green-700 dark:text-green-300">
+                <span>Promo discount{appliedPromo ? ` (${appliedPromo})` : ''}</span>
+                <span>-PHP {formatPesos(promoDiscount)}</span>
+              </div>
+            )}
             <div className="mt-2 flex justify-between text-base font-bold text-[#0b2e59] dark:text-yellow-300">
               <span>Total</span>
-              <span>PHP {formatPesos(totals.totalCents / 100)}</span>
+              <span>PHP {formatPesos(Math.max(0, totals.totalCents / 100 - promoDiscount))}</span>
             </div>
           </div>
         </aside>

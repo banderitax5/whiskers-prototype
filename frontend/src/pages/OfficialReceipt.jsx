@@ -240,6 +240,12 @@ function OfficialReceipt() {
                   <span className="text-gray-600">Shipping Fee</span>
                   <span className="font-semibold text-gray-900">{peso(s.shipping)}</span>
                 </div>
+                {s.discount && s.discount > 0 && (
+                  <div className="flex items-center justify-between py-1.5 text-sm">
+                    <span className="text-gray-600">Promo Discount</span>
+                    <span className="font-semibold text-green-700 dark:text-green-300">-{peso(s.discount)}</span>
+                  </div>
+                )}
               </div>
               <div className="-mx-4 -mb-4 mt-3 px-4 py-3 rounded-b-md bg-blue-50 flex items-center justify-between">
                 <span className="text-[11px] font-black uppercase tracking-widest text-gray-700">Order Total</span>

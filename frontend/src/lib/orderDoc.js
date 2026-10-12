@@ -58,7 +58,8 @@ export function summarize(order) {
   const itemsSubtotal = (order?.items || []).reduce((sum, i) => sum + Number(i.subtotal || 0), 0)
   const total = Number(order?.payment?.amount || order?.total_amount || 0)
   const shipping = Math.max(0, Number(order?.total_amount || 0) - itemsSubtotal)
-  return { itemsSubtotal, shipping, total }
+  const discount = (order?.items || []).reduce((sum, i) => sum + Number(i.discount_amount || 0) * Number(i.quantity || 0), 0)
+  return { itemsSubtotal, shipping, total, discount }
 }
 
 // pill styles shared by both documents (label, tailwind classes)

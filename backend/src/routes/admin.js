@@ -1225,6 +1225,197 @@ router.delete('/images/:filename', async (req, res) => {
   }
 })
 
+// ── Promo CRUD (admin only) ────────────────────────────────────────────────────
+
+// GET /api/admin/promos — list all promos
+router.get('/promos', requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('promos')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (error) throw error
+    res.json({ items: data || [] })
+  } catch (err) {
+    logger.error({ err }, 'Promos list error')
+    res.status(500).json({ error: 'Failed to load promos' })
+  }
+})
+
+// GET /api/admin/promos/:code — single promo
+router.get('/promos/:code', requireAdmin, async (req, res) => {
+  const code = String(req.params.code || '').trim().toUpperCase()
+  if (!code) return res.status(400).json({ error: 'Invalid promo code' })
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('promos')
+      .select('*')
+      .eq('code', code)
+      .maybeSingle()
+    if (error) throw error
+    if (!data) return res.status(404).json({ error: 'Promo not found' })
+    res.json(data)
+  } catch (err) {
+    logger.error({ err }, 'Promo detail error')
+    res.status(500).json({ error: 'Failed to load promo' })
+  }
+})
+
+// POST /api/admin/promos — create promo
+router.post('/promos', requireAdmin, async (req, res) => {
+  const {
+    code, type, value, scope, target_id, min_subtotal,
+    max_discount, usage_limit, per_user_limit,
+    starts_at, ends_at, is_active,
+  } = req.body ?? {}
+
+  if (!code || !type || value === undefined) {
+    return res.status(400).json({ error: 'code, type, and value are required' })
+  }
+  if (!['percent', 'fixed', 'free_shipping'].includes(type)) {
+    return res.status(400).json({ error: 'type must be percent, fixed, or free_shipping' })
+  }
+  if (!['sitewide', 'category', 'product'].includes(scope || 'sitewide')) {
+    return res.status(400).json({ error: 'scope must be sitewide, category, or product' })
+  }
+  if (value < 0) return res.status(400).json({ error: 'value must be >= 0' })
+  if ((min_subtotal ?? 0) < 0) return res.status(400).json({ error: 'min_subtotal must be >= 0' })
+  if (max_discount !== undefined && max_discount !== null && max_discount < 0) {
+    return res.status(400).json({ error: 'max_discount must be >= 0' })
+  }
+  if (usage_limit !== undefined && usage_limit !== null && usage_limit < 1) {
+    return res.status(400).json({ error: 'usage_limit must be >= 1' })
+  }
+  if (per_user_limit !== undefined && per_user_limit < 1) {
+    return res.status(400).json({ error: 'per_user_limit must be >= 1' })
+  }
+  if (scope !== 'sitewide' && !target_id) {
+    return res.status(400).json({ error: 'target_id is required for category/product scope' })
+  }
+
+  const promoCode = String(code).trim().toUpperCase()
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('promos')
+      .insert({
+        code: promoCode,
+        type,
+        value: Number(value),
+        scope: scope || 'sitewide',
+        target_id: target_id || null,
+        min_subtotal: Number(min_subtotal || 0),
+        max_discount: max_discount === null || max_discount === undefined ? null : Number(max_discount),
+        usage_limit: usage_limit === null || usage_limit === undefined ? null : Number(usage_limit),
+        per_user_limit: Number(per_user_limit || 1),
+        starts_at: starts_at || new Date().toISOString(),
+        ends_at: ends_at || null,
+        is_active: is_active ?? true,
+      })
+      .select('*')
+      .single()
+    if (error) {
+      if (error.code === '23505') return res.status(409).json({ error: 'Promo code already exists' })
+      throw error
+    }
+    res.status(201).json(data)
+    logAudit({ adminEmail: req.userEmail, action: 'promo_create', target: promoCode })
+  } catch (err) {
+    logger.error({ err }, 'Promo create error')
+    res.status(500).json({ error: 'Failed to create promo' })
+  }
+})
+
+// PATCH /api/admin/promos/:code — update promo
+router.patch('/promos/:code', requireAdmin, async (req, res) => {
+  const code = String(req.params.code || '').trim().toUpperCase()
+  if (!code) return res.status(400).json({ error: 'Invalid promo code' })
+
+  const {
+    type, value, scope, target_id, min_subtotal,
+    max_discount, usage_limit, per_user_limit,
+    starts_at, ends_at, is_active,
+  } = req.body ?? {}
+
+  const updates = { updated_at: new Date().toISOString() }
+  if (type !== undefined) {
+    if (!['percent', 'fixed', 'free_shipping'].includes(type)) {
+      return res.status(400).json({ error: 'type must be percent, fixed, or free_shipping' })
+    }
+    updates.type = type
+  }
+  if (value !== undefined) {
+    if (value < 0) return res.status(400).json({ error: 'value must be >= 0' })
+    updates.value = Number(value)
+  }
+  if (scope !== undefined) {
+    if (!['sitewide', 'category', 'product'].includes(scope)) {
+      return res.status(400).json({ error: 'scope must be sitewide, category, or product' })
+    }
+    updates.scope = scope
+  }
+  if (target_id !== undefined) updates.target_id = target_id || null
+  if (min_subtotal !== undefined) {
+    if (min_subtotal < 0) return res.status(400).json({ error: 'min_subtotal must be >= 0' })
+    updates.min_subtotal = Number(min_subtotal)
+  }
+  if (max_discount !== undefined) {
+    if (max_discount !== null && max_discount < 0) return res.status(400).json({ error: 'max_discount must be >= 0' })
+    updates.max_discount = max_discount === null ? null : Number(max_discount)
+  }
+  if (usage_limit !== undefined) {
+    if (usage_limit !== null && usage_limit < 1) return res.status(400).json({ error: 'usage_limit must be >= 1' })
+    updates.usage_limit = usage_limit === null ? null : Number(usage_limit)
+  }
+  if (per_user_limit !== undefined) {
+    if (per_user_limit < 1) return res.status(400).json({ error: 'per_user_limit must be >= 1' })
+    updates.per_user_limit = Number(per_user_limit)
+  }
+  if (starts_at !== undefined) updates.starts_at = starts_at
+  if (ends_at !== undefined) updates.ends_at = ends_at || null
+  if (is_active !== undefined) updates.is_active = Boolean(is_active)
+
+  if (updates.scope !== 'sitewide' && (updates.target_id === null || updates.target_id === undefined)) {
+    const { data: current } = await supabaseAdmin.from('promos').select('scope, target_id').eq('code', code).maybeSingle()
+    const effectiveScope = updates.scope ?? current?.scope
+    const effectiveTarget = updates.target_id ?? current?.target_id
+    if (effectiveScope !== 'sitewide' && !effectiveTarget) {
+      return res.status(400).json({ error: 'target_id is required for category/product scope' })
+    }
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('promos')
+      .update(updates)
+      .eq('code', code)
+      .select('*')
+      .maybeSingle()
+    if (error) throw error
+    if (!data) return res.status(404).json({ error: 'Promo not found' })
+    res.json(data)
+    logAudit({ adminEmail: req.userEmail, action: 'promo_update', target: code })
+  } catch (err) {
+    logger.error({ err }, 'Promo update error')
+    res.status(500).json({ error: 'Failed to update promo' })
+  }
+})
+
+// DELETE /api/admin/promos/:code — delete promo
+router.delete('/promos/:code', requireAdmin, async (req, res) => {
+  const code = String(req.params.code || '').trim().toUpperCase()
+  if (!code) return res.status(400).json({ error: 'Invalid promo code' })
+  try {
+    const { error } = await supabaseAdmin.from('promos').delete().eq('code', code)
+    if (error) throw error
+    res.json({ success: true })
+    logAudit({ adminEmail: req.userEmail, action: 'promo_delete', target: code })
+  } catch (err) {
+    logger.error({ err }, 'Promo delete error')
+    res.status(500).json({ error: 'Failed to delete promo' })
+  }
+})
+
 // ── Product Delete (with image cleanup) ────────────────────────────────────────
 
 function extractStorageFilename(url) {

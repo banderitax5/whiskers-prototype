@@ -19,6 +19,7 @@ import {
   BsXLg,
   BsClockHistory,
   BsChatDots,
+  BsGift,
 } from "react-icons/bs"
 
 // icon keys map to the react-icons components the sidebar uses
@@ -28,6 +29,7 @@ const NAV_ICONS = {
   people: <BsPeople />,
   creditCard: <BsCreditCard />,
   receipt: <BsReceipt />,
+  gift: <BsGift />,
   clockHistory: <BsClockHistory />,
   chatDots: <BsChatDots />,
 }
