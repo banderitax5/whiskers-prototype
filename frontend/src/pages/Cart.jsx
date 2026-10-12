@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useShop } from '../context/ShopContext.jsx'
 import useLiveProductRows from '../hooks/useLiveProductRows.js'
 import ProductThumb from '../components/ProductThumb.jsx'
+import CartRecommendations from '../components/CartRecommendations.jsx'
 import {
   SHIPPING_FEE_PHP,
   LOW_STOCK_THRESHOLD,
@@ -428,6 +429,8 @@ function Cart() {
                 </article>
               )
             })}
+
+            <CartRecommendations />
           </div>
 
           {/* right column — summary (sticky on desktop) */}

@@ -44,6 +44,11 @@ vi.mock('../lib/supabase', () => ({
   },
 }))
 
+// the recommendation strip fetches the catalog; keep it out of these tests
+vi.mock('../components/CartRecommendations.jsx', () => ({
+  default: () => null,
+}))
+
 import Cart from './Cart.jsx'
 
 let cleanup = () => {}

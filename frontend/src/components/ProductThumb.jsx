@@ -3,7 +3,7 @@ import { useState } from 'react'
 // product thumbnail with a graceful fallback when the image is missing
 // or fails to load (U7). alt is intentionally empty because the surrounding
 // card always carries the product name as text.
-function ProductThumb({ src, className = 'h-16 w-16 sm:h-20 sm:w-20' }) {
+function ProductThumb({ src, className = 'h-16 w-16 sm:h-20 sm:w-20', imgClassName = 'h-12 w-12 sm:h-14 sm:w-14' }) {
   const [failed, setFailed] = useState(false)
 
   if (!src || failed) {
@@ -23,7 +23,7 @@ function ProductThumb({ src, className = 'h-16 w-16 sm:h-20 sm:w-20' }) {
         alt=""
         loading="lazy"
         onError={() => setFailed(true)}
-        className="h-12 w-12 sm:h-14 sm:w-14 object-contain"
+        className={`${imgClassName} object-contain`}
       />
     </div>
   )

@@ -3,21 +3,8 @@ import { useShop } from '../context/ShopContext'
 import { usePets } from '../context/PetsContext'
 import { recommendFromCatalog } from '../lib/recommendEngine'
 import { logTopRecommendation } from '../lib/recommendationLogger'
-import { apiGet } from '../lib/api'
+import { loadCatalog, resetCatalogCache } from '../lib/catalogCache'
 import { findLabel, HEALTH_CONDITION_OPTIONS } from '../data/petFormOptions'
-
-// catalog is refetched on a short TTL so admin price/stock edits show up
-// without hammering the API on every pet-tab switch
-let catalogCache = { at: 0, items: null }
-async function loadCatalog() {
-  if (catalogCache.items && Date.now() - catalogCache.at < 60_000) {
-    return catalogCache.items
-  }
-  const res = await apiGet('/products?pageSize=1000')
-  const items = res.items || []
-  catalogCache = { at: Date.now(), items }
-  return items
-}
 
 function RecommendationResults({ pet }) {
   const { addToCart } = useShop()
@@ -54,7 +41,7 @@ function RecommendationResults({ pet }) {
   }, [pet, recommendations, isAuthenticated])
 
   const retry = useCallback(() => {
-    catalogCache = { at: 0, items: null }
+    resetCatalogCache()
     setAttempt((a) => a + 1)
   }, [])
 
