@@ -3,6 +3,7 @@ import supabase from '../lib/supabase';
 import { apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth, apiUploadAuth } from '../lib/api';
 import { AdminPage, AdminTable, EmptyState, StatCard, btnPrimary, StatusPill, ConfirmDialog } from './adminTheme';
 import { SECTION_LABELS, detailsToFields, fieldsToDetails } from '../lib/productInfo';
+import { formatPesos } from '../lib/cartLogic';
 import { BsBoxSeam, BsPlusLg, BsDashLg, BsPencilSquare, BsTrash, BsUpload, BsSearch, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 import toast from 'react-hot-toast';
 
@@ -349,7 +350,7 @@ const AdminProductManagement = () => {
     { key: 'category', label: 'Category', sortable: true, render: (item) => (
       <span className="px-2 py-1 rounded bg-gray-100 dark:bg-[#162d4a] text-gray-700 dark:text-slate-300 text-[10px] font-black uppercase tracking-widest border border-gray-200 dark:border-[#1e3a5f]">{item.category}</span>
     ) },
-    { key: 'price', label: 'Price', sortable: true, render: (item) => <span className="font-black text-[#0b2e59] dark:text-yellow-200">PHP {Number(item.price || 0).toLocaleString()}</span> },
+    { key: 'price', label: 'Price', sortable: true, render: (item) => <span className="font-black text-[#0b2e59] dark:text-yellow-200">PHP {formatPesos(Number(item.price || 0))}</span> },
     { key: 'stock_quantity', label: 'Stock', sortable: true, render: (item) => <span className="text-gray-700 dark:text-slate-300">{item.stock_quantity}</span> },
     { key: 'status', label: 'Status', render: (item) => {
       const s = productBadge(item);
@@ -570,7 +571,7 @@ const AdminProductManagement = () => {
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-bold text-gray-900 dark:text-slate-100 truncate">{item.prod_name}</div>
                 <div className="text-xs text-gray-500 dark:text-slate-400">
-                  PHP {Number(item.price || 0).toLocaleString()}
+                  PHP {formatPesos(Number(item.price || 0))}
                   <span className="ml-1.5">· {item.category} · Stock {item.stock_quantity}</span>
                 </div>
               </div>

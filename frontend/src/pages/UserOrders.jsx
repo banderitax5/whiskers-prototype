@@ -1,6 +1,7 @@
 ﻿import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useShop } from '../context/ShopContext.jsx'
+import { formatPesos } from '../lib/cartLogic'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -272,7 +273,7 @@ function UserOrders() {
                 </div>
                 <div className="flex items-center gap-4">
                   <span className="text-base font-bold text-[#0b2e59] dark:text-yellow-300">
-                    PHP {Number(order.total_amount).toLocaleString()}
+                    PHP {formatPesos(Number(order.total_amount))}
                   </span>
                   <svg
                     className={`w-4 h-4 text-gray-500 transition-transform ${expanded === order.order_id ? 'rotate-180' : ''}`}
@@ -295,7 +296,7 @@ function UserOrders() {
                             <span className="text-gray-800 dark:text-gray-100 truncate">
                               {item.name} <span className="text-gray-500 dark:text-gray-400">x {item.quantity}</span>
                             </span>
-                            <span className="text-gray-600 dark:text-gray-300 whitespace-nowrap">PHP {Number(item.subtotal).toLocaleString()}</span>
+                            <span className="text-gray-600 dark:text-gray-300 whitespace-nowrap">PHP {formatPesos(Number(item.subtotal))}</span>
                           </li>
                         ))}
                       </ul>
@@ -321,7 +322,7 @@ function UserOrders() {
                     </div>
                     <div>
                       <p className="text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-slate-400 mb-1">Payment Amount</p>
-                      <p className="font-semibold text-[#0b2e59] dark:text-yellow-300">PHP {Number(order.payment?.amount || order.total_amount).toLocaleString()}</p>
+                      <p className="font-semibold text-[#0b2e59] dark:text-yellow-300">PHP {formatPesos(Number(order.payment?.amount || order.total_amount))}</p>
                     </div>
                     <div className="sm:col-span-2 flex flex-wrap gap-2">
                       <Link

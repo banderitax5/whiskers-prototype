@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import supabase from '../lib/supabase';
 import { apiGetAllPages, apiDeleteAuth } from '../lib/api';
+import { formatPesos } from '../lib/cartLogic';
 import { AdminPage, AdminTable, EmptyState, StatCard, ConfirmDialog } from './adminTheme';
 import { BsCreditCard, BsSearch, BsTrash, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 import { useRole } from '../context/RoleContext';
@@ -173,7 +174,7 @@ const AdminPayments = () => {
       },
     },
     { key: 'amount', label: 'Amount', sortable: true,
-      render: (p) => <span className="font-black text-lg text-[#0b2e59] dark:text-yellow-200">PHP {Number(p.amount || 0).toLocaleString()}</span>,
+      render: (p) => <span className="font-black text-lg text-[#0b2e59] dark:text-yellow-200">PHP {formatPesos(Number(p.amount || 0))}</span>,
     },
     { key: 'method', label: 'Method', sortable: true,
       render: (p) => <span className="px-3 py-1 rounded-full border border-gray-300 dark:border-[#1e3a5f] bg-white dark:bg-[#162d4a] text-gray-800 dark:text-slate-200 text-[10px] font-black uppercase tracking-widest">{p.method}</span>,
@@ -205,9 +206,9 @@ const AdminPayments = () => {
     <AdminPage title="Payment Transactions" subtitle="Every transaction that flowed through the store.">
 
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4 mb-6">
-        <StatCard label="Revenue in View" value={`PHP ${totalRevenue.toLocaleString()}`} loading={loading} />
+        <StatCard label="Revenue in View" value={`PHP ${formatPesos(totalRevenue)}`} loading={loading} />
         <StatCard label="Transactions" value={filteredPayments.length} loading={loading} />
-        <StatCard label="Avg. Payment" value={filteredPayments.length ? `PHP ${Math.round(avgPayment).toLocaleString()}` : 'PHP 0'} loading={loading} />
+        <StatCard label="Avg. Payment" value={filteredPayments.length ? `PHP ${formatPesos(Math.round(avgPayment))}` : 'PHP 0.00'} loading={loading} />
       </div>
 
       {error && !loading ? (
@@ -290,7 +291,7 @@ const AdminPayments = () => {
             </div>
             <div className="text-sm font-bold text-gray-900 dark:text-slate-100 truncate">{`${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Guest'}</div>
             <div className="text-xs text-gray-500 dark:text-slate-400">
-              PHP {Number(p.amount || 0).toLocaleString()}
+              PHP {formatPesos(Number(p.amount || 0))}
               <span className="ml-1.5">· {p.method}</span>
               {p.payment_date && <span className="ml-1.5">· {new Date(p.payment_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span>}
             </div>

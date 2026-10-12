@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import supabase from '../lib/supabase';
 import { apiGetAllPages, apiPatchAuth, apiDeleteAuth } from '../lib/api';
+import { formatPesos } from '../lib/cartLogic';
 import { AdminPage, AdminTable, AdminRowDropdown, EmptyState, StatCard, StatusPill, ConfirmDialog } from './adminTheme';
 import { BsBoxSeam, BsSearch, BsTrash, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 import { useRole } from '../context/RoleContext';
@@ -214,7 +215,7 @@ const AdminOrders = () => {
     },
     { key: 'total', label: 'Total', sortable: true,
       render: (o) => o.total_amount != null
-        ? <span className="font-black text-[#0b2e59] dark:text-yellow-200">PHP {Number(o.total_amount).toLocaleString()}</span>
+        ? <span className="font-black text-[#0b2e59] dark:text-yellow-200">PHP {formatPesos(Number(o.total_amount))}</span>
         : <span className="text-gray-400 dark:text-slate-500">-</span>,
     },
     { key: 'created_at', label: 'Placed', sortable: true,
@@ -256,7 +257,7 @@ const AdminOrders = () => {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-4 mb-6">
         <StatCard label="Orders in View" value={orders.length} loading={loading} />
-        <StatCard label="Value in View" value={`PHP ${totalRevenue.toLocaleString()}`} loading={loading} />
+        <StatCard label="Value in View" value={`PHP ${formatPesos(totalRevenue)}`} loading={loading} />
         <StatCard label="Pending" value={counts.Pending || 0} loading={loading} />
       </div>
 
@@ -343,7 +344,7 @@ const AdminOrders = () => {
             </div>
             <div className="text-sm font-bold text-gray-900 dark:text-slate-100 truncate">{`${o.firstName || ''} ${o.lastName || ''}`.trim() || 'Guest'}</div>
             <div className="text-xs text-gray-500 dark:text-slate-400">
-              {o.total_amount != null ? `PHP ${Number(o.total_amount).toLocaleString()}` : '-'}
+              {o.total_amount != null ? `PHP ${formatPesos(Number(o.total_amount))}` : '-'}
               {o.created_at && <span className="ml-1.5">· {new Date(o.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span>}
             </div>
             <div className="flex items-center gap-2 pt-1.5 mt-1.5 border-t border-gray-50 dark:border-[#1e3a5f]/40">
@@ -400,7 +401,7 @@ const AdminOrders = () => {
                       <span className="text-gray-800 dark:text-slate-200 truncate">{item.name}</span>
                       <div className="flex items-center gap-3 shrink-0 ml-2">
                         <span className="text-xs text-gray-500 dark:text-slate-400">x{item.quantity}</span>
-                        <span className="font-semibold text-gray-800 dark:text-slate-200">PHP {Number(item.subtotal).toLocaleString()}</span>
+                        <span className="font-semibold text-gray-800 dark:text-slate-200">PHP {formatPesos(Number(item.subtotal))}</span>
                       </div>
                     </div>
                   ))}
@@ -415,7 +416,7 @@ const AdminOrders = () => {
                 <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-slate-500">Payment</p>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div><span className="text-gray-500 dark:text-slate-400">Method: </span><span className="font-semibold text-gray-800 dark:text-slate-200 uppercase">{viewingOrder.payment?.method || 'N/A'}</span></div>
-                  <div><span className="text-gray-500 dark:text-slate-400">Amount: </span><span className="font-bold text-[#0b2e59] dark:text-yellow-300">PHP {Number(viewingOrder.payment?.amount || viewingOrder.total_amount).toLocaleString()}</span></div>
+                  <div><span className="text-gray-500 dark:text-slate-400">Amount: </span><span className="font-bold text-[#0b2e59] dark:text-yellow-300">PHP {formatPesos(Number(viewingOrder.payment?.amount || viewingOrder.total_amount))}</span></div>
                 </div>
               </div>
             </div>

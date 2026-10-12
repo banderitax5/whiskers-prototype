@@ -5,6 +5,7 @@ import { extractSizeLabel } from '../lib/productUtils.js'
 import { trackEvent } from '../lib/appEvents.js'
 import ProductImage from './ProductImage.jsx'
 import { normalizeProduct, getStockStatus } from '../lib/productDisplay.js'
+import { formatPesos } from '../lib/cartLogic'
 
 // full screen product dialog that pops up when you click on a product card
 // uses createPortal to render directly on document.body so it always covers
@@ -124,7 +125,7 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
             </Link>
             <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{p.brand || p.collection || 'Whiskers'}</p>
             {safePrice > 0 ? (
-              <p className="mt-3 text-3xl font-bold text-[#e4406a]">PHP {safePrice.toFixed(2)}</p>
+              <p className="mt-3 text-3xl font-bold text-[#e4406a]">PHP {formatPesos(Number(safePrice))}</p>
             ) : (
               <p className="mt-3 text-lg font-semibold text-gray-500 dark:text-gray-400">Price not yet set</p>
             )}

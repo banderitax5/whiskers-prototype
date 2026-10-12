@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getCachedProducts } from '../lib/productSearchCache'
+import { formatPesos } from '../lib/cartLogic'
 import { BsSearch, BsClockHistory, BsFire, BsX } from 'react-icons/bs'
 
 const RECENT_KEY = 'whiskers_recent_searches'
@@ -201,7 +202,7 @@ export default function MobileSearch() {
                     <p className="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">{p.prod_name}</p>
                     <p className="text-[11px] text-gray-500 dark:text-slate-400">{p.category}</p>
                   </div>
-                  <span className="text-sm font-bold text-gray-900 dark:text-white shrink-0">PHP {Number(p.price || 0).toLocaleString()}</span>
+                  <span className="text-sm font-bold text-gray-900 dark:text-white shrink-0">PHP {formatPesos(Number(p.price || 0))}</span>
                 </button>
               ))}
               <button onClick={() => submit()} className="w-full mt-1 px-3 py-2 rounded-lg text-center text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">

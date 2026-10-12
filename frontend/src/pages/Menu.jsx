@@ -4,6 +4,7 @@ import { useShop } from '../context/ShopContext.jsx'
 import ProductQuickViewDialog from '../components/ProductQuickViewDialog.jsx'
 import { apiGet } from '../lib/api.js'
 import { attachSizeVariants } from '../lib/productUtils.js'
+import { formatPesos } from '../lib/cartLogic'
 
 const PAGE_SIZES = [8, 16, 24, 36]
 const SORT_OPTIONS = [
@@ -443,7 +444,7 @@ function Menu() {
                     </h3>
                     <p className="mt-0.5 sm:mt-1 text-[10px] sm:text-[11px] text-gray-400 dark:text-gray-500 truncate">{product.category}</p>
                     {product.price > 0 ? (
-                      <p className="mt-1 sm:mt-2 text-sm sm:text-base font-bold text-gray-900 dark:text-white">PHP {product.price.toFixed(2)}</p>
+                      <p className="mt-1 sm:mt-2 text-sm sm:text-base font-bold text-gray-900 dark:text-white">PHP {formatPesos(Number(product.price))}</p>
                     ) : (
                       <p className="mt-1 sm:mt-2 text-[11px] sm:text-xs font-medium text-gray-500 dark:text-gray-400">Price not yet set</p>
                     )}

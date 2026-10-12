@@ -4,6 +4,7 @@ import { useShop } from '../context/ShopContext.jsx'
 import ProductQuickViewDialog from '../components/ProductQuickViewDialog.jsx'
 import { apiGet } from '../lib/api.js'
 import { attachSizeVariants } from '../lib/productUtils.js'
+import { formatPesos } from '../lib/cartLogic'
 
 const CAROUSEL_SLIDES = [
   { image: '/banner.png', alt: 'Whiskers Pet Shop' },
@@ -233,7 +234,7 @@ function Home() {
                   </span>
                   <p className="text-xs sm:text-base font-semibold text-gray-800 dark:text-gray-100 line-clamp-2 leading-tight min-h-[2rem] sm:min-h-[2.5rem]">{product.prod_name}</p>
                   {product.price > 0 ? (
-                    <p className="text-sm sm:text-lg font-bold text-gray-900 dark:text-white">PHP {product.price.toFixed(2)}</p>
+                    <p className="text-sm sm:text-lg font-bold text-gray-900 dark:text-white">PHP {formatPesos(Number(product.price))}</p>
                   ) : (
                     <p className="text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400">Price not yet set</p>
                   )}

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import supabase from '../lib/supabase';
 import { apiGetAuth } from '../lib/api';
+import { formatPesos } from '../lib/cartLogic';
 import { AdminPage, StatCard, EmptyState } from './adminTheme';
 import { BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 
@@ -157,13 +158,13 @@ function AdminDashboard() {
 
   const statValues = stats
     ? [
-        `PHP ${Number(stats.totalSales || 0).toLocaleString()}`,
-        `PHP ${Number(stats.totalProfit || 0).toLocaleString()}`,
+        `PHP ${formatPesos(Number(stats.totalSales || 0))}`,
+        `PHP ${formatPesos(Number(stats.totalProfit || 0))}`,
         stats.totalOrders ?? 0,
         stats.pendingOrders ?? 0,
         stats.totalUsers ?? 0,
         stats.totalProducts ?? 0,
-        `PHP ${Number(stats.totalRevenue || 0).toLocaleString()}`,
+        `PHP ${formatPesos(Number(stats.totalRevenue || 0))}`,
       ]
     : [];
   const cards = STAT_LABELS.map((label, i) => ({ label, value: statValues[i] }));
@@ -270,7 +271,7 @@ function AdminDashboard() {
                         const max = Math.max(...revenue.map(x => x.amount), 1)
                         const h = Math.max(2, (d.amount / max) * 100)
                         return (
-                          <div key={d.date} className="flex-1 flex flex-col items-center gap-0.5" title={`${d.date}: PHP ${d.amount.toLocaleString()}`}>
+                          <div key={d.date} className="flex-1 flex flex-col items-center gap-0.5" title={`${d.date}: PHP ${formatPesos(d.amount)}`}>
                             <div className="w-full bg-emerald-500 dark:bg-emerald-400 rounded-t" style={{ height: `${h}%` }} />
                           </div>
                         )
@@ -298,7 +299,7 @@ function AdminDashboard() {
                           <div className="flex-1 h-5 bg-gray-100 dark:bg-[#162d4a] rounded overflow-hidden">
                             <div className="h-full bg-emerald-500 dark:bg-emerald-400 rounded transition-all" style={{ width: `${pct}%` }} />
                           </div>
-                          <span className="w-20 text-right font-semibold text-gray-500 dark:text-slate-400">PHP {m.amount.toLocaleString()}</span>
+                          <span className="w-20 text-right font-semibold text-gray-500 dark:text-slate-400">PHP {formatPesos(m.amount)}</span>
                         </div>
                       )
                     })}

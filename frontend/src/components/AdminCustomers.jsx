@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import supabase from '../lib/supabase';
 import { apiGetAllPages, apiPatchAuth, apiDeleteAuth } from '../lib/api';
+import { formatPesos } from '../lib/cartLogic';
 import { AdminPage, AdminTable, AdminRowDropdown, EmptyState, StatCard, StatusPill, ConfirmDialog } from './adminTheme';
 import { BsPeople, BsSearch, BsTrash, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 import toast from 'react-hot-toast';
@@ -116,7 +117,7 @@ const AdminCustomers = () => {
     },
     { key: 'totalSpent', label: 'Spent',
       render: (u) => u.totalSpent > 0
-        ? <span className="font-black text-sm text-[#0b2e59] dark:text-yellow-200">PHP {Number(u.totalSpent).toLocaleString()}</span>
+        ? <span className="font-black text-sm text-[#0b2e59] dark:text-yellow-200">PHP {formatPesos(Number(u.totalSpent))}</span>
         : <span className="text-gray-400 dark:text-slate-500">-</span>,
     },
     {
@@ -220,7 +221,7 @@ const AdminCustomers = () => {
             <div className="text-xs text-gray-500 dark:text-slate-400 pl-9">
               {u.phone || 'No phone'}
               {u.ordersCount > 0 && <span className="ml-1.5">· {u.ordersCount} order{u.ordersCount > 1 ? 's' : ''}</span>}
-              {u.totalSpent > 0 && <span className="ml-1.5">· PHP {Number(u.totalSpent).toLocaleString()}</span>}
+              {u.totalSpent > 0 && <span className="ml-1.5">· PHP {formatPesos(Number(u.totalSpent))}</span>}
               {u.feedback && <span className="ml-1.5">· Has feedback</span>}
             </div>
           </div>
