@@ -389,6 +389,114 @@ if ($probeId) {
     }
   }
 
+  # Phase 4: promos - create a percent code, apply it at checkout, verify the
+  # per-line discount snapshot, the admin view, and the per-user limit. Runs
+  # before the archive steps: the probe must still be active and purchasable.
+  $promoReady = $false
+  $promoReason = ''
+  try {
+    Invoke-RestMethod -Uri "$SU/rest/v1/promos?limit=1" -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+    $promoReady = $true
+    Step 'promo: M4 schema present' $true 'promos table queryable'
+  } catch {
+    $promoReason = "$($_.Exception.Response.StatusCode.value__) $(Get-ErrBody $_)"
+    Step 'promo: M4 schema present' $false $promoReason 'SKIP'
+  }
+
+  $order4Id = $null
+  $promoCode = "E2E$([guid]::NewGuid().ToString('N').Substring(0,6).ToUpper())"
+  if (-not $stepUpH) {
+    Step 'promo: admin creates percent code' $false 'skipped: step-up was rate limited' 'SKIP'
+    Step 'promo: validate-promo returns discount' $false 'skipped: step-up was rate limited' 'SKIP'
+    Step 'promo: validate rejects unknown code' $false 'skipped: step-up was rate limited' 'SKIP'
+    Step 'promo: checkout applies discount' $false 'skipped: step-up was rate limited' 'SKIP'
+    Step 'promo: discount snapshot on line' $false 'skipped: step-up was rate limited' 'SKIP'
+    Step 'promo: admin order shows discount' $false 'skipped: step-up was rate limited' 'SKIP'
+    Step 'promo: per-user limit blocks reuse' $false 'skipped: step-up was rate limited' 'SKIP'
+  } elseif (-not $promoReady) {
+    Step 'promo: admin creates percent code' $false $promoReason 'SKIP'
+    Step 'promo: validate-promo returns discount' $false $promoReason 'SKIP'
+    Step 'promo: validate rejects unknown code' $false $promoReason 'SKIP'
+    Step 'promo: checkout applies discount' $false $promoReason 'SKIP'
+    Step 'promo: discount snapshot on line' $false $promoReason 'SKIP'
+    Step 'promo: admin order shows discount' $false $promoReason 'SKIP'
+    Step 'promo: per-user limit blocks reuse' $false $promoReason 'SKIP'
+  } else {
+    try {
+      $promoBody = @{
+        code = $promoCode; type = 'percent'; value = 50; scope = 'sitewide'
+        min_subtotal = 0; per_user_limit = 1; usage_limit = 100; is_active = $true
+      }
+      Invoke-RestMethod -Uri "$base/api/admin/promos" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+        -Body ($promoBody | ConvertTo-Json -Depth 5 -Compress) | Out-Null
+      Step 'promo: admin creates percent code' $true $promoCode
+    } catch { Step 'promo: admin creates percent code' $false (Get-ErrBody $_) }
+
+    # price the probe at 200 so a 50% code is a clean 100 off; Phase 3 left it
+    # with 1 unit of stock, so restock to 10 for this order
+    try {
+      Invoke-RestMethod -Uri "$base/api/admin/products/$probeId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+        -Body (@{ price = 200; stock_quantity = 10 } | ConvertTo-Json -Compress) | Out-Null
+      Step 'promo: probe repriced and restocked' $true 'price=200 stock=10'
+    } catch { Step 'promo: probe repriced and restocked' $false (Get-ErrBody $_) }
+
+    if ($stepUpH) {
+      try {
+        $vp = Invoke-RestMethod -Uri "$base/api/orders/validate-promo" -Method Post -Headers $authH -ContentType 'application/json' `
+          -Body (@{ items = @(@{ productId = $probeId; quantity = 1 }); promo_code = $promoCode } | ConvertTo-Json -Depth 5 -Compress)
+        Step 'promo: validate-promo returns discount' ([double]$vp.discount -gt 0) "discount=$($vp.discount)"
+      } catch { Step 'promo: validate-promo returns discount' $false (Get-ErrBody $_) }
+
+      try {
+        Invoke-RestMethod -Uri "$base/api/orders/validate-promo" -Method Post -Headers $authH -ContentType 'application/json' `
+          -Body (@{ items = @(@{ productId = $probeId; quantity = 1 }); promo_code = 'NOSUCHCODE' } | ConvertTo-Json -Depth 5 -Compress) | Out-Null
+        Step 'promo: validate rejects unknown code' $false 'got 2xx'
+      } catch { Step 'promo: validate rejects unknown code' ($_.Exception.Response.StatusCode.value__ -eq 400) $_.Exception.Response.StatusCode.value__ }
+    }
+
+    try {
+      $o4 = Invoke-RestMethod -Uri "$base/api/orders" -Method Post -Headers $authH -ContentType 'application/json' `
+        -Body (@{ items = @(@{ productId = $probeId; quantity = 1 }); paymentMethod = 'GCash'; shippingFee = 75; customerName = 'E2E Phase4'; phone = '09171234567'; address = '1 Test Street'; promo_code = $promoCode } | ConvertTo-Json -Depth 5 -Compress)
+      $order4Id = $o4.order_id
+      $totalOk = ([double]$o4.total_amount -eq 175)   # 75 shipping + 200 subtotal - 100 promo
+      Step 'promo: checkout applies discount' $totalOk "total=$($o4.total_amount) (want 175)"
+    } catch { Step 'promo: checkout applies discount' $false (Get-ErrBody $_) }
+
+    if ($order4Id) {
+      try {
+        $o4det = Invoke-RestMethod -Uri "$SU/rest/v1/order_details?order_id=eq.$order4Id&select=unit_price,discount_amount,subtotal" -Headers @{ apikey = $SK; Authorization = "Bearer $SK" }
+        $d4 = $o4det[0]
+        Step 'promo: discount snapshot on line' ([double]$d4.discount_amount -eq 100) "disc=$($d4.discount_amount)"
+      } catch { Step 'promo: discount snapshot on line' $false (Get-ErrBody $_) }
+
+      try {
+        $aOrders4 = Invoke-RestMethod -Uri "$base/api/admin/orders?pageSize=20" -Headers $authH
+        $o4line = $null
+        foreach ($ao in $aOrders4.items) { if ($ao.order_id -eq $order4Id) { $o4line = $ao.items[0]; break } }
+        $o4Ok = $o4line -and ([double]$o4line.discount_amount -eq 100) -and ([double]$o4line.effective_unit_price -eq 100)
+        Step 'promo: admin order shows discount' $o4Ok "disc=$($o4line.discount_amount) eff=$($o4line.effective_unit_price)"
+      } catch { Step 'promo: admin order shows discount' $false (Get-ErrBody $_) }
+
+      # per_user_limit = 1: the same account cannot redeem the code twice
+      try {
+        Invoke-RestMethod -Uri "$base/api/orders" -Method Post -Headers $authH -ContentType 'application/json' `
+          -Body (@{ items = @(@{ productId = $probeId; quantity = 1 }); paymentMethod = 'GCash'; shippingFee = 75; customerName = 'E2E Phase4 Again'; phone = '09171234567'; address = '1 Test Street'; promo_code = $promoCode } | ConvertTo-Json -Depth 5 -Compress) | Out-Null
+        Step 'promo: per-user limit blocks reuse' $false 'got 2xx'
+      } catch { Step 'promo: per-user limit blocks reuse' ($_.Exception.Response.StatusCode.value__ -eq 400) (Get-ErrBody $_) }
+    } else {
+      Step 'promo: discount snapshot on line' $false 'order was not created'
+      Step 'promo: admin order shows discount' $false 'order was not created'
+      Step 'promo: per-user limit blocks reuse' $false 'order was not created'
+    }
+
+    # the probe promo is always removed, with its usage rows
+    try {
+      Invoke-RestMethod -Uri "$base/api/admin/promos/$promoCode" -Method Delete -Headers $stepUpH | Out-Null
+      $promoGone = Invoke-RestMethod -Uri "$SU/rest/v1/promos?code=eq.$promoCode&select=code" -Headers @{ apikey = $SK; Authorization = "Bearer $SK" }
+      Step 'promo: probe promo deleted' (@($promoGone).Count -eq 0) $promoCode
+    } catch { Step 'promo: probe promo deleted' $false (Get-ErrBody $_) }
+  }
+
   # archive roundtrip: leaves the public store, shows under archived=true,
   # comes back under archived=false after restore (restore keeps it hidden
   # from shoppers - is_active stays false - which is the intended behavior)
@@ -567,6 +675,12 @@ if ($order3Id) {
   Invoke-RestMethod -Uri "$SU/rest/v1/order_details?order_id=eq.$order3Id" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
   Invoke-RestMethod -Uri "$SU/rest/v1/orders?order_id=eq.$order3Id" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
   Step 'ordercost: probe order cleaned up' $true $order3Id
+}
+if ($order4Id) {
+  Invoke-RestMethod -Uri "$SU/rest/v1/payment?order_id=eq.$order4Id" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+  Invoke-RestMethod -Uri "$SU/rest/v1/order_details?order_id=eq.$order4Id" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+  Invoke-RestMethod -Uri "$SU/rest/v1/orders?order_id=eq.$order4Id" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+  Step 'promo: probe order cleaned up' $true $order4Id
 }
 if ($probeId) {
   try {

@@ -12,8 +12,8 @@ const router = Router()
 router.use(authMiddleware)
 
 function buildCartItemsForPromo(validatedItems, dbProducts) {
-  const catMap = new Map((dbProducts || []).map(p => [p.prod_id, p.category_id]))
-  return validatedItems.map(i => ({
+  const catMap = new Map((dbProducts || []).map((p) => [p.prod_id, p.category ?? null]))
+  return validatedItems.map((i) => ({
     product_id: i.productId,
     quantity: i.quantity,
     unit_price: i.price,
@@ -44,7 +44,7 @@ router.post('/', orderLimiter, async (req, res) => {
 
     const { data: dbProducts, error: prodErr } = await req.db
       .from('product')
-      .select('prod_id, prod_name, price, stock_quantity, is_active, category_id')
+      .select('prod_id, prod_name, price, stock_quantity, is_active')
       .in('prod_id', productIds)
     if (prodErr) throw prodErr
 
@@ -102,27 +102,44 @@ router.post('/', orderLimiter, async (req, res) => {
     let promoResult = null
     let promoRow = null
     if (promo_code && typeof promo_code === 'string') {
+      // category is only needed for scope matching; a fetch failure must never
+      // break checkout, it only means category-scoped codes match nothing
+      let promoTargets = []
+      try {
+        const { data: catRows } = await supabaseAdmin
+          .from('product')
+          .select('prod_id, category')
+          .in('prod_id', productIds)
+        promoTargets = (catRows || []).map((p) => ({ prod_id: p.prod_id, category: p.category ?? null }))
+      } catch (catEx) {
+        logger.warn({ err: catEx }, 'promo category fetch failed')
+      }
       const { data: promo, error: promoFetchErr } = await supabaseAdmin
         .from('promos')
         .select('*')
         .eq('code', promo_code.trim().toUpperCase())
         .maybeSingle()
       if (promoFetchErr) {
-        logger.warn({ err: promoFetchErr }, 'promo fetch error')
-      } else if (promo) {
-        const { data: usageRows } = await supabaseAdmin
-          .from('promo_usage')
-          .select('id')
-          .eq('promo_code', promo.code)
-          .eq('user_id', req.userId)
-        const userUsageCount = (usageRows || []).length
-        const cartItemsForPromo = buildCartItemsForPromo(validatedItems, dbProducts)
-        promoResult = validatePromo(promo, cartItemsForPromo, req.userId, userUsageCount)
-        if (promoResult.ok) {
-          promoRow = promo
-          totalAmount -= promoResult.discountAmount
+        if (isSchemaPendingError(promoFetchErr)) {
+          return res.status(503).json({ error: 'Promo system is not available yet', code: 'MIGRATION_REQUIRED' })
         }
+        logger.warn({ err: promoFetchErr }, 'promo fetch error')
       }
+      const { data: usageRows } = await supabaseAdmin
+        .from('promo_usage')
+        .select('id')
+        .eq('promo_code', promo_code.trim().toUpperCase())
+        .eq('user_id', req.userId)
+      const userUsageCount = (usageRows || []).length
+      const cartItemsForPromo = buildCartItemsForPromo(validatedItems, promoTargets)
+      promoResult = validatePromo(promo, cartItemsForPromo, req.userId, userUsageCount)
+      // an unusable code must fail loudly: charging full price after the
+      // customer asked for a discount is a silent lie
+      if (!promoResult.ok) {
+        return res.status(400).json({ error: promoResult.error })
+      }
+      promoRow = promo
+      totalAmount -= promoResult.discountAmount
     }
 
     let orderId = null
@@ -285,7 +302,7 @@ router.post('/validate-promo', orderLimiter, async (req, res) => {
   try {
     const { data: dbProducts, error: prodErr } = await supabaseAdmin
       .from('product')
-      .select('prod_id, category_id, price, stock_quantity, is_active')
+      .select('prod_id, prod_name, category, price, is_active')
       .in('prod_id', productIds)
     if (prodErr) throw prodErr
     const productMap = new Map((dbProducts || []).map((p) => [p.prod_id, p]))
@@ -303,7 +320,7 @@ router.post('/validate-promo', orderLimiter, async (req, res) => {
       const qty = Math.max(1, Math.floor(Number(item.quantity) || 1))
       preview.push({
         product_id: item.productId,
-        category: p.category_id ?? null,
+        category: p.category ?? null,
         quantity: qty,
         unit_price: price,
         subtotal: price * qty,

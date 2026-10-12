@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import supabase from '../lib/supabase';
 import { apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from '../lib/api';
 import { AdminPage, AdminTable, EmptyState, StatCard, btnPrimary, StatusPill, ConfirmDialog } from './adminTheme';
 import { formatPesos } from '../lib/cartLogic';
@@ -99,13 +100,21 @@ function AdminPromos() {
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchPromos(); }, []);
+
+  async function getToken() {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token;
+  }
 
   async function fetchPromos() {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiGetAuth('/admin/promos');
+      const token = await getToken();
+      if (!token) throw new Error('Your session has expired. Please sign in again.');
+      const data = await apiGetAuth('/admin/promos', token);
       setPromos(data.items || []);
     } catch (err) {
       setError(err.message || 'Failed to load promos');
@@ -173,12 +182,14 @@ function AdminPromos() {
     setSubmitting(true);
     setFormError('');
     try {
+      const token = await getToken();
+      if (!token) throw new Error('Your session has expired. Please sign in again.');
       const payload = formToPayload(formData);
       if (editing) {
-        await apiPatchAuth(`/admin/promos/${editing.code}`, payload);
+        await apiPatchAuth(`/admin/promos/${editing.code}`, payload, token);
         toast.success(`Promo ${payload.code} updated`);
       } else {
-        await apiPostAuth('/admin/promos', payload);
+        await apiPostAuth('/admin/promos', payload, token);
         toast.success(`Promo ${payload.code} created`);
       }
       setShowForm(false);
@@ -194,7 +205,9 @@ function AdminPromos() {
   async function confirmDelete() {
     if (!deleteTarget) return;
     try {
-      await apiDeleteAuth(`/admin/promos/${deleteTarget.code}`);
+      const token = await getToken();
+      if (!token) throw new Error('Your session has expired. Please sign in again.');
+      await apiDeleteAuth(`/admin/promos/${deleteTarget.code}`, token);
       toast.success(`Promo ${deleteTarget.code} deleted`);
       setDeleteTarget(null);
       await fetchPromos();
@@ -206,7 +219,9 @@ function AdminPromos() {
 
   async function toggleActive(promo) {
     try {
-      await apiPatchAuth(`/admin/promos/${promo.code}`, { is_active: promo.is_active === false });
+      const token = await getToken();
+      if (!token) throw new Error('Your session has expired. Please sign in again.');
+      await apiPatchAuth(`/admin/promos/${promo.code}`, { is_active: promo.is_active === false }, token);
       await fetchPromos();
     } catch (err) {
       toast.error(err.message || 'Failed to update promo');
