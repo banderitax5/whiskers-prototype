@@ -271,6 +271,21 @@ try {
   else { Step 'costing: M2 schema present' $false "$st $m2Body" }
 }
 
+# M3 (owner-run migration) adds unit_price/unit_cost/discount_amount snapshots
+# on order_details. Probe once via the service key; skip dependent steps pre-M3.
+$m3Ready = $false
+$m3Reason = 'M3 migration not applied yet (owner pending)'
+try {
+  Invoke-RestMethod -Uri "$SU/rest/v1/order_details?select=unit_price&limit=1" -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+  $m3Ready = $true
+  Step 'ordercost: M3 schema present' $true 'order_details.unit_price selectable'
+} catch {
+  $m3Body = Get-ErrBody $_
+  if ($m3Body -like '*unit_price*' -or $m3Body -like '*PGRST204*' -or $m3Body -like '*does not exist*') {
+    Step 'ordercost: M3 schema present' $false $m3Reason 'SKIP'
+  } else { Step 'ordercost: M3 schema present' $false $m3Body }
+}
+
 if ($probeId) {
   # admin writes cost + supplier, then reads them back from the admin list
   if (-not $stepUpH) { Step 'costing: admin writes cost and supplier' $false 'skipped: step-up was rate limited' 'SKIP' }
@@ -315,6 +330,63 @@ if ($probeId) {
       $changed = @($histItems | Where-Object { $null -ne $_.old_price -and [double]$_.old_price -eq 1 -and [double]$_.new_price -eq 2 }).Count
       Step 'costing: price history records changes' (($histItems.Count -ge 2) -and ($changed -ge 1)) "count=$($histItems.Count) changed=$changed"
     } catch { Step 'costing: price history records changes' $false (Get-ErrBody $_) }
+  }
+
+  # Phase 3: order the probe (price=2, cost=5.5 from the steps above) and check
+  # the sale-time snapshot + admin margin + SQL/JS parity. Runs before the
+  # archive steps so the probe is still active and purchasable.
+  $order3Id = $null
+  if (-not $stepUpH) {
+    Step 'ordercost: checkout snapshots price and cost' $false 'skipped: step-up was rate limited' 'SKIP'
+    Step 'ordercost: admin order shows margin' $false 'skipped: step-up was rate limited' 'SKIP'
+    Step 'ordercost: SQL effective_price matches API' $false 'skipped: step-up was rate limited' 'SKIP'
+    Step 'ordercost: user history hides cost' $false 'skipped: step-up was rate limited' 'SKIP'
+  } elseif (-not $m3Ready) {
+    Step 'ordercost: checkout snapshots price and cost' $false $m3Reason 'SKIP'
+    Step 'ordercost: admin order shows margin' $false $m3Reason 'SKIP'
+    Step 'ordercost: SQL effective_price matches API' $false $m3Reason 'SKIP'
+    Step 'ordercost: user history hides cost' $false $m3Reason 'SKIP'
+  } else {
+    try {
+      $o3 = Invoke-RestMethod -Uri "$base/api/orders" -Method Post -Headers $authH -ContentType 'application/json' `
+        -Body (@{ items = @(@{ productId = $probeId; quantity = 1 }); paymentMethod = 'GCash'; shippingFee = 75; customerName = 'E2E Phase3'; phone = '09171234567'; address = '1 Test Street' } | ConvertTo-Json -Depth 5 -Compress)
+      $order3Id = $o3.order_id
+      $o3det = Invoke-RestMethod -Uri "$SU/rest/v1/order_details?order_id=eq.$order3Id&select=unit_price,unit_cost,discount_amount,subtotal,quantity" -Headers @{ apikey = $SK; Authorization = "Bearer $SK" }
+      $d3 = $o3det[0]
+      $snapOk = ([double]$d3.unit_price -eq 2) -and ([double]$d3.unit_cost -eq 5.5) -and ([double]$d3.discount_amount -eq 0) -and ([double]$d3.subtotal -eq 2)
+      Step 'ordercost: checkout snapshots price and cost' $snapOk "price=$($d3.unit_price) cost=$($d3.unit_cost) disc=$($d3.discount_amount) sub=$($d3.subtotal)"
+    } catch { Step 'ordercost: checkout snapshots price and cost' $false (Get-ErrBody $_) }
+
+    if ($order3Id) {
+      try {
+        $aOrders = Invoke-RestMethod -Uri "$base/api/admin/orders?pageSize=20" -Headers $authH
+        $o3line = $null
+        foreach ($ao in $aOrders.items) { if ($ao.order_id -eq $order3Id) { $o3line = $ao.items[0]; break } }
+        $marginOk = $o3line -and ([double]$o3line.unit_cost -eq 5.5) -and ([double]$o3line.effective_unit_price -eq 2) -and ([double]$o3line.line_margin -eq -3.5)
+        Step 'ordercost: admin order shows margin' $marginOk "cost=$($o3line.unit_cost) eff=$($o3line.effective_unit_price) margin=$($o3line.line_margin)"
+      } catch { Step 'ordercost: admin order shows margin' $false (Get-ErrBody $_) }
+
+      try {
+        $o3row = Invoke-RestMethod -Uri "$SU/rest/v1/order_details?order_id=eq.$order3Id&select=order_id,prod_id,quantity,subtotal,unit_price,unit_cost,discount_amount" -Headers @{ apikey = $SK; Authorization = "Bearer $SK" }
+        $rpcEff = Invoke-RestMethod -Uri "$SU/rest/v1/rpc/effective_price" -Method Post -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' `
+          -Body (@{ od = $o3row[0] } | ConvertTo-Json -Depth 5 -Compress)
+        $apiEff = $o3line.effective_unit_price
+        Step 'ordercost: SQL effective_price matches API' ([double]$rpcEff -eq [double]$apiEff) "sql=$rpcEff api=$apiEff"
+      } catch { Step 'ordercost: SQL effective_price matches API' $false (Get-ErrBody $_) }
+
+      # customer order history must never carry costing fields
+      try {
+        $uHist = Invoke-RestMethod -Uri "$base/api/orders" -Headers $authH
+        $u3 = $null
+        foreach ($uo in $uHist.items) { if ($uo.order_id -eq $order3Id) { $u3 = $uo.items[0]; break } }
+        $userLeak = $u3 -and ($null -ne $u3.unit_cost -or $null -ne $u3.line_margin)
+        Step 'ordercost: user history hides cost' (-not $userLeak) "found=$($null -ne $u3)"
+      } catch { Step 'ordercost: user history hides cost' $false (Get-ErrBody $_) }
+    } else {
+      Step 'ordercost: admin order shows margin' $false 'order was not created'
+      Step 'ordercost: SQL effective_price matches API' $false 'order was not created'
+      Step 'ordercost: user history hides cost' $false 'order was not created'
+    }
   }
 
   # archive roundtrip: leaves the public store, shows under archived=true,
@@ -423,6 +495,20 @@ if ($probeId) {
     Step 'staff GET strips cost fields' (-not $staffLeak) "cost leaked=$($null -ne $srow.cost_price)"
   } catch { Step 'staff GET strips cost fields' $false (Get-ErrBody $_) }
 
+  # Phase 3 staff boundary: order lines carry unit_cost/line_margin for admin
+  # callers only - staff GET must not receive them
+  if (-not $order3Id) { Step 'staff orders GET strips line cost' $false 'skipped: probe order was not created' 'SKIP' }
+  elseif (-not $m3Ready) { Step 'staff orders GET strips line cost' $false $m3Reason 'SKIP' }
+  else {
+    try {
+      $sOrders = Invoke-RestMethod -Uri "$base/api/admin/orders?pageSize=20" -Headers $authH
+      $o3staff = $null
+      foreach ($so in $sOrders.items) { if ($so.order_id -eq $order3Id) { $o3staff = $so.items[0]; break } }
+      $orderLeak = $o3staff -and ($null -ne $o3staff.unit_cost -or $null -ne $o3staff.line_margin)
+      Step 'staff orders GET strips line cost' (-not $orderLeak) "found=$($null -ne $o3staff)"
+    } catch { Step 'staff orders GET strips line cost' $false (Get-ErrBody $_) }
+  }
+
   # step-up header is still required to get past the router gate; the expected
   # failure is the route-level admin check, not STEP_UP_REQUIRED
   if (-not $stepUpH) { Step 'staff PATCH cost denied 403' $false 'skipped: step-up was rate limited' 'SKIP' }
@@ -476,6 +562,12 @@ $p2 = Invoke-RestMethod -Uri "$SU/rest/v1/product?select=stock_quantity&prod_id=
 Invoke-RestMethod -Uri "$SU/rest/v1/product?prod_id=eq.$prodId" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' `
   -Body (@{ stock_quantity = ([int]$p2[0].stock_quantity + 1) } | ConvertTo-Json -Compress) | Out-Null
 Step 'stock restored' ($true) "$(([int]$p2[0].stock_quantity + 1)) (was $stock0)"
+if ($order3Id) {
+  Invoke-RestMethod -Uri "$SU/rest/v1/payment?order_id=eq.$order3Id" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+  Invoke-RestMethod -Uri "$SU/rest/v1/order_details?order_id=eq.$order3Id" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+  Invoke-RestMethod -Uri "$SU/rest/v1/orders?order_id=eq.$order3Id" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+  Step 'ordercost: probe order cleaned up' $true $order3Id
+}
 if ($probeId) {
   try {
     Invoke-RestMethod -Uri "$SU/rest/v1/product?prod_id=eq.$probeId" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null

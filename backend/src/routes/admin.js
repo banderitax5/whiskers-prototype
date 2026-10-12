@@ -15,6 +15,7 @@ import { sanitizeDetails } from '../utils/productDetails.js'
 import { sanitizeProductCreate, sanitizeProductPatch, parseProductListQuery, escapeLike } from '../utils/adminInput.js'
 import { isUuid } from '../utils/uuid.js'
 import { missingColumnOf, isSchemaPendingError } from '../utils/pgErrors.js'
+import { effectiveUnitPrice, lineMargin } from '../utils/orderCosting.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -771,9 +772,22 @@ router.get('/orders', async (req, res) => {
     const userIds = [...new Set(orders.map(o => o.id))]
     const orderIds = orders.map(o => o.order_id)
 
-    const [profilesRes, detailsRes, paymentsRes] = await Promise.all([
+    // M3 cost snapshots: prefer the snapshot columns, fall back to the base
+    // shape on a database that has not run M3 yet (margin fields simply
+    // disappear from the payload instead of failing the whole list).
+    const DETAIL_COLUMNS_BASE = 'order_id, prod_id, quantity, subtotal'
+    const DETAIL_COLUMNS_COSTED = `${DETAIL_COLUMNS_BASE}, unit_price, unit_cost, discount_amount`
+    let hasSnapshots = true
+    let detailsRes = await supabaseAdmin.from('order_details').select(DETAIL_COLUMNS_COSTED).in('order_id', orderIds)
+    if (detailsRes.error && isSchemaPendingError(detailsRes.error)) {
+      logger.info({ err: detailsRes.error }, 'M3 columns missing - admin orders without cost fields')
+      hasSnapshots = false
+      detailsRes = await supabaseAdmin.from('order_details').select(DETAIL_COLUMNS_BASE).in('order_id', orderIds)
+    }
+    if (detailsRes.error) throw detailsRes.error
+
+    const [profilesRes, paymentsRes] = await Promise.all([
       supabaseAdmin.from('profiles').select('id, first_name, last_name').in('id', userIds),
-      supabaseAdmin.from('order_details').select('order_id, prod_id, quantity, subtotal').in('order_id', orderIds),
       supabaseAdmin.from('payment').select('order_id, amount, method, payment_date').in('order_id', orderIds),
     ])
 
@@ -796,6 +810,7 @@ router.get('/orders', async (req, res) => {
       if (!paymentMap.has(p.order_id)) paymentMap.set(p.order_id, p)
     }
 
+    const isAdminCaller = req.userRole === 'admin'
     const items = orders.map((o) => {
       const profile = profileMap.get(o.id)
       const orderItems = detailsMap.get(o.order_id) || []
@@ -814,6 +829,17 @@ router.get('/orders', async (req, res) => {
           name: prodMap.get(d.prod_id) || 'Unknown',
           quantity: d.quantity,
           subtotal: d.subtotal,
+          ...(hasSnapshots ? {
+            unit_price: d.unit_price,
+            discount_amount: d.discount_amount,
+            // canonical per-unit price (matches SQL effective_price())
+            effective_unit_price: effectiveUnitPrice(d),
+            // costing is admin-only: staff see selling prices only
+            ...(isAdminCaller ? {
+              unit_cost: d.unit_cost,
+              line_margin: lineMargin(d),
+            } : {}),
+          } : {}),
         })),
         payment: paymentMap.get(o.order_id) || null,
       }

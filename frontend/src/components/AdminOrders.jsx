@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import supabase from '../lib/supabase';
 import { apiGetAllPages, apiPatchAuth, apiDeleteAuth } from '../lib/api';
 import { formatPesos } from '../lib/cartLogic';
+import { formatMargin } from '../lib/adminCosting';
 import { AdminPage, AdminTable, AdminRowDropdown, EmptyState, StatCard, StatusPill, ConfirmDialog } from './adminTheme';
 import { BsBoxSeam, BsSearch, BsTrash, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 import { useRole } from '../context/RoleContext';
@@ -395,10 +396,23 @@ const AdminOrders = () => {
               {/* items */}
               <div className="bg-gray-50 dark:bg-[#162d4a] rounded-lg p-3 space-y-2">
                 <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-slate-500">Items Ordered ({(viewingOrder.items || []).reduce((s, i) => s + (i.quantity || 0), 0)} total)</p>
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   {(viewingOrder.items || []).map((item, idx) => (
                     <div key={idx} className="flex justify-between items-center text-sm">
-                      <span className="text-gray-800 dark:text-slate-200 truncate">{item.name}</span>
+                      <div className="min-w-0">
+                        <span className="text-gray-800 dark:text-slate-200 truncate block">{item.name}</span>
+                        {/* cost fields are only present for admin callers (server strips them for staff) */}
+                        {item.unit_cost != null && (
+                          <div className="text-[11px] text-gray-500 dark:text-slate-400 flex flex-wrap gap-x-3">
+                            <span>Cost PHP {formatPesos(Number(item.unit_cost) * Number(item.quantity || 0))}</span>
+                            {item.line_margin != null && (
+                              <span className={item.line_margin < 0 ? 'text-red-600 dark:text-red-400 font-semibold' : 'text-emerald-600 dark:text-emerald-400 font-semibold'}>
+                                Margin PHP {formatPesos(Number(item.line_margin))} ({formatMargin(item.effective_unit_price, item.unit_cost)})
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
                       <div className="flex items-center gap-3 shrink-0 ml-2">
                         <span className="text-xs text-gray-500 dark:text-slate-400">x{item.quantity}</span>
                         <span className="font-semibold text-gray-800 dark:text-slate-200">PHP {formatPesos(Number(item.subtotal))}</span>
@@ -409,6 +423,21 @@ const AdminOrders = () => {
                     <p className="text-xs text-gray-400 dark:text-slate-500 italic">No item details available</p>
                   )}
                 </div>
+                {/* order-level costing: shown only when every line has a known cost */}
+                {(viewingOrder.items || []).length > 0
+                  && (viewingOrder.items || []).every((i) => i.unit_cost != null && i.line_margin != null) && (
+                  <div className="pt-2 mt-1 border-t border-gray-200 dark:border-[#1e3a5f] flex justify-between text-xs">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-slate-500">Order Costing</span>
+                    <span className="flex gap-3">
+                      <span className="text-gray-600 dark:text-slate-300">Cost PHP {formatPesos((viewingOrder.items || []).reduce((s, i) => s + Number(i.unit_cost) * Number(i.quantity || 0), 0))}</span>
+                      <span className={(viewingOrder.items || []).reduce((s, i) => s + Number(i.line_margin), 0) < 0
+                        ? 'text-red-600 dark:text-red-400 font-semibold'
+                        : 'text-emerald-600 dark:text-emerald-400 font-semibold'}>
+                        Margin PHP {formatPesos((viewingOrder.items || []).reduce((s, i) => s + Number(i.line_margin), 0))}
+                      </span>
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* payment */}

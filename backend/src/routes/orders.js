@@ -3,6 +3,7 @@ import { authMiddleware } from '../middleware/auth.js'
 import { orderLimiter } from '../middleware/rateLimiter.js'
 import { supabaseAdmin } from '../config/supabase.js'
 import { SHIPPING_FEE_PHP } from '../utils/shopRules.js'
+import { isSchemaPendingError } from '../utils/pgErrors.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -42,6 +43,25 @@ router.post('/', orderLimiter, async (req, res) => {
 
     const productMap = new Map((dbProducts || []).map(p => [p.prod_id, p]))
 
+    // best-effort cost snapshot for the M3 order_details columns. The user
+    // client cannot read cost_price (column grant excludes it), and pre-M3
+    // databases do not have the column at all - both cases must never break
+    // checkout, they only mean unit_cost stays null / keys are omitted.
+    let costByProduct = new Map()
+    try {
+      const { data: costRows, error: costErr } = await supabaseAdmin
+        .from('product')
+        .select('prod_id, cost_price')
+        .in('prod_id', productIds)
+      if (costErr) {
+        if (!isSchemaPendingError(costErr)) logger.warn({ err: costErr }, 'cost snapshot fetch failed')
+      } else {
+        costByProduct = new Map((costRows || []).map(p => [p.prod_id, p.cost_price]))
+      }
+    } catch (costEx) {
+      logger.warn({ err: costEx }, 'cost snapshot fetch threw')
+    }
+
     // validate every item exists, is visible and in stock, and compute the real total
     let totalAmount = shipping
     const validatedItems = []
@@ -68,7 +88,14 @@ router.post('/', orderLimiter, async (req, res) => {
       }
       const subtotal = dbPrice * qty
       totalAmount += subtotal
-      validatedItems.push({ ...item, productId: item.productId, price: dbPrice, quantity: qty, subtotal })
+      validatedItems.push({
+        ...item,
+        productId: item.productId,
+        price: dbPrice,
+        quantity: qty,
+        subtotal,
+        unitCost: costByProduct.get(item.productId) ?? null,
+      })
     }
 
     // insert order + details + payment, decrement stock, clean up on partial failure
@@ -92,13 +119,27 @@ router.post('/', orderLimiter, async (req, res) => {
       if (orderErr) throw orderErr
       orderId = order.order_id
 
-      const details = validatedItems.map(i => ({
+      // M3 snapshots: write sale-time unit price/cost alongside the line.
+      // Pre-M3 databases reject the unknown columns wholesale (nothing is
+      // inserted), so one retry without the snapshot keys keeps checkout
+      // working until the owner applies the migration.
+      const baseDetail = (i) => ({
         order_id: orderId,
         prod_id: i.productId,
         quantity: i.quantity,
         subtotal: i.subtotal,
-      }))
-      const { error: detErr } = await req.db.from('order_details').insert(details)
+      })
+      const snapshotDetail = (i) => ({
+        ...baseDetail(i),
+        unit_price: i.price,
+        unit_cost: i.unitCost ?? null,
+        discount_amount: 0,
+      })
+      let { error: detErr } = await req.db.from('order_details').insert(validatedItems.map(snapshotDetail))
+      if (detErr && isSchemaPendingError(detErr)) {
+        logger.info({ err: detErr }, 'M3 columns missing - retrying order_details insert without snapshots')
+        ;({ error: detErr } = await req.db.from('order_details').insert(validatedItems.map(baseDetail)))
+      }
       if (detErr) throw detErr
 
       const { error: payErr } = await req.db.from('payment').insert({
