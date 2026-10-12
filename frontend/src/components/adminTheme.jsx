@@ -369,17 +369,7 @@ export function EmptyState({ icon, title, message, action }) {
   );
 }
 
-export function ErrorBanner({ message }) {
-  if (!message) return null;
-  return (
-    <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 text-sm">
-      {message}
-    </div>
-  );
-}
-
 export const btnPrimary = `${ACCENT} px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-[10px] sm:text-xs font-black uppercase tracking-widest transition`;
-export const btnGhost = `bg-white hover:bg-gray-50 text-[#0b2e59] border border-gray-300 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-[10px] sm:text-xs font-black uppercase tracking-widest transition dark:bg-[#162d4a] dark:hover:bg-[#1e3a5f] dark:text-slate-200 dark:border-[#1e3a5f]`;
 
 export function StatusPill({ kind = 'neutral', children }) {
   const map = {
