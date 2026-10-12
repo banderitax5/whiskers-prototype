@@ -31,18 +31,21 @@ alter table public.order_details add constraint order_details_discount_amount_ck
 -- Rows written before M3 have no unit_price snapshot: fall back to
 -- subtotal / quantity, which is exact for every historical row.
 -- discount_amount is per line (Promos, Phase 4) and is spread per unit.
--- subtotal is legacy double precision: cast it to numeric before any
--- arithmetic so money math never runs in floating point (and so round()
--- gets the numeric, integer overload it actually has).
+-- EVERY column is cast to numeric explicitly: quantity and subtotal are
+-- legacy double precision (verified against the live schema), so a single
+-- uncast leaf makes the whole expression double - and round(double, int)
+-- does not exist, nor is floating point a sound basis for money.
 create or replace function public.effective_price(od public.order_details)
 returns numeric
 language sql
 stable
 as $$
   select round(
-    (coalesce(od.unit_price * od.quantity, od.subtotal::numeric, 0)
-     - coalesce(od.discount_amount, 0))
-    / nullif(od.quantity, 0),
+    (coalesce(od.unit_price::numeric * od.quantity::numeric,
+              od.subtotal::numeric,
+              0)
+     - coalesce(od.discount_amount::numeric, 0))
+    / nullif(od.quantity::numeric, 0),
     2
   );
 $$;
