@@ -7,6 +7,7 @@ vi.mock('../lib/supabase', () => ({
   default: { auth: { getSession: async () => ({ data: { session: { access_token: 'test' } } }) } },
 }))
 vi.mock('../lib/api', () => ({
+  apiGet: vi.fn(),
   apiGetAuth: vi.fn(),
   apiPostAuth: vi.fn(),
   apiPatchAuth: vi.fn(),

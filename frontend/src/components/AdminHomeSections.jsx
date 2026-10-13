@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useState } from "react"
+﻿import React, { useCallback, useEffect, useState } from "react"
 import supabase from "../lib/supabase"
-import { apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from "../lib/api.js"
+import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from "../lib/api.js"
 import { AdminPage, StatusPill, EmptyState, btnPrimary, ConfirmDialog } from "./adminTheme.jsx"
+import ProductPicker from "./ProductPicker.jsx"
 
 const TYPES = [
   { value: "product_row", label: "Product row", renders: true },
@@ -52,71 +53,6 @@ function toLocalInput(ts) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-function ProductPicker({ selected, onToggle }) {
-  const [q, setQ] = useState("")
-  const [results, setResults] = useState([])
-  const [searching, setSearching] = useState(false)
-  const sessionToken = useCallback(async () => (await supabase.auth.getSession()).data.session?.access_token, [])
-
-  useEffect(() => {
-    let cancelled = false
-    setSearching(true)
-    const t = setTimeout(async () => {
-      try {
-        const token = await sessionToken()
-        const data = await apiGetAuth(`/admin/products?q=${encodeURIComponent(q)}&pageSize=8&active=true`, token)
-        if (!cancelled) setResults(data.items || [])
-      } catch {
-        if (!cancelled) setResults([])
-      } finally {
-        if (!cancelled) setSearching(false)
-      }
-    }, 250)
-    return () => { cancelled = true; clearTimeout(t) }
-  }, [q, sessionToken])
-
-  return (
-    <div>
-      <label htmlFor="sec-search" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Find products</label>
-      <input
-        id="sec-search"
-        type="search"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder="Search by name…"
-        className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100"
-      />
-      <ul className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-gray-200 dark:border-[#2c4a6f] divide-y divide-gray-100 dark:divide-[#1e3a5f]">
-        {searching && <li className="px-3 py-2 text-xs text-gray-500 dark:text-slate-400">Searching…</li>}
-        {!searching && results.length === 0 && <li className="px-3 py-2 text-xs text-gray-500 dark:text-slate-400">No matches</li>}
-        {!searching && results.map((p) => {
-          const on = selected.includes(p.prod_id)
-          return (
-            <li key={p.prod_id}>
-              <button
-                type="button"
-                onClick={() => onToggle(p.prod_id)}
-                aria-pressed={on}
-                className={`w-full text-left px-3 py-2 text-xs font-semibold transition ${on ? "bg-[#F28C28]/15 text-[#a35b0c] dark:text-[#F9B671]" : "text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-[#1e3a5f]"}`}
-              >
-                {on ? "✓ " : ""}{p.prod_name}
-              </button>
-            </li>
-          )
-        })}
-      </ul>
-      {selected.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400 self-center">{selected.length} picked</span>
-          {selected.map((id) => (
-            <button key={id} type="button" onClick={() => onToggle(id)} aria-label={`Remove product ${id.slice(0, 8)}`} className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 dark:bg-[#1e3a5f] text-gray-700 dark:text-slate-200 hover:bg-red-100 dark:hover:bg-red-950/40 transition">× {id.slice(0, 8)}</button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
 function SectionDialog({ initial, onClose, onSubmit }) {
   const parsed = initial ? parseConfig(initial) : { kind: "newest", name: "", product_ids: [] }
   const [form, setForm] = useState({
@@ -131,6 +67,21 @@ function SectionDialog({ initial, onClose, onSubmit }) {
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
+
+  // real category / brand names from the catalog, so nobody types them by hand
+  const [categories, setCategories] = useState([])
+  const [brands, setBrands] = useState([])
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([apiGet("/products/categories"), apiGet("/products/brands")])
+      .then(([c, b]) => {
+        if (cancelled) return
+        setCategories(c.items || [])
+        setBrands(b.items || [])
+      })
+      .catch(() => { /* dropdowns keep just the saved value */ })
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose() }
@@ -188,7 +139,7 @@ function SectionDialog({ initial, onClose, onSubmit }) {
                 {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
               {!typeMeta?.renders && (
-                <p className="mt-1 text-xs font-semibold text-amber-600 dark:text-amber-400">The home page does not render this type yet — it will stay hidden even when published.</p>
+                <p className="mt-1 text-xs font-semibold text-amber-600 dark:text-amber-400">The home page does not render this type yet â€” it will stay hidden even when published.</p>
               )}
             </div>
             <div>
@@ -208,9 +159,24 @@ function SectionDialog({ initial, onClose, onSubmit }) {
             )}
             {isRow && (form.rule === "category" || form.rule === "brand") && (
               <div>
-                <label htmlFor="sec-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">{form.rule === "category" ? "Category" : "Brand"} name</label>
-                <input id="sec-name" type="text" required value={form.name} onChange={set("name")} aria-required="true" placeholder={form.rule === "category" ? "e.g. Dogs" : "e.g. Aozi"}
-                  className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100" />
+                <label htmlFor="sec-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">{form.rule === "category" ? "Which category?" : "Which brand?"}</label>
+                <select
+                  id="sec-name"
+                  required
+                  value={form.name}
+                  onChange={set("name")}
+                  aria-required="true"
+                  className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100"
+                >
+                  <option value="">Choose {form.rule === "category" ? "a category" : "a brand"}…</option>
+                  {(form.rule === "category" ? categories : brands).map((n) => <option key={n} value={n}>{n}</option>)}
+                  {form.name && !(form.rule === "category" ? categories : brands).includes(form.name) && (
+                    <option value={form.name}>{form.name} (saved)</option>
+                  )}
+                </select>
+                <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+                  {form.rule === "category" ? "Every product in this category appears in the row." : "Every product of this brand appears in the row."}
+                </p>
               </div>
             )}
             {isRow && form.rule === "manual" && (
@@ -238,7 +204,7 @@ function SectionDialog({ initial, onClose, onSubmit }) {
           {error && <p role="alert" className="mt-3 text-sm font-semibold text-red-600 dark:text-red-400">{error}</p>}
           <div className="mt-5 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition">Cancel</button>
-            <button type="submit" disabled={saving} className={`${btnPrimary} disabled:opacity-60`}>{saving ? "Saving…" : initial ? "Save changes" : "Create draft"}</button>
+            <button type="submit" disabled={saving} className={`${btnPrimary} disabled:opacity-60`}>{saving ? "Savingâ€¦" : initial ? "Save changes" : "Create draft"}</button>
           </div>
         </form>
       </div>
@@ -259,15 +225,15 @@ function SectionCard({ section, index, total, onMove, onEdit, onArchive, busy })
         </div>
         <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">{ruleSummary(section)}</p>
         {(section.starts_at || section.ends_at) && (
-          <p className="text-xs text-gray-500 dark:text-slate-400">{fmtDate(section.starts_at) || "now"} → {fmtDate(section.ends_at) || "no end"}</p>
+          <p className="text-xs text-gray-500 dark:text-slate-400">{fmtDate(section.starts_at) || "now"} â†’ {fmtDate(section.ends_at) || "no end"}</p>
         )}
         {!typeMeta?.renders && (
           <p className="mt-1 text-xs font-semibold text-amber-600 dark:text-amber-400">Not rendered on the home page yet.</p>
         )}
       </div>
       <div className="flex flex-wrap gap-1.5 shrink-0">
-        <button type="button" onClick={() => onMove(section, -1)} disabled={busy || index === 0} aria-label={`Move ${section.title} up`} className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-40">↑</button>
-        <button type="button" onClick={() => onMove(section, 1)} disabled={busy || index === total - 1} aria-label={`Move ${section.title} down`} className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-40">↓</button>
+        <button type="button" onClick={() => onMove(section, -1)} disabled={busy || index === 0} aria-label={`Move ${section.title} up`} className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-40">â†‘</button>
+        <button type="button" onClick={() => onMove(section, 1)} disabled={busy || index === total - 1} aria-label={`Move ${section.title} down`} className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-40">â†“</button>
         <button type="button" onClick={() => onEdit(section)} className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition">Edit</button>
         <button type="button" onClick={() => onArchive(section)} disabled={busy} className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/40 transition disabled:opacity-50">Archive</button>
       </div>

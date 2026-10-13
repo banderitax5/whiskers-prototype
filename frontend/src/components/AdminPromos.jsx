@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import supabase from '../lib/supabase';
-import { apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from '../lib/api';
+import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from '../lib/api';
 import { AdminPage, AdminTable, EmptyState, StatCard, btnPrimary, StatusPill, ConfirmDialog } from './adminTheme';
+import ProductPicker from './ProductPicker.jsx';
 import { formatPesos } from '../lib/cartLogic';
 import { BsGift, BsPlusLg, BsPencilSquare, BsTrash } from 'react-icons/bs';
 import toast from 'react-hot-toast';
@@ -88,8 +89,9 @@ function formToPayload(form) {
 }
 
 function AdminPromos() {
-  const [promos, setPromos] = useState([]);
-  const [loading, setLoading] = useState(true);
+const [promos, setPromos] = useState([]);
+const [loading, setLoading] = useState(true);
+const [categories, setCategories] = useState([]);
   const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -102,6 +104,11 @@ function AdminPromos() {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchPromos(); }, []);
+useEffect(() => {
+  apiGet('/products/categories')
+    .then((d) => setCategories(d.items || []))
+    .catch(() => { /* dropdown keeps just the saved value */ });
+}, []);
 
   async function getToken() {
     const { data: { session } } = await supabase.auth.getSession();
@@ -164,9 +171,11 @@ function AdminPromos() {
     if (formData.value === '' || !Number.isFinite(Number(formData.value)) || Number(formData.value) < 0) {
       return 'Value must be a number greater than or equal to 0.';
     }
-    if (formData.scope !== 'sitewide' && !formData.target_id.trim()) {
-      return 'A target id is required for category/product scope.';
-    }
+  if (formData.scope !== 'sitewide' && !formData.target_id.trim()) {
+    return formData.scope === 'category'
+      ? 'Choose which category this discount applies to.'
+      : 'Choose which product this discount applies to.';
+  }
     if (formData.min_subtotal !== '' && Number(formData.min_subtotal) < 0) return 'Minimum subtotal must be at least 0.';
     if (formData.max_discount !== '' && Number(formData.max_discount) < 0) return 'Maximum discount must be at least 0.';
     if (formData.usage_limit !== '' && Number(formData.usage_limit) < 1) return 'Usage limit must be at least 1.';
@@ -405,15 +414,30 @@ function AdminPromos() {
                     {SCOPES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                   </select>
                 </div>
-                {formData.scope !== 'sitewide' && (
+                {formData.scope === 'category' && (
                   <div className="sm:col-span-2">
-                    <label htmlFor="promo-target" className={labelClass}>Target {formData.scope === 'category' ? 'Category ID' : 'Product ID'}</label>
-                    <input
+                    <label htmlFor="promo-target" className={labelClass}>Which category?</label>
+                    <select
                       id="promo-target"
                       value={formData.target_id}
                       onChange={(e) => onChange('target_id', e.target.value)}
-                      placeholder="UUID"
                       className={inputClass}
+                    >
+                      <option value="">Choose a category…</option>
+                      {!categories.includes(formData.target_id) && formData.target_id && (
+                        <option value={formData.target_id}>{formData.target_id} (saved)</option>
+                      )}
+                      {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Only products in this category get the discount.</p>
+                  </div>
+                )}
+                {formData.scope === 'product' && (
+                  <div className="sm:col-span-2">
+                    <ProductPicker
+                      selected={formData.target_id ? [formData.target_id] : []}
+                      max={1}
+                      onToggle={(id) => onChange('target_id', formData.target_id === id ? '' : id)}
                     />
                   </div>
                 )}

@@ -7,6 +7,7 @@ vi.mock('../lib/supabase', () => ({
   default: { auth: { getSession: async () => ({ data: { session: { access_token: 'test' } } }) } },
 }))
 vi.mock('../lib/api', () => ({
+  apiGet: vi.fn(),
   apiGetAuth: vi.fn(),
   apiPostAuth: vi.fn(),
   apiPatchAuth: vi.fn(),
@@ -14,7 +15,7 @@ vi.mock('../lib/api', () => ({
 }))
 
 import AdminBanners from './AdminBanners.jsx'
-import { apiGetAuth } from '../lib/api'
+import { apiGet, apiGetAuth } from '../lib/api'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -97,5 +98,47 @@ describe('AdminBanners page states', () => {
     await flush()
     expect(apiGetAuth).toHaveBeenCalledWith(expect.stringContaining('placement=home_hero'), expect.anything())
     expect(apiGetAuth).toHaveBeenCalledWith(expect.stringContaining('archived=false'), expect.anything())
+  })
+
+  it('offers friendly link choices and an image picker instead of raw paths', async () => {
+    apiGetAuth.mockResolvedValue({ items: [], total: 0 })
+    const c = await render()
+    await flush()
+    const newBtn = [...c.querySelectorAll('button')].find((b) => b.textContent === 'New banner')
+    await act(async () => { newBtn.click() })
+    await flush()
+    const dlg = c.querySelector('[role="dialog"]')
+    expect(dlg).toBeTruthy()
+    expect(dlg.textContent).toMatch(/Where should this banner link\?/)
+    const typeSel = dlg.querySelector('#b-linktype')
+    const labels = [...typeSel.options].map((o) => o.textContent)
+    expect(labels).toEqual(['No link', 'A product', 'A category', 'A promotion', 'A web page'])
+    // image fields are pickers (Library / Paste link), not raw path inputs
+    expect([...dlg.querySelectorAll('button')].some((b) => b.textContent === 'Library')).toBe(true)
+    expect([...dlg.querySelectorAll('button')].some((b) => b.textContent === 'Paste link')).toBe(true)
+    expect(dlg.querySelector('input#b-desktop')).toBeNull()
+  })
+
+  it('category links are chosen from real category names', async () => {
+    apiGetAuth.mockResolvedValue({ items: [], total: 0 })
+    apiGet.mockResolvedValueOnce({ items: ['Dogs', 'Cats'] })
+    const c = await render()
+    await flush()
+    const newBtn = [...c.querySelectorAll('button')].find((b) => b.textContent === 'New banner')
+    await act(async () => { newBtn.click() })
+    await flush()
+    const dlg = c.querySelector('[role="dialog"]')
+    const typeSel = dlg.querySelector('#b-linktype')
+    await act(async () => {
+      typeSel.value = 'category'
+      typeSel.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flush()
+    const catSel = dlg.querySelector('#b-target-category')
+    expect(catSel).toBeTruthy()
+    const opts = [...catSel.options].map((o) => o.textContent)
+    expect(opts).toContain('Dogs')
+    expect(opts).toContain('Cats')
+    expect(dlg.textContent).toMatch(/land on the shop page filtered/)
   })
 })

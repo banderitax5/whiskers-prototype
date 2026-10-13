@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
 import supabase from "../lib/supabase"
-import { apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from "../lib/api.js"
+import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from "../lib/api.js"
 import { AdminPage, StatusPill, EmptyState, btnPrimary, ConfirmDialog } from "./adminTheme.jsx"
+import ImagePicker from "./ImagePicker.jsx"
+import ProductPicker from "./ProductPicker.jsx"
 
 const PLACEMENTS = [
   { id: "home_hero", label: "Hero carousel", hint: "Big slides at the top of the home page." },
@@ -13,11 +15,41 @@ const PLACEMENTS = [
 
 const LINK_TYPE_OPTIONS = [
   { value: "none", label: "No link" },
-  { value: "product", label: "Product page" },
-  { value: "category", label: "Category (menu)" },
-  { value: "promo", label: "Promotion" },
-  { value: "url", label: "Website URL" },
+  { value: "product", label: "A product" },
+  { value: "category", label: "A category" },
+  { value: "promo", label: "A promotion" },
+  { value: "url", label: "A web page" },
 ]
+
+// pages shoppers already know - picked from a list instead of typed
+const INTERNAL_PAGES = [
+  { href: "/", label: "Home page" },
+  { href: "/menu", label: "Shop all products" },
+  { href: "/pets", label: "Pet recommendation" },
+  { href: "/about", label: "About us" },
+  { href: "/cart", label: "Shopping cart" },
+  { href: "/support", label: "Customer support" },
+]
+
+// stored link_target <-> picker value, so legacy rows (even odd ones from the
+// old seed) open in the right control or are clearly marked unreadable
+function targetToPicker(linkType, target) {
+  if (!target) return ""
+  if (linkType === "product") {
+    const m = String(target).match(/\/products\/([0-9a-f-]{36})/i)
+    return m ? m[1] : ""
+  }
+  if (linkType === "category") {
+    const m = String(target).match(/^\/menu\?category=(.+)$/)
+    if (m) return decodeURIComponent(m[1])
+    return ""
+  }
+  if (linkType === "promo") {
+    const m = String(target).match(/^\/menu\?promo=(.+)$/)
+    return m ? decodeURIComponent(m[1]) : ""
+  }
+  return String(target)
+}
 
 function statusOf(b) {
   if (b.status === "draft") return { kind: "neutral", label: "Draft" }
@@ -53,6 +85,7 @@ function BannerDialog({ title, placement, initial, onClose, onSubmit }) {
   }))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
+  const sessionToken = useCallback(async () => (await supabase.auth.getSession()).data.session?.access_token, [])
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose() }
@@ -61,16 +94,44 @@ function BannerDialog({ title, placement, initial, onClose, onSubmit }) {
   }, [onClose])
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
-  const linkHint = {
-    product: "e.g. /products/<id>",
-    category: "e.g. /menu?category=Dogs",
-    promo: "e.g. /menu?promo=SUMMER10",
-    url: "https://…",
-  }[form.link_type]
+
+  // real data for the pickers, loaded once when the dialog opens
+  const [categories, setCategories] = useState([])
+  const [promos, setPromos] = useState([])
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const cats = await apiGet("/products/categories")
+        if (!cancelled) setCategories(cats.items || [])
+      } catch { /* picker falls back to "choose again" */ }
+      try {
+        const token = await sessionToken()
+        const pr = await apiGetAuth("/admin/promos", token)
+        if (!cancelled) setPromos(pr.items || [])
+      } catch { /* promo dropdown shows the current value only */ }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [sessionToken])
+
+  const pickerValue = targetToPicker(form.link_type, form.link_target)
+  const legacyTarget = form.link_type !== "none" && form.link_type !== "url" && !pickerValue
+  const isCustomUrl = form.link_type === "url" && form.link_target && !INTERNAL_PAGES.some((p) => p.href === form.link_target)
+  const promoMeta = (code) => {
+    const p = promos.find((x) => x.code === code)
+    if (!p) return code
+    const off = p.type === "percent" ? `${p.value}% off` : p.type === "fixed" ? `₱${p.value} off` : "free shipping"
+    return `${p.code} — ${off}`
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError("")
+    if (form.link_type !== "none" && !String(form.link_target || "").trim()) {
+      setError("Choose where this banner should link, or switch back to “No link”.")
+      return
+    }
     setSaving(true)
     try {
       const payload = {
@@ -103,21 +164,23 @@ function BannerDialog({ title, placement, initial, onClose, onSubmit }) {
           <h2 className="text-base sm:text-lg font-black text-gray-900 dark:text-slate-100 tracking-tight">{title}</h2>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
-              <label htmlFor="b-desktop" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">
-                Desktop image <span className="text-red-500">*</span>
-              </label>
-              <input id="b-desktop" type="text" required value={form.desktop_image_url} onChange={set("desktop_image_url")}
-                placeholder="/banner.png or https://…" aria-required="true"
-                className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100" />
-              <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Upload in the Media Library, then paste its URL. Hero slides work best at 1600×600.</p>
+              <ImagePicker
+                label="Desktop image"
+                required
+                value={form.desktop_image_url}
+                onChange={(v) => setForm((f) => ({ ...f, desktop_image_url: v }))}
+              />
+              <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Pick an uploaded image, or upload new art in the Media Library. Hero slides work best at 1600×600.</p>
               {form.desktop_image_url.trim() && (
                 <img src={form.desktop_image_url.trim()} alt="Preview of the banner image" className="mt-2 rounded-lg max-h-28 object-cover w-full" onError={(e) => { e.currentTarget.style.display = "none" }} />
               )}
             </div>
-            <div>
-              <label htmlFor="b-mobile" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Mobile image (optional)</label>
-              <input id="b-mobile" type="text" value={form.mobile_image_url} onChange={set("mobile_image_url")} placeholder="/banner-mobile.png"
-                className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100" />
+            <div className="sm:col-span-2">
+              <ImagePicker
+                label="Mobile image (optional)"
+                value={form.mobile_image_url || ""}
+                onChange={(v) => setForm((f) => ({ ...f, mobile_image_url: v }))}
+              />
             </div>
             <div>
               <label htmlFor="b-alt" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">
@@ -139,18 +202,94 @@ function BannerDialog({ title, placement, initial, onClose, onSubmit }) {
               <label htmlFor="b-button" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Button text (optional)</label>
               <input id="b-button" type="text" maxLength={40} value={form.button_text} onChange={set("button_text")} placeholder="Shop now" className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100" />
             </div>
-            <div>
-              <label htmlFor="b-linktype" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Link to</label>
+            <div className="sm:col-span-2">
+              <label htmlFor="b-linktype" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Where should this banner link?</label>
               <select id="b-linktype" value={form.link_type} onChange={set("link_type")} className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100">
                 {LINK_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
-            {form.link_type !== "none" && (
-              <div>
-                <label htmlFor="b-target" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Link target</label>
-                <input id="b-target" type="text" required value={form.link_target} onChange={set("link_target")} placeholder={linkHint} aria-required="true"
-                  className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100" />
+            {form.link_type === "product" && (
+              <div className="sm:col-span-2">
+                {legacyTarget && (
+                  <p className="mb-1 text-xs font-semibold text-amber-600 dark:text-amber-400">The saved destination can’t be read — pick the product again.</p>
+                )}
+                <ProductPicker
+                  selected={pickerValue ? [pickerValue] : []}
+                  max={1}
+                  onToggle={(id) => setForm((f) => ({ ...f, link_target: pickerValue === id ? "" : `/products/${id}` }))}
+                />
               </div>
+            )}
+            {form.link_type === "category" && (
+              <div className="sm:col-span-2">
+                <label htmlFor="b-target-category" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Which category?</label>
+                <select
+                  id="b-target-category"
+                  required
+                  value={pickerValue}
+                  onChange={(e) => setForm((f) => ({ ...f, link_target: e.target.value ? `/menu?category=${encodeURIComponent(e.target.value)}` : "" }))}
+                  aria-required="true"
+                  className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100"
+                >
+                  <option value="">Choose a category…</option>
+                  {!categories.includes(pickerValue) && pickerValue && <option value={pickerValue}>{pickerValue} (saved)</option>}
+                  {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Shoppers will land on the shop page filtered to this category.</p>
+              </div>
+            )}
+            {form.link_type === "promo" && (
+              <div className="sm:col-span-2">
+                <label htmlFor="b-target-promo" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Which promotion?</label>
+                <select
+                  id="b-target-promo"
+                  required
+                  value={pickerValue}
+                  onChange={(e) => setForm((f) => ({ ...f, link_target: e.target.value ? `/menu?promo=${encodeURIComponent(e.target.value)}` : "" }))}
+                  aria-required="true"
+                  className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100"
+                >
+                  <option value="">Choose a promotion…</option>
+                  {!promos.some((p) => p.code === pickerValue) && pickerValue && <option value={pickerValue}>{promoMeta(pickerValue)} (saved)</option>}
+                  {promos.map((p) => <option key={p.code} value={p.code}>{promoMeta(p.code)}{p.is_active ? "" : " (inactive)"}</option>)}
+                </select>
+              </div>
+            )}
+            {form.link_type === "url" && (
+              <div className="sm:col-span-2">
+                <label htmlFor="b-target-page" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Which page?</label>
+                <select
+                  id="b-target-page"
+                  required={!isCustomUrl}
+                  value={isCustomUrl ? "__other" : form.link_target || ""}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setForm((f) => ({ ...f, link_target: v === "__other" ? "" : v }))
+                  }}
+                  className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100"
+                >
+                  <option value="">Choose a page…</option>
+                  {INTERNAL_PAGES.map((p) => <option key={p.href} value={p.href}>{p.label}</option>)}
+                  <option value="__other">Another website…</option>
+                  {isCustomUrl && <option value="__other" hidden>{form.link_target}</option>}
+                </select>
+                {isCustomUrl && (
+                  <input
+                    type="url"
+                    required
+                    value={form.link_target}
+                    onChange={(e) => setForm((f) => ({ ...f, link_target: e.target.value }))}
+                    aria-label="Website address"
+                    placeholder="https://…"
+                    className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100"
+                  />
+                )}
+              </div>
+            )}
+            {form.link_type !== "none" && legacyTarget && form.link_type !== "product" && (
+              <p className="sm:col-span-2 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                The saved destination can’t be read — choose one again (or switch to “No link”).
+              </p>
             )}
             <div>
               <label htmlFor="b-status" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Status</label>
