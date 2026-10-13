@@ -117,7 +117,7 @@ function Home() {
       setLoading(true)
       setLoadFailed(false)
       try {
-        const res = await apiGet('/products?pageSize=200')
+        const res = await apiGet('/products?pageSize=500')
         setProducts(res.items || [])
       } catch (err) {
         console.error('Failed to load products:', err)
