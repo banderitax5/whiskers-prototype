@@ -146,13 +146,16 @@ try {
 } catch { Step 'content: rejects malformed banner event' ($_.Exception.Response.StatusCode.value__ -eq 400) $_.Exception.Response.StatusCode.value__ }
 if ($sc -and $sc.seeded -and @($sc.banners).Count -gt 0) {
   try {
+    $evBanner = $sc.banners[0].id
+    $impBefore = (Invoke-RestMethod -Uri "$SU/rest/v1/site_banners?id=eq.$evBanner&select=impressions" -Headers @{ apikey = $SK; Authorization = "Bearer $SK" }).impressions
     Invoke-RestMethod -Uri "$base/api/site-content/events" -Method Post -ContentType 'application/json' `
-      -Body (@{ bannerId = $sc.banners[0].id; event = 'impression' } | ConvertTo-Json -Compress) | Out-Null
-    $ev = Invoke-RestMethod -Uri "$SU/rest/v1/site_banner_events?banner_id=eq.$($sc.banners[0].id)&select=id" -Headers @{ apikey = $SK; Authorization = "Bearer $SK" }
-    Step 'content: banner impression recorded' (@($ev).Count -eq 1) "events=$(@($ev).Count)"
-  } catch { Step 'content: banner impression recorded' $false (Get-ErrBody $_) }
+      -Body (@{ bannerId = $evBanner; event = 'impression' } | ConvertTo-Json -Compress) | Out-Null
+    Start-Sleep -Milliseconds 800
+    $impAfter = (Invoke-RestMethod -Uri "$SU/rest/v1/site_banners?id=eq.$evBanner&select=impressions" -Headers @{ apikey = $SK; Authorization = "Bearer $SK" }).impressions
+    Step 'content: banner counter increments' ([int]$impAfter -eq [int]$impBefore + 1) "$impBefore -> $impAfter"
+  } catch { Step 'content: banner counter increments' $false (Get-ErrBody $_) }
 } else {
-  Step 'content: banner impression recorded' $false 'no seeded banners' 'SKIP'
+  Step 'content: banner counter increments' $false 'no seeded banners' 'SKIP'
 }
 
 # â”€â”€ 8. admin supports list (escalate temp user) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

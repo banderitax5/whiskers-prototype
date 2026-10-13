@@ -1,4 +1,4 @@
-import { Router } from 'express'
+﻿import { Router } from 'express'
 import { supabaseAdmin } from '../config/supabase.js'
 import { contentLimiter, eventLimiter } from '../middleware/rateLimiter.js'
 import { isSchemaPendingError } from '../utils/pgErrors.js'
@@ -65,7 +65,7 @@ async function loadContent() {
   }
 }
 
-// GET /api/site-content — public storefront content
+// GET /api/site-content - public storefront content
 router.get('/', contentLimiter, async (req, res) => {
   try {
     if (Date.now() - cache.at >= CACHE_TTL_MS) {
@@ -84,7 +84,7 @@ router.get('/', contentLimiter, async (req, res) => {
   }
 })
 
-// POST /api/site-content/events — banner impression / click / broken report.
+// POST /api/site-content/events - banner impression / click / broken report.
 // Anonymous by design (no login), rate limited, best effort: a failure must
 // never break the page, so every path answers 204.
 router.post('/events', eventLimiter, async (req, res) => {
@@ -100,10 +100,12 @@ router.post('/events', eventLimiter, async (req, res) => {
       if (isSchemaPendingError(error)) return res.status(204).end()
       throw error
     }
-    if (event === 'impression') {
-      await supabaseAdmin.rpc('bump_banner_impression', { p_banner: bannerId }).catch(() => {})
-    } else if (event === 'click') {
-      await supabaseAdmin.rpc('bump_banner_click', { p_banner: bannerId }).catch(() => {})
+    if (event === 'impression' || event === 'click') {
+      // the counter update is best effort, but a silent failure would make the
+      // analytics meaningless - check the result so failures are visible
+      const bump = event === 'impression' ? 'bump_banner_impression' : 'bump_banner_click'
+      const { error: bumpErr } = await supabaseAdmin.rpc(bump, { p_banner: bannerId })
+      if (bumpErr) logger.warn({ err: bumpErr, bannerId, event }, 'Banner counter update failed')
     }
   } catch (err) {
     logger.warn({ err }, 'Banner event error')
