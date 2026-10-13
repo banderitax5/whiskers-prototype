@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useShop } from '../context/ShopContext.jsx'
 import ProductQuickViewDialog from '../components/ProductQuickViewDialog.jsx'
+import BannerLink from '../components/BannerLink.jsx'
 import { apiGet } from '../lib/api.js'
 import { attachSizeVariants } from '../lib/productUtils.js'
 import { formatPesos } from '../lib/cartLogic'
@@ -67,6 +68,15 @@ function Home() {
   // home sections: published product rows from the section editor, otherwise
   // the derived category rows the page has always shown
   const rowSections = useMemo(() => contentSections(content, 'product_row'), [content])
+
+  // banner above the product rows (editorial "category top" placement);
+  // null when unpublished so the page keeps its usual look
+  const catTop = useMemo(() => contentBanners(content, 'category_top')?.[0] ?? null, [content])
+
+  // one impression per category-top banner when it actually shows
+  useEffect(() => {
+    if (catTop?.id) trackBannerEvent(catTop.id, 'impression')
+  }, [catTop])
 
   // auto-rotate the hero, but pause on hover/focus (WCAG 2.2.2)
   useEffect(() => {
@@ -246,6 +256,44 @@ function Home() {
           </div>
         </div>
       </section>
+
+      {catTop && (catTop.desktop_image_url || catTop.mobile_image_url || catTop.title) && (
+        <div className="mt-4 sm:mt-6">
+          <BannerLink
+            banner={catTop}
+            ariaLabel={catTop.title || catTop.alt || 'Featured banner'}
+            className="group relative block overflow-hidden rounded-xl bg-gray-200 dark:bg-gray-800 h-24 sm:h-36 md:h-44"
+          >
+            <picture>
+              {catTop.mobile_image_url && (
+                <source media="(max-width: 640px)" srcSet={catTop.mobile_image_url} />
+              )}
+              {catTop.desktop_image_url ? (
+                <img
+                  src={catTop.desktop_image_url}
+                  alt={catTop.alt || catTop.title || ''}
+                  loading="lazy"
+                  className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                />
+              ) : (
+                <div className="h-full w-full bg-[#0b2e59]" />
+              )}
+            </picture>
+            {(catTop.title || catTop.button_text) && (
+              <div className="absolute inset-0 flex items-center justify-between gap-3 px-4 sm:px-6 bg-gradient-to-r from-black/50 via-black/20 to-transparent">
+                <span className="text-white text-sm sm:text-lg md:text-xl font-bold drop-shadow truncate">
+                  {catTop.title}
+                </span>
+                {catTop.button_text && (
+                  <span className="shrink-0 rounded-full bg-[#ffd21e] text-[#0b2e59] text-[10px] sm:text-xs font-bold px-2.5 sm:px-4 py-1 sm:py-1.5 uppercase tracking-wide group-hover:brightness-95">
+                    {catTop.button_text}
+                  </span>
+                )}
+              </div>
+            )}
+          </BannerLink>
+        </div>
+      )}
 
       {(rowSections
         ? rowSections

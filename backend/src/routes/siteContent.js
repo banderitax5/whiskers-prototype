@@ -66,6 +66,8 @@ async function loadContent() {
     banners: bannersFor('home_hero', bannerRows, now).map((b) => pick(b, BANNER_FIELDS)),
     brand_strip: bannersFor('brand_strip', bannerRows, now).map((b) => pick(b, BANNER_FIELDS)),
     strip_banners: bannersFor(['promo_strip', 'category_top'], bannerRows, now).map((b) => pick(b, BANNER_FIELDS)),
+    promo_strip: bannersFor('promo_strip', bannerRows, now).map((b) => pick(b, BANNER_FIELDS)),
+    category_top: bannersFor('category_top', bannerRows, now).map((b) => pick(b, BANNER_FIELDS)),
     announcement: bannersFor('announcement_bar', bannerRows, now).map((b) => pick(b, BANNER_FIELDS)),
     sections: visibleSections(sectionsRes.data || [], now).map((s) => pick(s, SECTION_FIELDS)),
     promos: promoRows.map((p) => pick(p, PROMO_FIELDS)),

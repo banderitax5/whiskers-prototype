@@ -43,6 +43,11 @@ describe('sanitizeBanner links', () => {
     assert.match(sanitizeBanner({ ...base, link_type: 'product', link_target: 'abc' }).error, /start with \//)
   })
 
+  test('brand links are a first-class choice', () => {
+    assert.equal(sanitizeBanner({ ...base, link_type: 'brand', link_target: '/menu?brand=Aozi' }).ok, true)
+    assert.match(sanitizeBanner({ ...base, link_type: 'brand' }).error, /target/i)
+  })
+
   test('link target required unless type is none', () => {
     assert.match(sanitizeBanner({ ...base, link_type: 'promo' }).error, /target/i)
     assert.equal(sanitizeBanner({ ...base, link_type: 'none', link_target: '/ignored' }).values.link_target, null)

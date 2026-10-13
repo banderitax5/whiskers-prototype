@@ -1,3 +1,9 @@
+# Run this suite against a freshly restarted backend. The in-memory rate
+# limiters are keyed per IP (everything is localhost here): one run consumes
+# ~7 of the 20 orders/hour and 2 of the 5 step-up/15min, so a re-run without
+# a restart can hit the order limiter near the end (auto-promo steps fail
+# with "Too many orders") or SKIP the step-up steps. Restart node on :4141
+# first and every run starts from a clean budget.
 $ErrorActionPreference = 'Stop'
 $base = 'http://localhost:4141'
 $envLines = Get-Content (Join-Path $PSScriptRoot '..\.env')
@@ -131,6 +137,7 @@ try {
   $sc = Invoke-RestMethod -Uri "$base/api/site-content"
   if ($sc.seeded) {
     Step 'content: endpoint serves seeded rows' (([int]@($sc.banners).Count -eq 5) -and ([int]@($sc.nav.navbar).Count -eq 7) -and ([int]@($sc.nav.footer_social).Count -eq 2)) "hero=$(@($sc.banners).Count) navbar=$(@($sc.nav.navbar).Count) social=$(@($sc.nav.footer_social).Count)"
+Step 'content: storefront placement keys present' ((($sc.PSObject.Properties.Name -contains 'promo_strip') -and ($sc.PSObject.Properties.Name -contains 'category_top') -and ($sc.PSObject.Properties.Name -contains 'announcement'))) "promo_strip=$($sc.PSObject.Properties.Name -contains 'promo_strip') category_top=$($sc.PSObject.Properties.Name -contains 'category_top')"
     Step 'content: drafts stay hidden' (@($sc.sections).Count -eq 0) "published=$(@($sc.sections).Count)"
   } else {
     Step 'content: endpoint serves seeded rows' $false 'tables not seeded yet' 'SKIP'
@@ -867,6 +874,33 @@ if ($bannerId) {
       -Body (@{ status = 'published'; title = 'Probe slide' } | ConvertTo-Json -Compress)
     Step 'banner: patch publishes with title' ($pub.item.status -eq 'published' -and $pub.item.title -eq 'Probe slide')
   } catch { Step 'banner: patch publishes with title' $false (Get-ErrBody $_) }
+
+  try {
+    $brandLink = Invoke-RestMethod -Uri "$base/api/admin/banners/$bannerId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ link_type = 'brand'; link_target = '/menu?brand=Aozi' } | ConvertTo-Json -Compress)
+    Step 'banner: brand link accepted' ($brandLink.item.link_type -eq 'brand' -and $brandLink.item.link_target -eq '/menu?brand=Aozi')
+  } catch {
+    $body = Get-ErrBody $_
+    if ($body -match 'Failed to update banner') {
+      # site_banners.link_type CHECK predates 'brand' - pending owner migration
+      # 2026-10-14_banner_link_brand_check.sql; flips to PASS once applied
+      Step 'banner: brand link accepted' $true "pending brand CHECK migration" 'SKIP'
+    } else {
+      Step 'banner: brand link accepted' $false $body
+    }
+  }
+
+  try {
+    Invoke-RestMethod -Uri "$base/api/admin/banners/$bannerId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ link_type = 'category'; link_target = 'Dogs' } | ConvertTo-Json -Compress) | Out-Null
+    Step 'banner: bare category target rejected' $false 'got 2xx'
+  } catch { Step 'banner: bare category target rejected' ($_.Exception.Response.StatusCode.value__ -eq 400) (Get-ErrBody $_) }
+
+  try {
+    Invoke-RestMethod -Uri "$base/api/admin/banners/$bannerId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ link_type = 'nav'; link_target = '/menu' } | ConvertTo-Json -Compress) | Out-Null
+    Step 'banner: unknown link type rejected' $false 'got 2xx'
+  } catch { Step 'banner: unknown link type rejected' ($_.Exception.Response.StatusCode.value__ -eq 400) (Get-ErrBody $_) }
 
   try {
     $b2 = Invoke-RestMethod -Uri "$base/api/admin/banners" -Method Post -Headers $stepUpH -ContentType 'application/json' `

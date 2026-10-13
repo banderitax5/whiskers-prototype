@@ -10,6 +10,8 @@ import FloatingContact from './FloatingContact.jsx'
 import CookieBanner from './CookieBanner.jsx'
 import SkipToContent from './SkipToContent.jsx'
 import RecoveryGate from './RecoveryGate.jsx'
+import AnnouncementBar from './AnnouncementBar.jsx'
+import PromoStrip from './PromoStrip.jsx'
 import { captureUtmParams, trackEvent } from '../lib/appEvents.js'
 
 function Layout() {
@@ -31,8 +33,10 @@ function Layout() {
       <SkipToContent />
       <RecoveryGate />
       <ScrollProgress />
+      <AnnouncementBar />
       <Navbar />
       {showNavLinks && <NavLinks />}
+      <PromoStrip />
       <FloatingNotification />
       <main id="main-content" className="flex-1 px-3 sm:px-4 py-4 sm:py-6">
         <Outlet />

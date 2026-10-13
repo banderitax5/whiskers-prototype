@@ -4,7 +4,7 @@
 
 export const PLACEMENTS = ['home_hero', 'brand_strip', 'category_top', 'promo_strip', 'announcement_bar']
 
-export const LINK_TYPES = ['none', 'product', 'category', 'promo', 'url']
+export const LINK_TYPES = ['none', 'product', 'category', 'brand', 'promo', 'url']
 
 const MAX_TEXT = { title: 120, subtitle: 200, buttonText: 40, alt: 200 }
 

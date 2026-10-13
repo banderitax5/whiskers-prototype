@@ -17,6 +17,7 @@ const LINK_TYPE_OPTIONS = [
   { value: "none", label: "No link" },
   { value: "product", label: "A product" },
   { value: "category", label: "A category" },
+  { value: "brand", label: "A brand" },
   { value: "promo", label: "A promotion" },
   { value: "url", label: "A web page" },
 ]
@@ -47,6 +48,12 @@ function targetToPicker(linkType, target) {
   if (linkType === "promo") {
     const m = String(target).match(/^\/menu\?promo=(.+)$/)
     return m ? decodeURIComponent(m[1]) : ""
+  }
+  if (linkType === "brand") {
+    // stored as /menu?brand=Name; the legacy seed stored the bare name,
+    // which is still perfectly readable for this link type
+    const m = String(target).match(/^\/menu\?brand=(.+)$/)
+    return m ? decodeURIComponent(m[1]) : String(target)
   }
   return String(target)
 }
@@ -97,6 +104,7 @@ function BannerDialog({ title, placement, initial, onClose, onSubmit }) {
 
   // real data for the pickers, loaded once when the dialog opens
   const [categories, setCategories] = useState([])
+  const [brands, setBrands] = useState([])
   const [promos, setPromos] = useState([])
   useEffect(() => {
     let cancelled = false
@@ -105,6 +113,10 @@ function BannerDialog({ title, placement, initial, onClose, onSubmit }) {
         const cats = await apiGet("/products/categories")
         if (!cancelled) setCategories(cats.items || [])
       } catch { /* picker falls back to "choose again" */ }
+      try {
+        const br = await apiGet("/products/brands")
+        if (!cancelled) setBrands(br.items || [])
+      } catch { /* brand dropdown shows the current value only */ }
       try {
         const token = await sessionToken()
         const pr = await apiGetAuth("/admin/promos", token)
@@ -236,6 +248,24 @@ function BannerDialog({ title, placement, initial, onClose, onSubmit }) {
                   {categories.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
                 <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Shoppers will land on the shop page filtered to this category.</p>
+              </div>
+            )}
+            {form.link_type === "brand" && (
+              <div className="sm:col-span-2">
+                <label htmlFor="b-target-brand" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Which brand?</label>
+                <select
+                  id="b-target-brand"
+                  required
+                  value={pickerValue}
+                  onChange={(e) => setForm((f) => ({ ...f, link_target: e.target.value ? `/menu?brand=${encodeURIComponent(e.target.value)}` : "" }))}
+                  aria-required="true"
+                  className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100"
+                >
+                  <option value="">Choose a brand…</option>
+                  {!brands.includes(pickerValue) && pickerValue && <option value={pickerValue}>{pickerValue} (saved)</option>}
+                  {brands.map((b) => <option key={b} value={b}>{b}</option>)}
+                </select>
+                <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Shoppers will land on the shop page filtered to this brand.</p>
               </div>
             )}
             {form.link_type === "promo" && (

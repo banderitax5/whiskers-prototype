@@ -112,7 +112,7 @@ describe('AdminBanners page states', () => {
     expect(dlg.textContent).toMatch(/Where should this banner link\?/)
     const typeSel = dlg.querySelector('#b-linktype')
     const labels = [...typeSel.options].map((o) => o.textContent)
-    expect(labels).toEqual(['No link', 'A product', 'A category', 'A promotion', 'A web page'])
+    expect(labels).toEqual(['No link', 'A product', 'A category', 'A brand', 'A promotion', 'A web page'])
     // image fields are pickers (Library / Paste link), not raw path inputs
     expect([...dlg.querySelectorAll('button')].some((b) => b.textContent === 'Library')).toBe(true)
     expect([...dlg.querySelectorAll('button')].some((b) => b.textContent === 'Paste link')).toBe(true)
@@ -121,7 +121,7 @@ describe('AdminBanners page states', () => {
 
   it('category links are chosen from real category names', async () => {
     apiGetAuth.mockResolvedValue({ items: [], total: 0 })
-    apiGet.mockResolvedValueOnce({ items: ['Dogs', 'Cats'] })
+    apiGet.mockResolvedValue({ items: ['Dogs', 'Cats'] })
     const c = await render()
     await flush()
     const newBtn = [...c.querySelectorAll('button')].find((b) => b.textContent === 'New banner')
@@ -140,5 +140,33 @@ describe('AdminBanners page states', () => {
     expect(opts).toContain('Dogs')
     expect(opts).toContain('Cats')
     expect(dlg.textContent).toMatch(/land on the shop page filtered/)
+  })
+
+  it('brand links are chosen from real brand names', async () => {
+    apiGetAuth.mockResolvedValue({ items: [], total: 0 })
+    apiGet.mockResolvedValue({ items: ['Aozi', 'Royal Canin'] })
+    const c = await render()
+    await flush()
+    const newBtn = [...c.querySelectorAll('button')].find((b) => b.textContent === 'New banner')
+    await act(async () => { newBtn.click() })
+    await flush()
+    const dlg = c.querySelector('[role="dialog"]')
+    const typeSel = dlg.querySelector('#b-linktype')
+    await act(async () => {
+      typeSel.value = 'brand'
+      typeSel.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flush()
+    const brandSel = dlg.querySelector('#b-target-brand')
+    expect(brandSel).toBeTruthy()
+    const opts = [...brandSel.options].map((o) => o.textContent)
+    expect(opts).toContain('Aozi')
+    expect(opts).toContain('Royal Canin')
+    // picking a brand stores the /menu?brand= link the storefront resolves
+    await act(async () => {
+      brandSel.value = 'Aozi'
+      brandSel.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(dlg.textContent).toMatch(/filtered to this brand/)
   })
 })
