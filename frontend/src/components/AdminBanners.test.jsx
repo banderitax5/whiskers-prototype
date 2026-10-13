@@ -142,6 +142,23 @@ describe('AdminBanners page states', () => {
     expect(dlg.textContent).toMatch(/land on the shop page filtered/)
   })
 
+  it('legacy rows with an unreadable link open editable, link turned off with a note', async () => {
+    const legacy = { ...sampleBanner, id: 'b9', link_type: 'category', link_target: 'Aozi' }
+    apiGetAuth.mockResolvedValue({ items: [legacy], total: 1 })
+    const c = await render()
+    await flush()
+    const editBtn = [...c.querySelectorAll('button')].find((b) => b.textContent === 'Edit')
+    await act(async () => { editBtn.click() })
+    await flush()
+    const dlg = c.querySelector('[role="dialog"]')
+    const typeSel = dlg.querySelector('#b-linktype')
+    expect(typeSel.value).toBe('none')
+    expect(dlg.textContent).toMatch(/destination couldn’t be read/)
+    // every other field stays editable; the stale bare target is gone from
+    // the form so saving with "No link" succeeds instead of 400-ing
+    expect(dlg.querySelector('#b-alt').value).toBe(legacy.alt)
+  })
+
   it('brand links are chosen from real brand names', async () => {
     apiGetAuth.mockResolvedValue({ items: [], total: 0 })
     apiGet.mockResolvedValue({ items: ['Aozi', 'Royal Canin'] })

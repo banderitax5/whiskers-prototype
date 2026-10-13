@@ -8,9 +8,14 @@ const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 let cache = null
 let inflight = null
 
+// force=true drops any cached snapshot first - used by components that
+// remount on navigation (home, nav links) so an admin edit shows up on the
+// next visit instead of only after a hard refresh. Concurrent callers still
+// share one in-flight request.
 export async function fetchSiteContent(force = false) {
-  if (cache && !force) return cache
-  if (inflight && !force) return inflight
+  if (force) cache = null
+  if (cache) return cache
+  if (inflight) return inflight
   inflight = fetch(`${API_BASE}/site-content`, { headers: { Accept: 'application/json' } })
     .then((res) => (res.ok ? res.json() : null))
     .then((data) => {

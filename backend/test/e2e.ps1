@@ -887,6 +887,14 @@ if ($bannerId) {
     Step 'banner: patch publishes with title' ($pub.item.status -eq 'published' -and $pub.item.title -eq 'Probe slide')
   } catch { Step 'banner: patch publishes with title' $false (Get-ErrBody $_) }
 
+  # admin writes must invalidate the storefront content cache: the very next
+  # public read (no waiting out the 30s TTL) has to include the edit
+  try {
+    $sc2 = Invoke-RestMethod -Uri "$base/api/site-content"
+    $live = @($sc2.banners) | Where-Object { $_.id -eq $bannerId -and $_.title -eq 'Probe slide' }
+    Step 'banner: edit is live on next site-content read' ([bool]$live)
+  } catch { Step 'banner: edit is live on next site-content read' $false (Get-ErrBody $_) }
+
   try {
     $brandLink = Invoke-RestMethod -Uri "$base/api/admin/banners/$bannerId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
       -Body (@{ link_type = 'brand'; link_target = '/menu?brand=Aozi' } | ConvertTo-Json -Compress)

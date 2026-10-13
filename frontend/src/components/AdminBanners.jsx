@@ -58,6 +58,15 @@ function targetToPicker(linkType, target) {
   return String(target)
 }
 
+// a stored destination the pickers cannot represent (the old seed wrote bare
+// brand names as category links) would make every save fail server-side; the
+// dialog opens those rows with the link turned off and a clear note instead
+function hasUnreadableLink(banner) {
+  const t = banner?.link_type || "none"
+  const target = banner?.link_target || ""
+  return t !== "none" && t !== "url" && Boolean(target) && !targetToPicker(t, target)
+}
+
 function statusOf(b) {
   if (b.status === "draft") return { kind: "neutral", label: "Draft" }
   if (b.status === "scheduled") return { kind: "info", label: "Scheduled" }
@@ -77,6 +86,9 @@ function toLocalInput(ts) {
 }
 
 function BannerDialog({ title, placement, initial, onClose, onSubmit }) {
+  // computed before the first render so an unreadable legacy destination is
+  // turned off once, with a note, instead of blocking every save with a 400
+  const linkWasCleared = hasUnreadableLink(initial)
   const [form, setForm] = useState(() => ({
     desktop_image_url: initial?.desktop_image_url || "",
     mobile_image_url: initial?.mobile_image_url || "",
@@ -84,8 +96,8 @@ function BannerDialog({ title, placement, initial, onClose, onSubmit }) {
     title_: initial?.title || "",
     subtitle: initial?.subtitle || "",
     button_text: initial?.button_text || "",
-    link_type: initial?.link_type || "none",
-    link_target: initial?.link_target || "",
+    link_type: linkWasCleared ? "none" : initial?.link_type || "none",
+    link_target: linkWasCleared ? "" : initial?.link_target || "",
     status: initial?.status || "draft",
     starts_at: toLocalInput(initial?.starts_at),
     ends_at: toLocalInput(initial?.ends_at),
@@ -219,6 +231,11 @@ function BannerDialog({ title, placement, initial, onClose, onSubmit }) {
               <select id="b-linktype" value={form.link_type} onChange={set("link_type")} className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100">
                 {LINK_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
+              {linkWasCleared && (
+                <p className="mt-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                  The saved destination couldn’t be read, so the link was turned off — choose a new one (or save with “No link”).
+                </p>
+              )}
             </div>
             {form.link_type === "product" && (
               <div className="sm:col-span-2">

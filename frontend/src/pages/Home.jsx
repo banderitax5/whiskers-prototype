@@ -47,11 +47,12 @@ function Home() {
   const [heroPaused, setHeroPaused] = useState(false)
   const [content, setContent] = useState(null)
 
-  // storefront content (banners, home sections): one cached fetch per load;
-  // null means "not seeded yet", and every caller falls back to built-ins
+  // storefront content (banners, home sections): forced so an admin edit
+  // shows on the next visit to the home page, not only after a hard
+  // refresh; concurrent mounts share one request
   useEffect(() => {
     let cancelled = false
-    fetchSiteContent().then((data) => { if (!cancelled) setContent(data) })
+    fetchSiteContent(true).then((data) => { if (!cancelled) setContent(data) })
     return () => { cancelled = true }
   }, [])
 

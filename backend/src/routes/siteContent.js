@@ -17,6 +17,12 @@ const router = Router()
 const CACHE_TTL_MS = 30_000
 let cache = { at: 0, payload: null }
 
+// Admin writes (banners, sections, promos) call this so an edit is live on
+// the next storefront request instead of waiting out the TTL.
+export function invalidateContentCache() {
+  cache = { at: 0, payload: null }
+}
+
 function pick(row, fields) {
   const out = {}
   for (const f of fields) out[f] = row[f]

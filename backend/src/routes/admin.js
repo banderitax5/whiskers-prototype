@@ -13,6 +13,7 @@ import { decryptText } from '../utils/encryption.js'
 import { PERIODS, windowDays, bucketPayments } from '../utils/salesBuckets.js'
 import { sanitizeDetails } from '../utils/productDetails.js'
 import { sanitizeProductCreate, sanitizeProductPatch, parseProductListQuery, escapeLike } from '../utils/adminInput.js'
+import { invalidateContentCache } from './siteContent.js'
 import { isUuid } from '../utils/uuid.js'
 import { sanitizeAltText, mediaPageParams, buildUsageIndex } from '../utils/mediaRules.js'
 import { sanitizeBanner, PLACEMENTS } from '../utils/bannerRules.js'
@@ -1504,6 +1505,7 @@ router.post('/banners', requireAdmin, async (req, res) => {
       if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
       throw error
     }
+    invalidateContentCache()
     res.status(201).json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'banner_create', target: data.id, details: `${data.placement} "${data.alt}" ${data.status}` })
   } catch (err) {
@@ -1527,6 +1529,7 @@ router.patch('/banners/:id', requireAdmin, async (req, res) => {
       .select(BANNER_COLUMNS)
       .single()
     if (error) throw error
+    invalidateContentCache()
     res.json({ item: data })
     const changed = Object.keys(clean.values).join(', ')
     logAudit({ adminEmail: req.userEmail, action: 'banner_update', target: req.params.id, details: `changed: ${changed}` })
@@ -1548,6 +1551,7 @@ router.delete('/banners/:id', requireAdmin, async (req, res) => {
       .update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
       .eq('id', req.params.id)
     if (error) throw error
+    invalidateContentCache()
     res.json({ success: true })
     logAudit({ adminEmail: req.userEmail, action: 'banner_archive', target: req.params.id, details: `${before.placement} "${before.alt}"` })
   } catch (err) {
@@ -1568,6 +1572,7 @@ router.post('/banners/:id/restore', requireAdmin, async (req, res) => {
       .single()
     if (error) throw error
     if (!data) return res.status(404).json({ error: 'Banner not found' })
+    invalidateContentCache()
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'banner_restore', target: data.id, details: data.placement })
   } catch (err) {
@@ -1594,6 +1599,7 @@ router.post('/banners/reorder', requireAdmin, async (req, res) => {
         .eq('placement', placement)
       if (error) throw error
     }
+    invalidateContentCache()
     res.json({ success: true, count: ids.length })
     logAudit({ adminEmail: req.userEmail, action: 'banner_reorder', target: placement, details: `${ids.length} banners reordered` })
   } catch (err) {
@@ -1641,6 +1647,7 @@ router.post('/sections', requireAdmin, async (req, res) => {
       if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
       throw error
     }
+    invalidateContentCache()
     res.status(201).json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'section_create', target: data.id, details: `${data.type} "${data.title}" ${data.status}` })
   } catch (err) {
@@ -1665,6 +1672,7 @@ router.patch('/sections/:id', requireAdmin, async (req, res) => {
       .select(SECTION_COLUMNS)
       .single()
     if (error) throw error
+    invalidateContentCache()
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'section_update', target: req.params.id, details: `changed: ${Object.keys(clean.values).join(', ')}` })
   } catch (err) {
@@ -1685,6 +1693,7 @@ router.delete('/sections/:id', requireAdmin, async (req, res) => {
       .update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
       .eq('id', req.params.id)
     if (error) throw error
+    invalidateContentCache()
     res.json({ success: true })
     logAudit({ adminEmail: req.userEmail, action: 'section_archive', target: req.params.id, details: `${before.type} "${before.title}"` })
   } catch (err) {
@@ -1705,6 +1714,7 @@ router.post('/sections/:id/restore', requireAdmin, async (req, res) => {
       .single()
     if (error) throw error
     if (!data) return res.status(404).json({ error: 'Section not found' })
+    invalidateContentCache()
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'section_restore', target: data.id, details: data.type })
   } catch (err) {
@@ -1727,6 +1737,7 @@ router.post('/sections/reorder', requireAdmin, async (req, res) => {
         .eq('id', ids[i])
       if (error) throw error
     }
+    invalidateContentCache()
     res.json({ success: true, count: ids.length })
     logAudit({ adminEmail: req.userEmail, action: 'section_reorder', target: 'site_home_sections', details: `${ids.length} sections reordered` })
   } catch (err) {
@@ -1828,6 +1839,7 @@ router.post('/promos', requireAdmin, async (req, res) => {
       if (error.code === '23505') return res.status(409).json({ error: 'Promo code already exists' })
       throw error
     }
+    invalidateContentCache()
     res.status(201).json(data)
     logAudit({ adminEmail: req.userEmail, action: 'promo_create', target: promoCode })
   } catch (err) {
@@ -1903,6 +1915,7 @@ router.patch('/promos/:code', requireAdmin, async (req, res) => {
       .maybeSingle()
     if (error) throw error
     if (!data) return res.status(404).json({ error: 'Promo not found' })
+    invalidateContentCache()
     res.json(data)
     logAudit({ adminEmail: req.userEmail, action: 'promo_update', target: code })
   } catch (err) {
@@ -1918,6 +1931,7 @@ router.delete('/promos/:code', requireAdmin, async (req, res) => {
   try {
     const { error } = await supabaseAdmin.from('promos').delete().eq('code', code)
     if (error) throw error
+    invalidateContentCache()
     res.json({ success: true })
     logAudit({ adminEmail: req.userEmail, action: 'promo_delete', target: code })
   } catch (err) {

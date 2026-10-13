@@ -55,11 +55,12 @@ function NavLinks() {
   const activeBrand = searchParams.get('brand') || ''
   const [content, setContent] = useState(null)
 
-  // content-backed navigation and brand tiles; the built-in arrays render
-  // until the tables are seeded, so nothing changes on a fresh install
+  // content-backed navigation and brand tiles; forced so banner edits are
+  // visible on the next navigation, not only after a hard refresh. The
+  // built-in arrays render until the tables are seeded.
   useEffect(() => {
     let cancelled = false
-    fetchSiteContent().then((data) => { if (!cancelled) setContent(data) })
+    fetchSiteContent(true).then((data) => { if (!cancelled) setContent(data) })
     return () => { cancelled = true }
   }, [])
 
