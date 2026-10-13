@@ -22,6 +22,7 @@ import {
   BsGift,
   BsImages,
   BsCardImage,
+  BsGrid3X3Gap,
 } from "react-icons/bs"
 
 // icon keys map to the react-icons components the sidebar uses
@@ -36,6 +37,7 @@ const NAV_ICONS = {
   chatDots: <BsChatDots />,
   images: <BsImages />,
   cardImage: <BsCardImage />,
+  grid: <BsGrid3X3Gap />,
 }
 
 // the layout wrapper for all admin pages

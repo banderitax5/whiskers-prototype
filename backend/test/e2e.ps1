@@ -726,6 +726,15 @@ try {
     -Body (@{ placement = 'home_hero'; desktop_image_url = '/e2e-staff.png'; alt = 'Staff probe' } | ConvertTo-Json -Compress) | Out-Null
   Step 'staff POST admin/banners denied 403' $false 'got 2xx'
 } catch { Step 'staff POST admin/banners denied 403' ($_.Exception.Response.StatusCode.value__ -eq 403) $_.Exception.Response.StatusCode.value__ }
+try {
+  Invoke-RestMethod -Uri "$base/api/admin/sections" -Headers $authH | Out-Null
+  Step 'staff GET admin/sections denied 403' $false 'got 2xx'
+} catch { Step 'staff GET admin/sections denied 403' ($_.Exception.Response.StatusCode.value__ -eq 403) $_.Exception.Response.StatusCode.value__ }
+try {
+  Invoke-RestMethod -Uri "$base/api/admin/sections" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+    -Body (@{ type = 'product_row'; title = 'Staff probe'; config = @{ rule = 'newest' } } | ConvertTo-Json -Compress) | Out-Null
+  Step 'staff POST admin/sections denied 403' $false 'got 2xx'
+} catch { Step 'staff POST admin/sections denied 403' ($_.Exception.Response.StatusCode.value__ -eq 403) $_.Exception.Response.StatusCode.value__ }
 
 # promote back to admin for the admin-only media flows below
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' -Body (@{ role = 'admin' } | ConvertTo-Json -Compress) | Out-Null
@@ -835,6 +844,66 @@ if ($bannerId) {
   } catch { Step 'banner: restore clears archive' $false (Get-ErrBody $_) }
 }
 
+# -- 9d. Phase 5d: home sections admin -------------------------------------------
+$sectionId = $null
+$sectionId2 = $null
+try {
+  # manual rows need picked products; scheduled rows need a start date
+  try {
+    Invoke-RestMethod -Uri "$base/api/admin/sections" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ type = 'product_row'; title = 'Bad manual'; config = @{ rule = 'manual'; product_ids = @() } } | ConvertTo-Json -Compress) | Out-Null
+    Step 'section: empty manual row rejected' $false 'got 2xx'
+  } catch { Step 'section: empty manual row rejected' ($_.Exception.Response.StatusCode.value__ -eq 400) (Get-ErrBody $_) }
+  try {
+    Invoke-RestMethod -Uri "$base/api/admin/sections" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ type = 'product_row'; title = 'Bad schedule'; config = @{ rule = 'newest' }; status = 'scheduled' } | ConvertTo-Json -Compress) | Out-Null
+    Step 'section: scheduled without start rejected' $false 'got 2xx'
+  } catch { Step 'section: scheduled without start rejected' ($_.Exception.Response.StatusCode.value__ -eq 400) (Get-ErrBody $_) }
+
+  $s1 = Invoke-RestMethod -Uri "$base/api/admin/sections" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+    -Body (@{ type = 'product_row'; title = 'E2E row'; config = @{ rule = 'category'; name = 'Dogs' } } | ConvertTo-Json -Compress)
+  $sectionId = $s1.item.id
+  Step 'section: create defaults to draft, folds rule' ($s1.item.status -eq 'draft' -and $s1.item.config.rule -eq 'category:Dogs') "id=$sectionId"
+} catch { Step 'section: create defaults to draft, folds rule' $false (Get-ErrBody $_) }
+
+if ($sectionId) {
+  try {
+    $list = Invoke-RestMethod -Uri "$base/api/admin/sections" -Headers $authH
+    $found = $list.items | Where-Object { $_.id -eq $sectionId }
+    Step 'section: list includes probe' ([bool]$found) "total=$($list.total)"
+  } catch { Step 'section: list includes probe' $false (Get-ErrBody $_) }
+
+  try {
+    # config patches must validate against the stored type even when the body omits it
+    $pub = Invoke-RestMethod -Uri "$base/api/admin/sections/$sectionId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ status = 'published'; config = @{ rule = 'brand'; name = 'Aozi' } } | ConvertTo-Json -Compress)
+    Step 'section: patch publishes and re-folds config' ($pub.item.status -eq 'published' -and $pub.item.config.rule -eq 'brand:Aozi')
+  } catch { Step 'section: patch publishes and re-folds config' $false (Get-ErrBody $_) }
+
+  try {
+    $s2 = Invoke-RestMethod -Uri "$base/api/admin/sections" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ type = 'product_row'; title = 'E2E row 2'; config = @{ rule = 'newest' } } | ConvertTo-Json -Compress)
+    $sectionId2 = $s2.item.id
+    $ids = @($sectionId2, $sectionId)
+    Invoke-RestMethod -Uri "$base/api/admin/sections/reorder" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ ids = $ids } | ConvertTo-Json -Compress) | Out-Null
+    $after = (Invoke-RestMethod -Uri "$base/api/admin/sections" -Headers $authH).items | Where-Object { $_.id -in $ids } | Sort-Object sort_order
+    Step 'section: reorder applies array order' ($after[0].id -eq $sectionId2) "first=$($after[0].id)"
+  } catch { Step 'section: reorder applies array order' $false (Get-ErrBody $_) }
+
+  try {
+    Invoke-RestMethod -Uri "$base/api/admin/sections/$sectionId" -Method Delete -Headers $stepUpH | Out-Null
+    $hidden = (Invoke-RestMethod -Uri "$base/api/admin/sections" -Headers $authH).items | Where-Object { $_.id -eq $sectionId }
+    $archived = (Invoke-RestMethod -Uri "$base/api/admin/sections?archived=true" -Headers $authH).items | Where-Object { $_.id -eq $sectionId }
+    Step 'section: archive hides from live list, shows in archived' ((-not $hidden) -and [bool]$archived)
+  } catch { Step 'section: archive hides from live list, shows in archived' $false (Get-ErrBody $_) }
+
+  try {
+    $restored = Invoke-RestMethod -Uri "$base/api/admin/sections/$sectionId/restore" -Method Post -Headers $stepUpH -ContentType 'application/json' -Body '{}'
+    Step 'section: restore clears archive' ($restored.item.archived_at -eq $null)
+  } catch { Step 'section: restore clears archive' $false (Get-ErrBody $_) }
+}
+
 # â”€â”€ 10. cleanup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' -Body (@{ role = 'user' } | ConvertTo-Json -Compress) | Out-Null
 Step 'role reverted to user' $true
@@ -881,6 +950,14 @@ if ($bannerId) {
 if ($bannerId2) {
   Invoke-RestMethod -Uri "$SU/rest/v1/site_banners?id=eq.$bannerId2" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
   Step 'banner: probe row 2 removed' $true $bannerId2
+}
+if ($sectionId) {
+  Invoke-RestMethod -Uri "$SU/rest/v1/site_home_sections?id=eq.$sectionId" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+  Step 'section: probe row removed' $true $sectionId
+}
+if ($sectionId2) {
+  Invoke-RestMethod -Uri "$SU/rest/v1/site_home_sections?id=eq.$sectionId2" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+  Step 'section: probe row 2 removed' $true $sectionId2
 }
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
 try {

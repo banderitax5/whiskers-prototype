@@ -16,6 +16,7 @@ import { sanitizeProductCreate, sanitizeProductPatch, parseProductListQuery, esc
 import { isUuid } from '../utils/uuid.js'
 import { sanitizeAltText, mediaPageParams, buildUsageIndex } from '../utils/mediaRules.js'
 import { sanitizeBanner, PLACEMENTS } from '../utils/bannerRules.js'
+import { sanitizeSection } from '../utils/sectionRules.js'
 import { missingColumnOf, isSchemaPendingError } from '../utils/pgErrors.js'
 import { effectiveUnitPrice, lineMargin } from '../utils/orderCosting.js'
 import logger from '../utils/logger.js'
@@ -1598,6 +1599,139 @@ router.post('/banners/reorder', requireAdmin, async (req, res) => {
   } catch (err) {
     logger.error({ err }, 'Banner reorder error')
     res.status(500).json({ error: 'Failed to reorder banners' })
+  }
+})
+
+// ── Home sections admin (admin only) ──────────────────────────────────────────
+
+const SECTION_COLUMNS = 'id, type, title, config, status, starts_at, ends_at, sort_order, created_by, created_at, updated_at, archived_at'
+
+// GET /api/admin/sections?archived=true
+router.get('/sections', requireAdmin, async (req, res) => {
+  try {
+    let query = supabaseAdmin.from('site_home_sections').select(SECTION_COLUMNS, { count: 'exact' })
+    if (String(req.query.archived) === 'true') query = query.not('archived_at', 'is', null)
+    else query = query.is('archived_at', null)
+    const { data, error, count } = await query.order('sort_order')
+    if (error) {
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      throw error
+    }
+    res.json({ items: data || [], total: count ?? 0 })
+  } catch (err) {
+    logger.error({ err }, 'Sections list error')
+    res.status(500).json({ error: 'Failed to load sections' })
+  }
+})
+
+// POST /api/admin/sections — defaults to draft
+router.post('/sections', requireAdmin, async (req, res) => {
+  try {
+    const clean = sanitizeSection({ status: 'draft', ...req.body })
+    if (!clean.ok) return res.status(400).json({ error: clean.error })
+    const { data: last } = await supabaseAdmin
+      .from('site_home_sections')
+      .select('sort_order')
+      .is('archived_at', null)
+      .order('sort_order', { ascending: false })
+      .limit(1)
+    const row = { ...clean.values, sort_order: (last?.[0]?.sort_order ?? -1) + 1, created_by: req.userEmail }
+    const { data, error } = await supabaseAdmin.from('site_home_sections').insert(row).select(SECTION_COLUMNS).single()
+    if (error) {
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      throw error
+    }
+    res.status(201).json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'section_create', target: data.id, details: `${data.type} "${data.title}" ${data.status}` })
+  } catch (err) {
+    logger.error({ err }, 'Section create error')
+    res.status(500).json({ error: 'Failed to create section' })
+  }
+})
+
+// PATCH /api/admin/sections/:id
+router.patch('/sections/:id', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const { data: before } = await supabaseAdmin.from('site_home_sections').select(SECTION_COLUMNS).eq('id', req.params.id).single()
+    if (!before || before.archived_at) return res.status(404).json({ error: 'Section not found' })
+    // config validation needs the effective type; callers may omit it on patches
+    const clean = sanitizeSection({ type: before.type, ...req.body }, { partial: true })
+    if (!clean.ok) return res.status(400).json({ error: clean.error })
+    const { data, error } = await supabaseAdmin
+      .from('site_home_sections')
+      .update({ ...clean.values, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select(SECTION_COLUMNS)
+      .single()
+    if (error) throw error
+    res.json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'section_update', target: req.params.id, details: `changed: ${Object.keys(clean.values).join(', ')}` })
+  } catch (err) {
+    logger.error({ err }, 'Section update error')
+    res.status(500).json({ error: 'Failed to update section' })
+  }
+})
+
+// DELETE /api/admin/sections/:id — soft archive; the storefront stops
+// rendering it immediately and it can be restored
+router.delete('/sections/:id', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const { data: before } = await supabaseAdmin.from('site_home_sections').select('id, type, title').eq('id', req.params.id).single()
+    if (!before) return res.status(404).json({ error: 'Section not found' })
+    const { error } = await supabaseAdmin
+      .from('site_home_sections')
+      .update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+    if (error) throw error
+    res.json({ success: true })
+    logAudit({ adminEmail: req.userEmail, action: 'section_archive', target: req.params.id, details: `${before.type} "${before.title}"` })
+  } catch (err) {
+    logger.error({ err }, 'Section archive error')
+    res.status(500).json({ error: 'Failed to archive section' })
+  }
+})
+
+// POST /api/admin/sections/:id/restore
+router.post('/sections/:id/restore', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('site_home_sections')
+      .update({ archived_at: null, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select(SECTION_COLUMNS)
+      .single()
+    if (error) throw error
+    if (!data) return res.status(404).json({ error: 'Section not found' })
+    res.json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'section_restore', target: data.id, details: data.type })
+  } catch (err) {
+    logger.error({ err }, 'Section restore error')
+    res.status(500).json({ error: 'Failed to restore section' })
+  }
+})
+
+// POST /api/admin/sections/reorder — body { ids: [...] }; sections are one
+// global list (the home page order), not partitioned by placement
+router.post('/sections/reorder', requireAdmin, async (req, res) => {
+  try {
+    const { ids } = req.body ?? {}
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'Provide a non-empty ids list' })
+    if (ids.some((id) => !isUuid(id))) return res.status(400).json({ error: 'ids must be uuids' })
+    for (let i = 0; i < ids.length; i++) {
+      const { error } = await supabaseAdmin
+        .from('site_home_sections')
+        .update({ sort_order: i, updated_at: new Date().toISOString() })
+        .eq('id', ids[i])
+      if (error) throw error
+    }
+    res.json({ success: true, count: ids.length })
+    logAudit({ adminEmail: req.userEmail, action: 'section_reorder', target: 'site_home_sections', details: `${ids.length} sections reordered` })
+  } catch (err) {
+    logger.error({ err }, 'Section reorder error')
+    res.status(500).json({ error: 'Failed to reorder sections' })
   }
 })
 
