@@ -36,6 +36,5 @@ dist-ssr
 .opencode/
 AGENTS.md
 cloudflared-linux-amd64.deb
-backend/dbg.log`nbackend/dbg.err
 backend/dbg.log
 backend/dbg.err
