@@ -30,6 +30,7 @@ const AdminCustomers = lazy(() => import('./components/AdminCustomers.jsx'))
 const AdminSupports = lazy(() => import('./components/AdminSupports.jsx'))
 const AdminPromos = lazy(() => import('./components/AdminPromos.jsx'))
 const AdminMedia = lazy(() => import('./components/AdminMedia.jsx'))
+const AdminBanners = lazy(() => import('./components/AdminBanners.jsx'))
 
 import supabase from './lib/supabase'
 
@@ -235,6 +236,7 @@ const router = createBrowserRouter([
       { path: 'payments', element: <AdminPayments /> },
       { path: 'promos', element: <RequireRole role="admin" fallback="/admin/orders"><AdminPromos /></RequireRole> },
       { path: 'media', element: <RequireRole role="admin" fallback="/admin/orders"><AdminMedia /></RequireRole> },
+{ path: 'banners', element: <RequireRole role="admin" fallback="/admin/orders"><AdminBanners /></RequireRole> },
       { path: 'support', element: <AdminSupports /> },
       { path: 'audit-logs', element: <RequireRole role="admin" fallback="/admin/orders"><AdminAuditLogs /></RequireRole> },
     ],

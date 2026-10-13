@@ -15,6 +15,7 @@ import { sanitizeDetails } from '../utils/productDetails.js'
 import { sanitizeProductCreate, sanitizeProductPatch, parseProductListQuery, escapeLike } from '../utils/adminInput.js'
 import { isUuid } from '../utils/uuid.js'
 import { sanitizeAltText, mediaPageParams, buildUsageIndex } from '../utils/mediaRules.js'
+import { sanitizeBanner, PLACEMENTS } from '../utils/bannerRules.js'
 import { missingColumnOf, isSchemaPendingError } from '../utils/pgErrors.js'
 import { effectiveUnitPrice, lineMargin } from '../utils/orderCosting.js'
 import logger from '../utils/logger.js'
@@ -1456,6 +1457,147 @@ router.post('/media/:id/check', requireAdmin, async (req, res) => {
   } catch (err) {
     logger.error({ err }, 'Media check error')
     res.status(500).json({ error: 'Failed to check media' })
+  }
+})
+
+// ── Banners admin (admin only) ────────────────────────────────────────────────
+
+const BANNER_COLUMNS = 'id, placement, desktop_image_url, mobile_image_url, alt, title, subtitle, button_text, link_type, link_target, status, starts_at, ends_at, sort_order, impressions, clicks, created_by, created_at, updated_at, archived_at'
+
+// GET /api/admin/banners?placement=home_hero&archived=true
+router.get('/banners', requireAdmin, async (req, res) => {
+  try {
+    let query = supabaseAdmin.from('site_banners').select(BANNER_COLUMNS, { count: 'exact' })
+    if (String(req.query.archived) === 'true') query = query.not('archived_at', 'is', null)
+    else query = query.is('archived_at', null)
+    if (req.query.placement && PLACEMENTS.includes(String(req.query.placement))) {
+      query = query.eq('placement', String(req.query.placement))
+    }
+    const { data, error, count } = await query.order('placement').order('sort_order')
+    if (error) {
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      throw error
+    }
+    res.json({ items: data || [], total: count ?? 0 })
+  } catch (err) {
+    logger.error({ err }, 'Banners list error')
+    res.status(500).json({ error: 'Failed to load banners' })
+  }
+})
+
+// POST /api/admin/banners — new banners start as drafts unless told otherwise
+router.post('/banners', requireAdmin, async (req, res) => {
+  try {
+    const clean = sanitizeBanner({ status: 'draft', ...req.body })
+    if (!clean.ok) return res.status(400).json({ error: clean.error })
+    const { data: last } = await supabaseAdmin
+      .from('site_banners')
+      .select('sort_order')
+      .eq('placement', clean.values.placement)
+      .is('archived_at', null)
+      .order('sort_order', { ascending: false })
+      .limit(1)
+    const row = { ...clean.values, sort_order: (last?.[0]?.sort_order ?? -1) + 1, created_by: req.userEmail }
+    const { data, error } = await supabaseAdmin.from('site_banners').insert(row).select(BANNER_COLUMNS).single()
+    if (error) {
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      throw error
+    }
+    res.status(201).json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'banner_create', target: data.id, details: `${data.placement} "${data.alt}" ${data.status}` })
+  } catch (err) {
+    logger.error({ err }, 'Banner create error')
+    res.status(500).json({ error: 'Failed to create banner' })
+  }
+})
+
+// PATCH /api/admin/banners/:id
+router.patch('/banners/:id', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const { data: before } = await supabaseAdmin.from('site_banners').select(BANNER_COLUMNS).eq('id', req.params.id).single()
+    if (!before || before.archived_at) return res.status(404).json({ error: 'Banner not found' })
+    const clean = sanitizeBanner(req.body, { partial: true })
+    if (!clean.ok) return res.status(400).json({ error: clean.error })
+    const { data, error } = await supabaseAdmin
+      .from('site_banners')
+      .update({ ...clean.values, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select(BANNER_COLUMNS)
+      .single()
+    if (error) throw error
+    res.json({ item: data })
+    const changed = Object.keys(clean.values).join(', ')
+    logAudit({ adminEmail: req.userEmail, action: 'banner_update', target: req.params.id, details: `changed: ${changed}` })
+  } catch (err) {
+    logger.error({ err }, 'Banner update error')
+    res.status(500).json({ error: 'Failed to update banner' })
+  }
+})
+
+// DELETE /api/admin/banners/:id — soft archive so the storefront stops
+// serving it immediately and the owner can undo
+router.delete('/banners/:id', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const { data: before } = await supabaseAdmin.from('site_banners').select('id, placement, alt').eq('id', req.params.id).single()
+    if (!before) return res.status(404).json({ error: 'Banner not found' })
+    const { error } = await supabaseAdmin
+      .from('site_banners')
+      .update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+    if (error) throw error
+    res.json({ success: true })
+    logAudit({ adminEmail: req.userEmail, action: 'banner_archive', target: req.params.id, details: `${before.placement} "${before.alt}"` })
+  } catch (err) {
+    logger.error({ err }, 'Banner archive error')
+    res.status(500).json({ error: 'Failed to archive banner' })
+  }
+})
+
+// POST /api/admin/banners/:id/restore
+router.post('/banners/:id/restore', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('site_banners')
+      .update({ archived_at: null, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select(BANNER_COLUMNS)
+      .single()
+    if (error) throw error
+    if (!data) return res.status(404).json({ error: 'Banner not found' })
+    res.json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'banner_restore', target: data.id, details: data.placement })
+  } catch (err) {
+    logger.error({ err }, 'Banner restore error')
+    res.status(500).json({ error: 'Failed to restore banner' })
+  }
+})
+
+// POST /api/admin/banners/reorder — body { placement, ids: [uuid, ...] }
+// assigns sort_order by array position; owner-facing order control without
+// needing drag-and-drop to be keyboard-safe
+router.post('/banners/reorder', requireAdmin, async (req, res) => {
+  try {
+    const { placement, ids } = req.body ?? {}
+    if (!PLACEMENTS.includes(placement) || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Provide placement and a non-empty ids list' })
+    }
+    if (ids.some((id) => !isUuid(id))) return res.status(400).json({ error: 'ids must be uuids' })
+    for (let i = 0; i < ids.length; i++) {
+      const { error } = await supabaseAdmin
+        .from('site_banners')
+        .update({ sort_order: i, updated_at: new Date().toISOString() })
+        .eq('id', ids[i])
+        .eq('placement', placement)
+      if (error) throw error
+    }
+    res.json({ success: true, count: ids.length })
+    logAudit({ adminEmail: req.userEmail, action: 'banner_reorder', target: placement, details: `${ids.length} banners reordered` })
+  } catch (err) {
+    logger.error({ err }, 'Banner reorder error')
+    res.status(500).json({ error: 'Failed to reorder banners' })
   }
 })
 

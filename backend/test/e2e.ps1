@@ -717,6 +717,15 @@ try {
   Invoke-MediaUpload 'Staff probe' | Out-Null
   Step 'staff POST admin/media denied 403' $false 'got 2xx'
 } catch { Step 'staff POST admin/media denied 403' ($_.Exception.Response.StatusCode.value__ -eq 403) $_.Exception.Response.StatusCode.value__ }
+try {
+  Invoke-RestMethod -Uri "$base/api/admin/banners?pageSize=1" -Headers $authH | Out-Null
+  Step 'staff GET admin/banners denied 403' $false 'got 2xx'
+} catch { Step 'staff GET admin/banners denied 403' ($_.Exception.Response.StatusCode.value__ -eq 403) $_.Exception.Response.StatusCode.value__ }
+try {
+  Invoke-RestMethod -Uri "$base/api/admin/banners" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+    -Body (@{ placement = 'home_hero'; desktop_image_url = '/e2e-staff.png'; alt = 'Staff probe' } | ConvertTo-Json -Compress) | Out-Null
+  Step 'staff POST admin/banners denied 403' $false 'got 2xx'
+} catch { Step 'staff POST admin/banners denied 403' ($_.Exception.Response.StatusCode.value__ -eq 403) $_.Exception.Response.StatusCode.value__ }
 
 # promote back to admin for the admin-only media flows below
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' -Body (@{ role = 'admin' } | ConvertTo-Json -Compress) | Out-Null
@@ -767,6 +776,65 @@ if ($mediaUploaded) {
   } catch { Step 'media: restore clears archive' $false (Get-ErrBody $_) }
 }
 
+# -- 9c. Phase 5c: banners admin ------------------------------------------------
+$bannerId = $null
+$bannerId2 = $null
+try {
+  # alt text is rejected BEFORE insert; a scheduled banner without a start date is too
+  try {
+    Invoke-RestMethod -Uri "$base/api/admin/banners" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ placement = 'home_hero'; desktop_image_url = '/e2e.png'; alt = '' } | ConvertTo-Json -Compress) | Out-Null
+    Step 'banner: create without alt rejected' $false 'got 2xx'
+  } catch { Step 'banner: create without alt rejected' ($_.Exception.Response.StatusCode.value__ -eq 400) (Get-ErrBody $_) }
+  try {
+    Invoke-RestMethod -Uri "$base/api/admin/banners" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ placement = 'home_hero'; desktop_image_url = '/e2e.png'; alt = 'Bad schedule'; status = 'scheduled' } | ConvertTo-Json -Compress) | Out-Null
+    Step 'banner: scheduled without start rejected' $false 'got 2xx'
+  } catch { Step 'banner: scheduled without start rejected' ($_.Exception.Response.StatusCode.value__ -eq 400) (Get-ErrBody $_) }
+
+  $b1 = Invoke-RestMethod -Uri "$base/api/admin/banners" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+    -Body (@{ placement = 'home_hero'; desktop_image_url = '/e2e-banner.png'; alt = 'E2E probe banner' } | ConvertTo-Json -Compress)
+  $bannerId = $b1.item.id
+  Step 'banner: create defaults to draft' ($b1.item.status -eq 'draft' -and $b1.item.link_type -eq 'none') "id=$bannerId"
+} catch { Step 'banner: create defaults to draft' $false (Get-ErrBody $_) }
+
+if ($bannerId) {
+  try {
+    $list = Invoke-RestMethod -Uri "$base/api/admin/banners?placement=home_hero" -Headers $authH
+    $found = $list.items | Where-Object { $_.id -eq $bannerId }
+    Step 'banner: list includes probe with zero counters' ([bool]$found -and [int]$found.impressions -eq 0) "total=$($list.total)"
+  } catch { Step 'banner: list includes probe with zero counters' $false (Get-ErrBody $_) }
+
+  try {
+    $pub = Invoke-RestMethod -Uri "$base/api/admin/banners/$bannerId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ status = 'published'; title = 'Probe slide' } | ConvertTo-Json -Compress)
+    Step 'banner: patch publishes with title' ($pub.item.status -eq 'published' -and $pub.item.title -eq 'Probe slide')
+  } catch { Step 'banner: patch publishes with title' $false (Get-ErrBody $_) }
+
+  try {
+    $b2 = Invoke-RestMethod -Uri "$base/api/admin/banners" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ placement = 'home_hero'; desktop_image_url = '/e2e-banner2.png'; alt = 'E2E probe banner 2' } | ConvertTo-Json -Compress)
+    $bannerId2 = $b2.item.id
+    $ids = @($bannerId2, $bannerId) # reverse: probe 2 first
+    Invoke-RestMethod -Uri "$base/api/admin/banners/reorder" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ placement = 'home_hero'; ids = $ids } | ConvertTo-Json -Compress) | Out-Null
+    $after = (Invoke-RestMethod -Uri "$base/api/admin/banners?placement=home_hero" -Headers $authH).items | Where-Object { $_.id -in $ids } | Sort-Object sort_order
+    Step 'banner: reorder applies array order' ($after[0].id -eq $bannerId2 -and [int]$after[1].sort_order -eq 1) "first=$($after[0].id)"
+  } catch { Step 'banner: reorder applies array order' $false (Get-ErrBody $_) }
+
+  try {
+    Invoke-RestMethod -Uri "$base/api/admin/banners/$bannerId" -Method Delete -Headers $stepUpH | Out-Null
+    $hidden = (Invoke-RestMethod -Uri "$base/api/admin/banners?placement=home_hero" -Headers $authH).items | Where-Object { $_.id -eq $bannerId }
+    $archived = (Invoke-RestMethod -Uri "$base/api/admin/banners?placement=home_hero&archived=true" -Headers $authH).items | Where-Object { $_.id -eq $bannerId }
+    Step 'banner: archive hides from live list, shows in archived' ((-not $hidden) -and [bool]$archived)
+  } catch { Step 'banner: archive hides from live list, shows in archived' $false (Get-ErrBody $_) }
+
+  try {
+    $restored = Invoke-RestMethod -Uri "$base/api/admin/banners/$bannerId/restore" -Method Post -Headers $stepUpH -ContentType 'application/json' -Body '{}'
+    Step 'banner: restore clears archive' ($restored.item.archived_at -eq $null)
+  } catch { Step 'banner: restore clears archive' $false (Get-ErrBody $_) }
+}
+
 # â”€â”€ 10. cleanup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' -Body (@{ role = 'user' } | ConvertTo-Json -Compress) | Out-Null
 Step 'role reverted to user' $true
@@ -805,6 +873,14 @@ if ($mediaId) {
     Invoke-RestMethod -Uri "$SU/storage/v1/object/product-images/$($mediaRow[0].storage_path)" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
   }
   Step 'media: probe row removed' $true $mediaId
+}
+if ($bannerId) {
+  Invoke-RestMethod -Uri "$SU/rest/v1/site_banners?id=eq.$bannerId" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+  Step 'banner: probe row removed' $true $bannerId
+}
+if ($bannerId2) {
+  Invoke-RestMethod -Uri "$SU/rest/v1/site_banners?id=eq.$bannerId2" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+  Step 'banner: probe row 2 removed' $true $bannerId2
 }
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
 try {
