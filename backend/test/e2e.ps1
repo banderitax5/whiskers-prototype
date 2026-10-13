@@ -471,6 +471,18 @@ if ($probeId) {
       Step 'promo: admin creates percent code' $true $promoCode
     } catch { Step 'promo: admin creates percent code' $false (Get-ErrBody $_) }
 
+    # category-scope promos store the category NAME in target_id (text column
+    # since 2026-10-14_promos_target_text.sql); before that migration any
+    # name failed with 22P02. Insert via service role, verify, delete at once.
+    $catPromoCode = '__E2ECAT__'
+    try {
+      Invoke-RestMethod -Uri "$SU/rest/v1/promos" -Method Post -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' `
+        -Body (@{ code = $catPromoCode; type = 'percent'; value = 10; scope = 'category'; target_id = 'Dogs'; min_subtotal = 0; per_user_limit = 99; is_active = $false } | ConvertTo-Json -Compress) | Out-Null
+      $catRow = Invoke-RestMethod -Uri "$SU/rest/v1/promos?code=eq.$catPromoCode&select=target_id" -Headers @{ apikey = $SK; Authorization = "Bearer $SK" }
+      Step 'promo: category scope stores name' (@($catRow).Count -eq 1 -and $catRow[0].target_id -eq 'Dogs') "target=$($catRow[0].target_id)"
+    } catch { Step 'promo: category scope stores name' $false (Get-ErrBody $_) }
+    Invoke-RestMethod -Uri "$SU/rest/v1/promos?code=eq.$catPromoCode" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+
     # price the probe at 200 so a 50% code is a clean 100 off; Phase 3 left it
     # with 1 unit of stock, so restock to 10 for this order
     try {
