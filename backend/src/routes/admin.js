@@ -14,6 +14,7 @@ import { PERIODS, windowDays, bucketPayments } from '../utils/salesBuckets.js'
 import { sanitizeDetails } from '../utils/productDetails.js'
 import { sanitizeProductCreate, sanitizeProductPatch, parseProductListQuery, escapeLike } from '../utils/adminInput.js'
 import { isUuid } from '../utils/uuid.js'
+import { sanitizeAltText, mediaPageParams, buildUsageIndex } from '../utils/mediaRules.js'
 import { missingColumnOf, isSchemaPendingError } from '../utils/pgErrors.js'
 import { effectiveUnitPrice, lineMargin } from '../utils/orderCosting.js'
 import logger from '../utils/logger.js'
@@ -1222,6 +1223,239 @@ router.delete('/images/:filename', async (req, res) => {
   } catch (err) {
     logger.error({ err }, 'Image delete error')
     res.status(500).json({ error: 'Failed to delete image' })
+  }
+})
+
+// ── Media Library (admin only) ───────────────────────────────────────────────
+
+// every image the content screens can reference. Uploading goes through the
+// same hardened pipeline as product images (type/size limits, sharp re-encode,
+// storage bucket); the extra column set records alt text (required), the
+// storage path and the last broken-image check so the storefront and the
+// admin can agree on what is broken.
+
+const MEDIA_COLUMNS = 'id, url, storage_path, alt_text, mime_type, size_bytes, width, height, is_broken, last_broken_at, created_by, created_at, archived_at'
+
+// small tables (5 banners, ~17 nav rows, a handful of sections): fetch them
+// whole and answer "where is this image used" in memory
+async function fetchUsageRefs() {
+  const [banners, nav, sections] = await Promise.all([
+    supabaseAdmin.from('site_banners').select('id, placement, desktop_image_url, mobile_image_url').is('archived_at', null),
+    supabaseAdmin.from('site_nav_items').select('id, section, image_url').is('archived_at', null),
+    supabaseAdmin.from('site_home_sections').select('id, type, title, config').is('archived_at', null),
+  ])
+  return {
+    banners: banners.data || [],
+    nav: nav.data || [],
+    sections: (sections.data || []).map((s) => ({ ...s, configText: JSON.stringify(s.config ?? {}) })),
+  }
+}
+
+// re-encode like the product image pipeline; returns the buffer plus the
+// metadata the media library shows (dimensions, final size)
+async function processMedia(buffer) {
+  const image = sharp(buffer)
+  const meta = await image.metadata()
+  const out = await image
+    .resize({ width: 1200, withoutEnlargement: true })
+    .jpeg({ quality: 80 })
+    .toBuffer()
+  return { buffer: out, width: meta.width ?? null, height: meta.height ?? null }
+}
+
+// GET /api/admin/media?page&pageSize&q&archived=true
+router.get('/media', requireAdmin, async (req, res) => {
+  try {
+    const { page, pageSize } = mediaPageParams(req.query)
+    const showArchived = String(req.query.archived) === 'true'
+    let query = supabaseAdmin.from('site_media').select(MEDIA_COLUMNS, { count: 'exact' })
+    if (showArchived) query = query.not('archived_at', 'is', null)
+    else query = query.is('archived_at', null)
+    const q = String(req.query.q || '').trim()
+    if (q) query = query.ilike('alt_text', `%${escapeLike(q)}%`)
+    const from = (page - 1) * pageSize
+    const { data, error, count } = await query
+      .order('created_at', { ascending: false })
+      .range(from, from + pageSize - 1)
+    if (error) {
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      throw error
+    }
+
+    const refs = await fetchUsageRefs()
+    const usage = buildUsageIndex((data || []).map((m) => m.url), refs)
+    const items = (data || []).map((m) => ({ ...m, used_in: usage.get(m.url) || [] }))
+    res.json({ items, total: count ?? 0, page, pageSize })
+  } catch (err) {
+    logger.error({ err }, 'Media list error')
+    res.status(500).json({ error: 'Failed to load media' })
+  }
+})
+
+// POST /api/admin/media — multipart "image" or JSON { imageUrl }, alt required.
+// Alt text is checked BEFORE the upload so a missing alt never leaves an
+// orphan file in the bucket.
+router.post('/media', requireAdmin, runUpload, async (req, res) => {
+  let tempPath = req.file?.path
+  try {
+    const alt = sanitizeAltText(req.body?.altText)
+    if (!alt.ok) return res.status(400).json({ error: alt.error })
+
+    let source
+    if (req.file) {
+      source = { buffer: await fs.promises.readFile(req.file.path), mimeType: req.file.mimetype }
+    } else if (req.body?.imageUrl) {
+      if (!(await isSafeUrl(req.body.imageUrl))) {
+        return res.status(400).json({ error: 'URL is not allowed (private/internal addresses are blocked)' })
+      }
+      const resp = await fetch(req.body.imageUrl, { redirect: 'manual', signal: AbortSignal.timeout(10_000) })
+      if (resp.status >= 300 && resp.status < 400) {
+        return res.status(400).json({ error: 'Redirects are not allowed' })
+      }
+      if (!resp.ok) return res.status(400).json({ error: 'Failed to fetch image from URL' })
+      const remoteType = resp.headers.get('content-type') || ''
+      if (!remoteType.startsWith('image/')) return res.status(400).json({ error: 'URL does not point to an image' })
+      const arrayBuf = await resp.arrayBuffer()
+      if (arrayBuf.byteLength > 5 * 1024 * 1024) return res.status(400).json({ error: 'Image exceeds the 5MB limit' })
+      source = { buffer: Buffer.from(arrayBuf), mimeType: remoteType }
+    } else {
+      return res.status(400).json({ error: 'Provide an image file or imageUrl' })
+    }
+
+    const { buffer, width, height } = await processMedia(source.buffer)
+    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from('product-images')
+      .upload(fileName, buffer, { contentType: 'image/jpeg' })
+    if (uploadError) {
+      logger.error({ err: uploadError }, 'Media upload error')
+      return res.status(500).json({ error: 'Storage upload failed' })
+    }
+    const { data: publicData } = supabaseAdmin.storage.from('product-images').getPublicUrl(fileName)
+
+    const row = {
+      url: publicData.publicUrl,
+      storage_path: fileName,
+      alt_text: alt.value,
+      mime_type: 'image/jpeg',
+      size_bytes: buffer.length,
+      width,
+      height,
+      created_by: req.userEmail,
+    }
+    const { data, error } = await supabaseAdmin.from('site_media').insert(row).select(MEDIA_COLUMNS).single()
+    if (error) {
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      throw error
+    }
+    res.status(201).json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'media_upload', target: fileName, details: `alt: ${alt.value}` })
+  } catch (err) {
+    logger.error({ err }, 'Media upload error')
+    res.status(500).json({ error: 'Failed to upload media' })
+  } finally {
+    if (tempPath) fs.unlink(tempPath, () => {})
+  }
+})
+
+// PATCH /api/admin/media/:id — edit alt text (the only owner-editable field;
+// swapping the file is an upload + archive flow so history stays honest)
+router.patch('/media/:id', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const alt = sanitizeAltText(req.body?.altText)
+    if (!alt.ok) return res.status(400).json({ error: alt.error })
+    const { data: before } = await supabaseAdmin.from('site_media').select(MEDIA_COLUMNS).eq('id', req.params.id).single()
+    if (!before) return res.status(404).json({ error: 'Media not found' })
+    const { data, error } = await supabaseAdmin
+      .from('site_media')
+      .update({ alt_text: alt.value, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select(MEDIA_COLUMNS)
+      .single()
+    if (error) throw error
+    res.json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'media_update', target: req.params.id, details: `alt: '${before.alt_text}' -> '${alt.value}'` })
+  } catch (err) {
+    logger.error({ err }, 'Media update error')
+    res.status(500).json({ error: 'Failed to update media' })
+  }
+})
+
+// DELETE /api/admin/media/:id — soft delete (archive) with undo. Refuses while
+// the image is still referenced, because that would break a live page.
+router.delete('/media/:id', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const { data: media } = await supabaseAdmin.from('site_media').select(MEDIA_COLUMNS).eq('id', req.params.id).single()
+    if (!media) return res.status(404).json({ error: 'Media not found' })
+    const refs = await fetchUsageRefs()
+    const usedIn = buildUsageIndex([media.url], refs).get(media.url) || []
+    if (usedIn.length > 0 && String(req.query.force) !== 'true') {
+      return res.status(409).json({
+        error: 'This image is still in use',
+        used_in: usedIn,
+      })
+    }
+    const { error } = await supabaseAdmin
+      .from('site_media')
+      .update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+    if (error) throw error
+    res.json({ success: true })
+    logAudit({ adminEmail: req.userEmail, action: 'media_archive', target: media.storage_path || req.params.id, details: usedIn.length ? `forced, used by: ${usedIn.map((u) => u.label).join(', ')}` : 'unused' })
+  } catch (err) {
+    logger.error({ err }, 'Media archive error')
+    res.status(500).json({ error: 'Failed to archive media' })
+  }
+})
+
+// POST /api/admin/media/:id/restore — undo an archive
+router.post('/media/:id/restore', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('site_media')
+      .update({ archived_at: null, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select(MEDIA_COLUMNS)
+      .single()
+    if (error) throw error
+    if (!data) return res.status(404).json({ error: 'Media not found' })
+    res.json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'media_restore', target: data.storage_path || req.params.id })
+  } catch (err) {
+    logger.error({ err }, 'Media restore error')
+    res.status(500).json({ error: 'Failed to restore media' })
+  }
+})
+
+// POST /api/admin/media/:id/check — broken-image detection. The storefront
+// already hides images that fail in the browser; this is the admin-side flag
+// so the owner can find and replace them without clicking every slide.
+router.post('/media/:id/check', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const { data: media } = await supabaseAdmin.from('site_media').select(MEDIA_COLUMNS).eq('id', req.params.id).single()
+    if (!media) return res.status(404).json({ error: 'Media not found' })
+    let broken = true
+    try {
+      const resp = await fetch(media.url, { method: 'GET', signal: AbortSignal.timeout(8000) })
+      broken = !(resp.ok && (resp.headers.get('content-type') || '').startsWith('image/'))
+      resp.body?.cancel()
+    } catch { broken = true }
+    const { data, error } = await supabaseAdmin
+      .from('site_media')
+      .update({ is_broken: broken, last_broken_at: broken ? new Date().toISOString() : null, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select(MEDIA_COLUMNS)
+      .single()
+    if (error) throw error
+    res.json({ item: data })
+    if (broken) logAudit({ adminEmail: req.userEmail, action: 'media_check_broken', target: media.storage_path || req.params.id })
+  } catch (err) {
+    logger.error({ err }, 'Media check error')
+    res.status(500).json({ error: 'Failed to check media' })
   }
 })
 

@@ -20,6 +20,7 @@ import {
   BsClockHistory,
   BsChatDots,
   BsGift,
+  BsImages,
 } from "react-icons/bs"
 
 // icon keys map to the react-icons components the sidebar uses
@@ -32,6 +33,7 @@ const NAV_ICONS = {
   gift: <BsGift />,
   clockHistory: <BsClockHistory />,
   chatDots: <BsChatDots />,
+  images: <BsImages />,
 }
 
 // the layout wrapper for all admin pages

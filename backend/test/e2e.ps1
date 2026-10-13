@@ -689,6 +689,84 @@ if ($probeId) {
   }
 }
 
+# media library helpers (shared by the staff denial checks and the admin flows)
+$pngBytes = [Convert]::FromBase64String('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
+$mediaId = $null
+$mediaUploaded = $false
+$crlf = "`r`n"
+
+function Invoke-MediaUpload($altText) {
+  $b = [guid]::NewGuid().ToString('N')
+  $ms = New-Object System.IO.MemoryStream
+  $w = { param($bytes) $ms.Write($bytes, 0, $bytes.Length) }
+  $w.Invoke([Text.Encoding]::UTF8.GetBytes("--$b${crlf}Content-Disposition: form-data; name=`"altText`"$crlf$crlf$altText$crlf"))
+  $w.Invoke([Text.Encoding]::UTF8.GetBytes("--$b${crlf}Content-Disposition: form-data; name=`"image`"; filename=`"e2e-probe.png`"${crlf}Content-Type: image/png$crlf$crlf"))
+  $w.Invoke($pngBytes)
+  $w.Invoke([Text.Encoding]::UTF8.GetBytes("$crlf--$b--$crlf"))
+  Invoke-RestMethod -Uri "$base/api/admin/media" -Method Post -Headers $stepUpH `
+    -ContentType "multipart/form-data; boundary=$b" -Body $ms.ToArray()
+}
+
+# media library is admin-only content: while the temp user is still staff,
+# both the read and the write must be refused
+try {
+  Invoke-RestMethod -Uri "$base/api/admin/media?pageSize=1" -Headers $authH | Out-Null
+  Step 'staff GET admin/media denied 403' $false 'got 2xx'
+} catch { Step 'staff GET admin/media denied 403' ($_.Exception.Response.StatusCode.value__ -eq 403) $_.Exception.Response.StatusCode.value__ }
+try {
+  Invoke-MediaUpload 'Staff probe' | Out-Null
+  Step 'staff POST admin/media denied 403' $false 'got 2xx'
+} catch { Step 'staff POST admin/media denied 403' ($_.Exception.Response.StatusCode.value__ -eq 403) $_.Exception.Response.StatusCode.value__ }
+
+# promote back to admin for the admin-only media flows below
+Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' -Body (@{ role = 'admin' } | ConvertTo-Json -Compress) | Out-Null
+Step 'role promoted back to admin' $true
+
+# -- 9b. Phase 5b: media library ------------------------------------------------
+try {
+  # alt text is required BEFORE the file is stored, so an upload without it
+  # must be rejected without leaving an orphan in the bucket
+  try {
+    (Invoke-MediaUpload '') | Out-Null
+    Step 'media: upload without alt rejected' $false 'got 2xx'
+  } catch { Step 'media: upload without alt rejected' ($_.Exception.Response.StatusCode.value__ -eq 400) $_.Exception.Response.StatusCode.value__ }
+
+  $media = Invoke-MediaUpload 'E2E probe banner'
+  $mediaId = $media.item.id
+  $mediaUploaded = $true
+  Step 'media: upload with alt succeeds' ($media.item.alt_text -eq 'E2E probe banner' -and $media.item.width -eq 1) "url=$($media.item.url.Split('/')[-1])"
+} catch { Step 'media: upload with alt succeeds' $false (Get-ErrBody $_) }
+
+if ($mediaUploaded) {
+  try {
+    $list = Invoke-RestMethod -Uri "$base/api/admin/media?pageSize=48" -Headers $authH
+    $found = $list.items | Where-Object { $_.id -eq $mediaId }
+    Step 'media: list includes new item' (([int]$list.total -ge 1) -and [bool]$found) "total=$($list.total)"
+  } catch { Step 'media: list includes new item' $false (Get-ErrBody $_) }
+
+  try {
+    $patched = Invoke-RestMethod -Uri "$base/api/admin/media/$mediaId" -Method Patch -Headers $stepUpH -ContentType 'application/json' -Body (@{ altText = 'E2E probe banner updated' } | ConvertTo-Json -Compress)
+    Step 'media: patch updates alt' ($patched.item.alt_text -eq 'E2E probe banner updated')
+  } catch { Step 'media: patch updates alt' $false (Get-ErrBody $_) }
+
+  try {
+    $checked = Invoke-RestMethod -Uri "$base/api/admin/media/$mediaId/check" -Method Post -Headers $stepUpH -ContentType 'application/json' -Body '{}'
+    Step 'media: check reports loadable' ($checked.item.is_broken -eq $false) "is_broken=$($checked.item.is_broken)"
+  } catch { Step 'media: check reports loadable' $false (Get-ErrBody $_) }
+
+  try {
+    Invoke-RestMethod -Uri "$base/api/admin/media/$mediaId" -Method Delete -Headers $stepUpH | Out-Null
+    $hidden = (Invoke-RestMethod -Uri "$base/api/admin/media?pageSize=48" -Headers $authH).items | Where-Object { $_.id -eq $mediaId }
+    $archived = (Invoke-RestMethod -Uri "$base/api/admin/media?pageSize=48&archived=true" -Headers $authH).items | Where-Object { $_.id -eq $mediaId }
+    Step 'media: archive hides from library, undo restores' ((-not $hidden) -and [bool]$archived) "archived=$([bool]$archived)"
+  } catch { Step 'media: archive hides from library, undo restores' $false (Get-ErrBody $_) }
+
+  try {
+    $restored = Invoke-RestMethod -Uri "$base/api/admin/media/$mediaId/restore" -Method Post -Headers $stepUpH -ContentType 'application/json' -Body '{}'
+    Step 'media: restore clears archive' ($restored.item.archived_at -eq $null)
+  } catch { Step 'media: restore clears archive' $false (Get-ErrBody $_) }
+}
+
 # â”€â”€ 10. cleanup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' -Body (@{ role = 'user' } | ConvertTo-Json -Compress) | Out-Null
 Step 'role reverted to user' $true
@@ -719,6 +797,14 @@ if ($probeId) {
     Invoke-RestMethod -Uri "$SU/rest/v1/product?prod_id=eq.$probeId" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
     Step 'details: probe product deleted' $true $probeId
   } catch { Step 'details: probe product deleted' $false (Get-ErrBody $_) }
+}
+if ($mediaId) {
+  $mediaRow = Invoke-RestMethod -Uri "$SU/rest/v1/site_media?id=eq.$mediaId&select=storage_path" -Headers @{ apikey = $SK; Authorization = "Bearer $SK" }
+  Invoke-RestMethod -Uri "$SU/rest/v1/site_media?id=eq.$mediaId" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+  if ($mediaRow -and $mediaRow[0].storage_path) {
+    Invoke-RestMethod -Uri "$SU/storage/v1/object/product-images/$($mediaRow[0].storage_path)" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+  }
+  Step 'media: probe row removed' $true $mediaId
 }
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
 try {
