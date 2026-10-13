@@ -56,6 +56,8 @@ describe('AdminMedia page states', () => {
     const alert = c.querySelector('[role="alert"]')
     expect(alert?.textContent).toMatch(/boom/)
     expect([...c.querySelectorAll('button')].some((b) => b.textContent === 'Retry')).toBe(true)
+    // a failed load must never claim the library is empty
+    expect(c.textContent).not.toMatch(/No images yet/i)
   })
 
   it('renders media cards with alt text, usage and broken badge', async () => {

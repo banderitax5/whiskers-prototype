@@ -192,7 +192,7 @@ function AdminMedia() {
       const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE), archived: String(archived) })
       if (q) params.set("q", q)
       const { data: { session } } = await supabase.auth.getSession()
-      const data = await apiGetAuth(`/api/admin/media?${params}`, session?.access_token)
+      const data = await apiGetAuth(`/admin/media?${params}`, session?.access_token)
       setItems(data.items || [])
       setTotal(data.total ?? 0)
     } catch (err) {
@@ -246,17 +246,17 @@ function AdminMedia() {
       const fd = new FormData()
       fd.append("image", file)
       fd.append("altText", altText)
-      const { item } = await apiUploadAuth("/api/admin/media", fd, (await supabase.auth.getSession()).data.session?.access_token)
+      const { item } = await apiUploadAuth("/admin/media", fd, (await supabase.auth.getSession()).data.session?.access_token)
       setToast(`Uploaded ${item.url.split("/").pop()}`)
     } else {
-      await apiPostAuth("/api/admin/media", { imageUrl, altText }, (await supabase.auth.getSession()).data.session?.access_token)
+      await apiPostAuth("/admin/media", { imageUrl, altText }, (await supabase.auth.getSession()).data.session?.access_token)
       setToast("Added image from URL")
     }
     setDialog(null); setPage(1); await load()
   }
 
   async function handleEdit({ altText }) {
-    const { item } = await apiPatchAuth(`/api/admin/media/${dialog.item.id}`, { altText }, (await supabase.auth.getSession()).data.session?.access_token)
+    const { item } = await apiPatchAuth(`/admin/media/${dialog.item.id}`, { altText }, (await supabase.auth.getSession()).data.session?.access_token)
     setItems((prev) => prev.map((m) => (m.id === item.id ? item : m)))
     setDialog(null); setToast("Alt text updated")
   }
@@ -264,7 +264,7 @@ function AdminMedia() {
   async function handleArchive(force) {
     setBusy(true)
     try {
-      await apiDeleteAuth(`/api/admin/media/${confirm.item.id}${force ? "?force=true" : ""}`, (await supabase.auth.getSession()).data.session?.access_token)
+      await apiDeleteAuth(`/admin/media/${confirm.item.id}${force ? "?force=true" : ""}`, (await supabase.auth.getSession()).data.session?.access_token)
       setConfirm(null); setToast("Image archived"); await load()
     } catch (err) {
       // 409 means the image is still referenced - offer the forced path
@@ -279,7 +279,7 @@ function AdminMedia() {
   async function handleRestore(item) {
     setBusy(true)
     try {
-      await apiPostAuth(`/api/admin/media/${item.id}/restore`, {}, (await supabase.auth.getSession()).data.session?.access_token)
+      await apiPostAuth(`/admin/media/${item.id}/restore`, {}, (await supabase.auth.getSession()).data.session?.access_token)
       setToast("Image restored"); await load()
     } catch (err) { setToast(err.message) } finally { setBusy(false) }
   }
@@ -287,7 +287,7 @@ function AdminMedia() {
   async function handleCheck(item) {
     setBusy(true)
     try {
-      const { item: fresh } = await apiPostAuth(`/api/admin/media/${item.id}/check`, {}, (await supabase.auth.getSession()).data.session?.access_token)
+      const { item: fresh } = await apiPostAuth(`/admin/media/${item.id}/check`, {}, (await supabase.auth.getSession()).data.session?.access_token)
       setItems((prev) => prev.map((m) => (m.id === fresh.id ? fresh : m)))
       setToast(fresh.is_broken ? "Image is broken - replace it soon" : "Image loads fine")
     } catch (err) { setToast(err.message) } finally { setBusy(false) }
@@ -320,10 +320,14 @@ function AdminMedia() {
           ))}
         </div>
       ) : items.length === 0 ? (
-        <EmptyState
-          title={q ? "No matching images" : archived ? "No archived images" : "No images yet"}
-          message={q ? "Try a different search term." : "Upload the first banner or icon you want to use in the storefront."}
-        />
+        // never show "no images yet" when the load itself failed - the error
+        // banner above explains the state instead
+        error ? null : (
+          <EmptyState
+            title={q ? "No matching images" : archived ? "No archived images" : "No images yet"}
+            message={q ? "Try a different search term." : "Upload the first banner or icon you want to use in the storefront."}
+          />
+        )
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {items.map((item) => (
