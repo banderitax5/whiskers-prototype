@@ -12,6 +12,7 @@ import {
   resolveRowProducts,
   trackBannerEvent,
 } from '../lib/siteContent.js'
+import { contentPromos, saleFor } from '../lib/promoDisplay.js'
 
 // built-in defaults: used whenever the content endpoint is not seeded yet
 // (fresh install, migration not applied, request failed)
@@ -60,6 +61,8 @@ function Home() {
     if (!banners) return CAROUSEL_SLIDES
     return banners.map((b) => ({ image: b.desktop_image_url, alt: b.alt, id: b.id }))
   }, [content])
+
+  const activePromos = useMemo(() => contentPromos(content), [content])
 
   // home sections: published product rows from the section editor, otherwise
   // the derived category rows the page has always shown
@@ -295,9 +298,19 @@ function Home() {
                     {rowSections ? (product.category || 'Shop') : row.title}
                   </span>
                   <p className="text-xs sm:text-base font-semibold text-gray-800 dark:text-gray-100 line-clamp-2 leading-tight min-h-[2rem] sm:min-h-[2.5rem]">{product.prod_name}</p>
-                  {product.price > 0 ? (
-                    <p className="text-sm sm:text-lg font-bold text-gray-900 dark:text-white">PHP {formatPesos(Number(product.price))}</p>
-                  ) : (
+        {product.price > 0 ? (
+          (() => {
+            const sale = saleFor(product, activePromos)
+            if (!sale) return <p className="text-sm sm:text-lg font-bold text-gray-900 dark:text-white">PHP {formatPesos(Number(product.price))}</p>
+            return (
+              <p className="text-sm sm:text-lg font-bold">
+                <span className="text-gray-400 dark:text-gray-500 line-through font-normal text-xs sm:text-sm mr-1.5">PHP {formatPesos(Number(product.price))}</span>
+                <span className="text-red-600 dark:text-red-400">PHP {formatPesos(sale.salePrice)}</span>
+                <span className="ml-1.5 inline-block rounded bg-red-600 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white align-middle">Sale −{sale.discountPct}%</span>
+              </p>
+            )
+          })()
+        ) : (
                     <p className="text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400">Price not yet set</p>
                   )}
                 </div>

@@ -529,6 +529,54 @@ if ($probeId) {
     } catch { Step 'promo: probe promo deleted' $false (Get-ErrBody $_) }
   }
 
+  # -- 9a2. Phase 5e: sale display + auto-apply ----------------------------------
+  # site-content must expose sanitized promos (discount facts, never codes)
+  try {
+    $sc = Invoke-RestMethod -Uri "$base/api/site-content" -Headers $authH
+    $promoKeysOk = $true
+    foreach ($pr in @($sc.promos)) { if ($pr.PSObject.Properties.Name -contains 'code' -or $pr.PSObject.Properties.Name -contains 'usage_count') { $promoKeysOk = $false } }
+    Step 'sale: site-content exposes promos without codes' (($sc.PSObject.Properties.Name -contains 'promos') -and $promoKeysOk) "count=$(@($sc.promos).Count)"
+  } catch { Step 'sale: site-content exposes promos without codes' $false (Get-ErrBody $_) }
+
+  $autoPromoCode = "E2EAUTO$([guid]::NewGuid().ToString('N').Substring(0,4).ToUpper())"
+  $order5Id = $null
+  try {
+    # service-role insert: auto-apply setup must not consume a step-up call
+    Invoke-RestMethod -Uri "$SU/rest/v1/promos" -Method Post -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' `
+      -Body (@{ code = $autoPromoCode; type = 'percent'; value = 25; scope = 'sitewide'; min_subtotal = 0; per_user_limit = 10; usage_limit = 100; is_active = $true; starts_at = (Get-Date).ToUniversalTime().AddHours(-1).ToString('o') } | ConvertTo-Json -Compress) | Out-Null
+    Step 'auto-promo: probe promo inserted' $true $autoPromoCode
+  } catch { Step 'auto-promo: probe promo inserted' $false (Get-ErrBody $_) }
+
+  try {
+    $o5 = Invoke-RestMethod -Uri "$base/api/orders" -Method Post -Headers $authH -ContentType 'application/json' `
+      -Body (@{ items = @(@{ productId = $probeId; quantity = 1 }); paymentMethod = 'GCash'; shippingFee = 75; customerName = 'E2E AutoPromo'; phone = '09171234567'; address = '1 Test Street' } | ConvertTo-Json -Depth 5 -Compress)
+    $order5Id = $o5.order_id
+    $autoOk = ([double]$o5.total_amount -eq 225)  # 75 shipping + 200 subtotal - 50 (25%)
+    Step 'auto-promo: checkout applies best discount without a code' $autoOk "total=$($o5.total_amount) (want 225)"
+  } catch { Step 'auto-promo: checkout applies best discount without a code' $false (Get-ErrBody $_) }
+
+  if ($order5Id) {
+    try {
+      $autoUsage = Invoke-RestMethod -Uri "$SU/rest/v1/promo_usage?promo_code=eq.$autoPromoCode&user_id=eq.$uid&select=id" -Headers @{ apikey = $SK; Authorization = "Bearer $SK" }
+      Step 'auto-promo: usage recorded' (@($autoUsage).Count -ge 1) "rows=$(@($autoUsage).Count)"
+    } catch { Step 'auto-promo: usage recorded' $false (Get-ErrBody $_) }
+  } else {
+    Step 'auto-promo: usage recorded' $false 'order was not created'
+  }
+
+  # cleanup: usage rows, promo, and the auto-discounted order
+  try {
+    Invoke-RestMethod -Uri "$SU/rest/v1/promo_usage?promo_code=eq.$autoPromoCode" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+    Invoke-RestMethod -Uri "$SU/rest/v1/promos?code=eq.$autoPromoCode" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+    Step 'auto-promo: probe promo removed' $true $autoPromoCode
+  } catch { Step 'auto-promo: probe promo removed' $false (Get-ErrBody $_) }
+  if ($order5Id) {
+    Invoke-RestMethod -Uri "$SU/rest/v1/payment?order_id=eq.$order5Id" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+    Invoke-RestMethod -Uri "$SU/rest/v1/order_details?order_id=eq.$order5Id" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+    Invoke-RestMethod -Uri "$SU/rest/v1/orders?order_id=eq.$order5Id" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+    Step 'auto-promo: probe order cleaned up' $true $order5Id
+  }
+
   # archive roundtrip: leaves the public store, shows under archived=true,
   # comes back under archived=false after restore (restore keeps it hidden
   # from shoppers - is_active stays false - which is the intended behavior)

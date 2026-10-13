@@ -168,3 +168,20 @@ export function buildDiscountAmounts(items, lineDiscounts) {
   }
   return result;
 }
+// Best auto-applied promo for a cart when the shopper enters no code.
+// Owner-approved rule: only active promos with an open window participate and
+// the biggest discount wins; an explicit code at checkout always beats this.
+// usageCounts: Map(promo_code -> times the user already redeemed it).
+export function pickBestPromo(promos, items, userId, usageCounts = new Map()) {
+  let best = null;
+  for (const promo of promos || []) {
+    if (!promo || !promo.code) continue;
+    const count = usageCounts instanceof Map ? (usageCounts.get(promo.code) || 0) : Number(usageCounts) || 0;
+    const result = validatePromo(promo, items, userId, count);
+    if (!result.ok) continue;
+    if (!best || result.discountAmount > best.discountAmount) {
+      best = { ...result, code: promo.code };
+    }
+  }
+  return best;
+}

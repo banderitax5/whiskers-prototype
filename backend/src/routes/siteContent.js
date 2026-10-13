@@ -29,6 +29,9 @@ const BANNER_FIELDS = [
 ]
 const SECTION_FIELDS = ['id', 'type', 'title', 'config', 'sort_order']
 const NAV_FIELDS = ['id', 'section', 'label', 'href', 'image_url', 'alt_text', 'sort_order']
+// sanitized promo fields for storefront display - the code and usage counts
+// never leave the server; shoppers see the discount, not how to type it
+const PROMO_FIELDS = ['type', 'value', 'scope', 'target_id', 'min_subtotal', 'max_discount', 'starts_at', 'ends_at']
 
 function navGroup(rows, section) {
   return rows
@@ -38,13 +41,22 @@ function navGroup(rows, section) {
 }
 
 async function loadContent() {
-  const [bannersRes, sectionsRes, navRes] = await Promise.all([
+  const [bannersRes, sectionsRes, navRes, promosRes] = await Promise.all([
     supabaseAdmin.from('site_banners').select('*').is('archived_at', null),
     supabaseAdmin.from('site_home_sections').select('*').is('archived_at', null),
     supabaseAdmin.from('site_nav_items').select('*').is('archived_at', null),
+    supabaseAdmin
+      .from('promos')
+      .select(PROMO_FIELDS.join(', '))
+      .eq('is_active', true)
+      .lte('starts_at', new Date().toISOString())
+      .or(`ends_at.is.null,ends_at.gt.${new Date().toISOString()}`),
   ])
   const schemaError = bannersRes.error || sectionsRes.error || navRes.error
   if (schemaError) throw schemaError
+  // a database without the Phase 4 promos table still serves content; the
+  // storefront just has nothing to put on sale
+  const promoRows = promosRes.error ? [] : promosRes.data || []
 
   const now = new Date()
   const navRows = navRes.data || []
@@ -56,6 +68,7 @@ async function loadContent() {
     strip_banners: bannersFor(['promo_strip', 'category_top'], bannerRows, now).map((b) => pick(b, BANNER_FIELDS)),
     announcement: bannersFor('announcement_bar', bannerRows, now).map((b) => pick(b, BANNER_FIELDS)),
     sections: visibleSections(sectionsRes.data || [], now).map((s) => pick(s, SECTION_FIELDS)),
+    promos: promoRows.map((p) => pick(p, PROMO_FIELDS)),
     nav: {
       navbar: navGroup(navRows, 'navbar'),
       footer_shop: navGroup(navRows, 'footer_shop'),

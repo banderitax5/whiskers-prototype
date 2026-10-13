@@ -6,6 +6,7 @@ import { trackEvent } from '../lib/appEvents.js'
 import ProductImage from './ProductImage.jsx'
 import { normalizeProduct, getStockStatus } from '../lib/productDisplay.js'
 import { formatPesos } from '../lib/cartLogic'
+import { saleFor, useActivePromos } from '../lib/promoDisplay.js'
 
 // full screen product dialog that pops up when you click on a product card
 // uses createPortal to render directly on document.body so it always covers
@@ -14,6 +15,7 @@ import { formatPesos } from '../lib/cartLogic'
 function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, onAddToCart, onBuyNow }) {
   const [qty, setQty] = useState(1)
   const [selectedVariant, setSelectedVariant] = useState(null)
+  const promos = useActivePromos()
   const dialogRef = useRef(null)
 
   // focus trap: cycle Tab inside the dialog while it is open
@@ -125,7 +127,17 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
             </Link>
             <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{p.brand || p.collection || 'Whiskers'}</p>
             {safePrice > 0 ? (
-              <p className="mt-3 text-3xl font-bold text-[#e4406a]">PHP {formatPesos(Number(safePrice))}</p>
+              (() => {
+                const sale = saleFor(p, promos)
+                if (!sale) return <p className="mt-3 text-3xl font-bold text-[#e4406a]">PHP {formatPesos(Number(safePrice))}</p>
+                return (
+                  <p className="mt-3 text-3xl font-bold">
+                    <span className="text-gray-400 dark:text-gray-500 line-through font-normal text-xl mr-2">PHP {formatPesos(Number(safePrice))}</span>
+                    <span className="text-[#e4406a]">PHP {formatPesos(sale.salePrice)}</span>
+                    <span className="ml-2 inline-block rounded bg-[#e4406a] px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-white align-middle">Sale −{sale.discountPct}%</span>
+                  </p>
+                )
+              })()
             ) : (
               <p className="mt-3 text-lg font-semibold text-gray-500 dark:text-gray-400">Price not yet set</p>
             )}

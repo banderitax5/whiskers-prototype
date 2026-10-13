@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { useShop } from '../context/ShopContext.jsx'
 import ProductImage from './ProductImage.jsx'
 import { normalizeProduct, formatPrice, getStockStatus, toCartPayload } from '../lib/productDisplay.js'
+import { saleFor, useActivePromos } from '../lib/promoDisplay.js'
 
 // compact product card used by the "Related products" strip on the detail page.
 // Reuses the same image fallback, price format, stock logic, and cart payload as
@@ -10,9 +11,11 @@ import { normalizeProduct, formatPrice, getStockStatus, toCartPayload } from '..
 function ProductCard({ product }) {
   const navigate = useNavigate()
   const { addToCart } = useShop()
+  const promos = useActivePromos()
   const p = normalizeProduct(product)
   const { inStock, lowStock, stock } = getStockStatus(product?.stock_quantity)
   const priceLabel = formatPrice(p.price)
+  const sale = saleFor(p, promos)
   const purchasable = p.price > 0 && inStock
 
   function go() { navigate(`/products/${p.prod_id}`) }
@@ -42,7 +45,15 @@ function ProductCard({ product }) {
           <p className="mt-0.5 sm:mt-1 text-[10px] sm:text-[11px] text-gray-400 dark:text-gray-500 truncate">{p.category}</p>
         )}
         {priceLabel ? (
-          <p className="mt-1 sm:mt-2 text-sm sm:text-base font-bold text-gray-900 dark:text-white">{priceLabel}</p>
+          sale ? (
+            <p className="mt-1 sm:mt-2 text-sm sm:text-base font-bold">
+              <span className="text-gray-400 dark:text-gray-500 line-through font-normal mr-1.5">{priceLabel}</span>
+              <span className="text-red-600 dark:text-red-400">{formatPrice(sale.salePrice)}</span>
+              <span className="ml-1.5 inline-block rounded bg-red-600 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white align-middle">Sale −{sale.discountPct}%</span>
+            </p>
+          ) : (
+            <p className="mt-1 sm:mt-2 text-sm sm:text-base font-bold text-gray-900 dark:text-white">{priceLabel}</p>
+          )
         ) : (
           <p className="mt-1 sm:mt-2 text-[11px] sm:text-xs font-medium text-gray-500 dark:text-gray-400">Price not yet set</p>
         )}

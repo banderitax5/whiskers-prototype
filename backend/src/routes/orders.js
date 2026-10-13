@@ -4,7 +4,7 @@ import { orderLimiter } from '../middleware/rateLimiter.js'
 import { supabaseAdmin } from '../config/supabase.js'
 import { SHIPPING_FEE_PHP } from '../utils/shopRules.js'
 import { isSchemaPendingError } from '../utils/pgErrors.js'
-import { validatePromo, buildDiscountAmounts } from '../utils/promoEngine.js'
+import { validatePromo, buildDiscountAmounts, pickBestPromo } from '../utils/promoEngine.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -101,19 +101,21 @@ router.post('/', orderLimiter, async (req, res) => {
 
     let promoResult = null
     let promoRow = null
+    // category is only needed for scope matching; a fetch failure must never
+    // break checkout, it only means category-scoped codes match nothing
+    let promoTargets = []
+    try {
+      const { data: catRows } = await supabaseAdmin
+        .from('product')
+        .select('prod_id, category')
+        .in('prod_id', productIds)
+      promoTargets = (catRows || []).map((p) => ({ prod_id: p.prod_id, category: p.category ?? null }))
+    } catch (catEx) {
+      logger.warn({ err: catEx }, 'promo category fetch failed')
+    }
+    const cartItemsForPromo = buildCartItemsForPromo(validatedItems, promoTargets)
+
     if (promo_code && typeof promo_code === 'string') {
-      // category is only needed for scope matching; a fetch failure must never
-      // break checkout, it only means category-scoped codes match nothing
-      let promoTargets = []
-      try {
-        const { data: catRows } = await supabaseAdmin
-          .from('product')
-          .select('prod_id, category')
-          .in('prod_id', productIds)
-        promoTargets = (catRows || []).map((p) => ({ prod_id: p.prod_id, category: p.category ?? null }))
-      } catch (catEx) {
-        logger.warn({ err: catEx }, 'promo category fetch failed')
-      }
       const { data: promo, error: promoFetchErr } = await supabaseAdmin
         .from('promos')
         .select('*')
@@ -131,7 +133,6 @@ router.post('/', orderLimiter, async (req, res) => {
         .eq('promo_code', promo_code.trim().toUpperCase())
         .eq('user_id', req.userId)
       const userUsageCount = (usageRows || []).length
-      const cartItemsForPromo = buildCartItemsForPromo(validatedItems, promoTargets)
       promoResult = validatePromo(promo, cartItemsForPromo, req.userId, userUsageCount)
       // an unusable code must fail loudly: charging full price after the
       // customer asked for a discount is a silent lie
@@ -140,6 +141,41 @@ router.post('/', orderLimiter, async (req, res) => {
       }
       promoRow = promo
       totalAmount -= promoResult.discountAmount
+    } else {
+      // no code entered: owner-approved auto-apply - the best discount among
+      // active, in-window promos wins and is charged without asking
+      try {
+        const nowIso = new Date().toISOString()
+        const { data: activePromos, error: actErr } = await supabaseAdmin
+          .from('promos')
+          .select('*')
+          .eq('is_active', true)
+          .lte('starts_at', nowIso)
+          .or(`ends_at.is.null,ends_at.gt.${nowIso}`)
+          .limit(20)
+        if (actErr && !isSchemaPendingError(actErr)) logger.warn({ err: actErr }, 'auto-promo fetch failed')
+        if (activePromos && activePromos.length > 0) {
+          const codes = activePromos.map((p) => p.code)
+          const { data: usageRows } = await supabaseAdmin
+            .from('promo_usage')
+            .select('promo_code')
+            .eq('user_id', req.userId)
+            .in('promo_code', codes)
+          const usageCounts = new Map()
+          for (const row of usageRows || []) {
+            usageCounts.set(row.promo_code, (usageCounts.get(row.promo_code) || 0) + 1)
+          }
+          const best = pickBestPromo(activePromos, cartItemsForPromo, req.userId, usageCounts)
+          if (best && best.discountAmount > 0) {
+            promoResult = best
+            promoRow = best.promo
+            totalAmount -= best.discountAmount
+          }
+        }
+      } catch (autoEx) {
+        // auto-apply is a courtesy: a promo outage must not block checkout
+        logger.warn({ err: autoEx }, 'auto-promo apply failed, charging undiscounted total')
+      }
     }
 
     let orderId = null

@@ -9,6 +9,7 @@ import ProductImage from '../components/ProductImage.jsx'
 import ProductCard from '../components/ProductCard.jsx'
 import ProductInfoAccordion from '../components/ProductInfoAccordion.jsx'
 import { normalizeProduct, formatPrice, getStockStatus, toCartPayload } from '../lib/productDisplay.js'
+import { saleFor, useActivePromos } from '../lib/promoDisplay.js'
 import { parseDetails } from '../lib/productInfo.js'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -109,6 +110,7 @@ function ProductDetail() {
   const [qty, setQty] = useState(1)
   const [attempt, setAttempt] = useState(0)
   const [recoNote, setRecoNote] = useState(null)
+const promos = useActivePromos()
   const trackedRef = useRef(null)
 
   const load = useCallback(async () => {
@@ -177,6 +179,7 @@ function ProductDetail() {
 
   const { inStock, lowStock, stock, hasStockInfo } = getStockStatus(item?.stock_quantity)
   const priceLabel = formatPrice(p.price)
+  const sale = saleFor(p, promos)
   const purchasable = p.price > 0 && inStock
   const maxQty = hasStockInfo && stock > 0 ? stock : Infinity
   const increase = () => setQty((v) => Math.min(maxQty, v + 1))
@@ -213,9 +216,17 @@ function ProductDetail() {
             </Link>
           )}
 
-          {priceLabel ? (
-            <p className="mt-3 text-3xl font-bold text-[#e4406a]">{priceLabel}</p>
+        {priceLabel ? (
+          sale ? (
+            <p className="mt-3 text-3xl font-bold">
+              <span className="text-gray-400 dark:text-gray-500 line-through font-normal text-xl mr-2">{priceLabel}</span>
+              <span className="text-[#e4406a]">{formatPrice(sale.salePrice)}</span>
+              <span className="ml-2 inline-block rounded bg-[#e4406a] px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-white align-middle">Sale −{sale.discountPct}%</span>
+            </p>
           ) : (
+            <p className="mt-3 text-3xl font-bold text-[#e4406a]">{priceLabel}</p>
+          )
+        ) : (
             <p className="mt-3 text-lg font-semibold text-gray-500 dark:text-gray-400">Price not yet set</p>
           )}
 
