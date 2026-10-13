@@ -4,6 +4,9 @@ import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from "..
 import { AdminPage, StatusPill, EmptyState, btnPrimary, ConfirmDialog } from "./adminTheme.jsx"
 import ProductPicker from "./ProductPicker.jsx"
 
+// Label registry for section cards. Only types with renders:true are offered
+// in the create dialog; the home page currently renders product_row only.
+// The hero, brand strip, promo strip and announcement live on the Banners page.
 const TYPES = [
   { value: "product_row", label: "Product row", renders: true },
   { value: "hero_carousel", label: "Hero carousel", renders: false },
@@ -90,7 +93,6 @@ function SectionDialog({ initial, onClose, onSubmit }) {
   }, [onClose])
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
-  const typeMeta = TYPES.find((t) => t.value === form.type)
   const isRow = form.type === "product_row"
 
   async function handleSubmit(e) {
@@ -127,21 +129,13 @@ function SectionDialog({ initial, onClose, onSubmit }) {
   }))
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label={initial ? "Edit section" : "New section"}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label={initial ? "Edit section" : "New product row"}>
       <button type="button" aria-label="Close dialog" className="absolute inset-0 w-full h-full cursor-default" onClick={onClose} />
       <div className="relative w-full max-w-xl rounded-2xl bg-white dark:bg-[#16283f] shadow-2xl p-5 sm:p-6 max-h-[90vh] overflow-y-auto">
         <form onSubmit={handleSubmit} noValidate>
-          <h2 className="text-base sm:text-lg font-black text-gray-900 dark:text-slate-100 tracking-tight">{initial ? "Edit section" : "New home section"}</h2>
+          <h2 className="text-base sm:text-lg font-black text-gray-900 dark:text-slate-100 tracking-tight">{initial ? "Edit section" : "New product row"}</h2>
+          <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Product rows appear as titled shelves of products on the home page. The hero, brand tiles, promo strip and announcement live under Banners.</p>
           <div className="mt-4 grid gap-4">
-            <div>
-              <label htmlFor="sec-type" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Type</label>
-              <select id="sec-type" value={form.type} onChange={set("type")} disabled={Boolean(initial)} className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100 disabled:opacity-60">
-                {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
-              {!typeMeta?.renders && (
-                <p className="mt-1 text-xs font-semibold text-amber-600 dark:text-amber-400">The home page does not render this type yet â€” it will stay hidden even when published.</p>
-              )}
-            </div>
             <div>
               <label htmlFor="sec-title" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">
                 Title <span className="text-red-500">*</span>
@@ -204,7 +198,7 @@ function SectionDialog({ initial, onClose, onSubmit }) {
           {error && <p role="alert" className="mt-3 text-sm font-semibold text-red-600 dark:text-red-400">{error}</p>}
           <div className="mt-5 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition">Cancel</button>
-            <button type="submit" disabled={saving} className={`${btnPrimary} disabled:opacity-60`}>{saving ? "Savingâ€¦" : initial ? "Save changes" : "Create draft"}</button>
+            <button type="submit" disabled={saving} className={`${btnPrimary} disabled:opacity-60`}>{saving ? "Saving…" : initial ? "Save changes" : "Create draft"}</button>
           </div>
         </form>
       </div>
@@ -225,15 +219,15 @@ function SectionCard({ section, index, total, onMove, onEdit, onArchive, busy })
         </div>
         <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">{ruleSummary(section)}</p>
         {(section.starts_at || section.ends_at) && (
-          <p className="text-xs text-gray-500 dark:text-slate-400">{fmtDate(section.starts_at) || "now"} â†’ {fmtDate(section.ends_at) || "no end"}</p>
+          <p className="text-xs text-gray-500 dark:text-slate-400">{fmtDate(section.starts_at) || "now"} → {fmtDate(section.ends_at) || "no end"}</p>
         )}
         {!typeMeta?.renders && (
           <p className="mt-1 text-xs font-semibold text-amber-600 dark:text-amber-400">Not rendered on the home page yet.</p>
         )}
       </div>
       <div className="flex flex-wrap gap-1.5 shrink-0">
-        <button type="button" onClick={() => onMove(section, -1)} disabled={busy || index === 0} aria-label={`Move ${section.title} up`} className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-40">â†‘</button>
-        <button type="button" onClick={() => onMove(section, 1)} disabled={busy || index === total - 1} aria-label={`Move ${section.title} down`} className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-40">â†“</button>
+        <button type="button" onClick={() => onMove(section, -1)} disabled={busy || index === 0} aria-label={`Move ${section.title} up`} className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-40">↑</button>
+        <button type="button" onClick={() => onMove(section, 1)} disabled={busy || index === total - 1} aria-label={`Move ${section.title} down`} className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-40">↓</button>
         <button type="button" onClick={() => onEdit(section)} className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition">Edit</button>
         <button type="button" onClick={() => onArchive(section)} disabled={busy} className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/40 transition disabled:opacity-50">Archive</button>
       </div>
@@ -312,7 +306,7 @@ function AdminHomeSections() {
   }
 
   return (
-    <AdminPage title="Home Sections" subtitle="The product rows on the home page, in order. New sections start as drafts.">
+    <AdminPage title="Home Sections" subtitle="Product rows on the home page, in order. The hero, brand tiles, promo strip and announcement are managed under Banners. New rows start as drafts.">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 dark:text-slate-300">
           <input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} className="rounded border-gray-300" />

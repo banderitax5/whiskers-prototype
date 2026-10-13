@@ -78,4 +78,16 @@ describe('AdminHomeSections page states', () => {
     expect([...c.querySelectorAll('button')].some((b) => b.textContent === 'Retry')).toBe(true)
     expect(c.textContent).not.toMatch(/No home sections yet/i)
   })
+
+  it('new-section dialog has no Type picker (hero/brand/promo live under Banners)', async () => {
+    apiGetAuth.mockResolvedValue({ items: [], total: 0 })
+    const c = await render()
+    await flush()
+    const btn = [...c.querySelectorAll('button')].find((b) => b.textContent === 'New section')
+    await act(async () => { btn.click() })
+    expect(c.querySelector('#sec-type')).toBeNull()
+    expect(c.textContent).not.toMatch(/Hero carousel/)
+    expect(c.textContent).toMatch(/New product row/)
+    expect(c.querySelector('#sec-title')).not.toBeNull()
+  })
 })
