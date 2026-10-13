@@ -12,7 +12,7 @@ vi.mock('../lib/siteContent', () => ({
 }))
 
 import NavLinks from './NavLinks.jsx'
-import { contentBanners, trackBannerEvent } from '../lib/siteContent'
+import { contentBanners, fetchSiteContent, trackBannerEvent } from '../lib/siteContent'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -89,11 +89,19 @@ describe('NavLinks brand tiles', () => {
     expect(tile.className).toContain('ring-2')
   })
 
-  it('falls back to the built-in tiles when the table has no rows', async () => {
+  it('falls back to the built-in tiles only when content is unavailable', async () => {
+    fetchSiteContent.mockResolvedValue(null)
     contentBanners.mockImplementation(() => null)
     const c = await render()
     const tiles = [...c.querySelectorAll('a[aria-label^="Shop"]')]
     expect(tiles.length).toBeGreaterThanOrEqual(5)
     expect(c.querySelector('img[src="/brands/ROYAL.webp"]')).toBeTruthy()
+  })
+
+  it('drafting every brand tile renders no tiles (content wins over defaults)', async () => {
+    fetchSiteContent.mockResolvedValue({})
+    contentBanners.mockImplementation(() => null)
+    const c = await render()
+    expect(c.querySelectorAll('a[aria-label^="Shop"]')).toHaveLength(0)
   })
 })

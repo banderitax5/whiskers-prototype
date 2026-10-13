@@ -84,8 +84,11 @@ function NavLinks() {
     { image: '/brands/special.png', label: 'Special' },
   ]
 
-  const navItems = contentNav(content, 'navbar') || placeholderLinks
-  const brands = contentBanners(content, 'brand_strip') || fallbackBrands
+  // once content has loaded it is the source of truth: drafting every nav
+  // link or brand tile removes them from the strip. The built-in arrays only
+  // render when content is unavailable (fresh install / request failed).
+  const navItems = content ? (contentNav(content, 'navbar') || []) : placeholderLinks
+  const brands = content ? (contentBanners(content, 'brand_strip') || []) : fallbackBrands
 
   return (
     <div className="bg-white border-b border-gray-200 dark:bg-gray-800 dark:border-gray-700">

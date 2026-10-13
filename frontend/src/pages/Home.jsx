@@ -56,13 +56,21 @@ function Home() {
     return () => { cancelled = true }
   }, [])
 
-  // hero slides come from the banner table when published, otherwise the
-  // built-in carousel slides render exactly as before
+  // hero slides: the banner table is the source of truth once content has
+  // loaded. The built-in carousel only renders when content is not available
+  // yet (fresh install / request failed); drafting every published slide
+  // hides the carousel entirely, as expected.
   const heroSlides = useMemo(() => {
-    const banners = contentBanners(content, 'banners')
-    if (!banners) return CAROUSEL_SLIDES
-    return banners.map((b) => ({ image: b.desktop_image_url, alt: b.alt, id: b.id }))
+    if (!content) return CAROUSEL_SLIDES
+    return (content.banners || [])
+      .filter((b) => b.desktop_image_url)
+      .map((b) => ({ image: b.desktop_image_url, alt: b.alt, id: b.id }))
   }, [content])
+
+  // keep the active slide inside the list when drafts shrink it mid-mount
+  useEffect(() => {
+    setCurrentSlide((p) => (heroSlides.length === 0 ? 0 : p % heroSlides.length))
+  }, [heroSlides.length])
 
   const activePromos = useMemo(() => contentPromos(content), [content])
 
@@ -135,6 +143,23 @@ function Home() {
     () => Object.entries(groupedByCategory).slice(0, FALLBACK_CATEGORY_ROWS),
     [groupedByCategory]
   )
+
+  // editor rows only replace the built-in ones when they actually show
+  // products; a published row that resolves to nothing (empty rule match,
+  // bad config) keeps the built-in rows so the home page never goes blank
+  const visibleRows = useMemo(() => {
+    if (!rowSections) return null
+    const rows = rowSections
+      .map((section) => ({
+        key: section.id,
+        title: section.title || '',
+        products: resolveRowProducts(section, enrichedProducts),
+      }))
+      .filter((row) => row.products.length > 0)
+    return rows.length > 0 ? rows : null
+  }, [rowSections, enrichedProducts])
+
+  const usingEditorRows = visibleRows !== null
 
   function handleAddToCart(product, qty = 1) {
     addToCart({
@@ -222,6 +247,7 @@ function Home() {
 
   return (
     <div className={SHELL}>
+      {heroSlides.length > 0 && (
       <section className="pt-2">
         <div
           className={`relative overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-800 ${HERO_HEIGHT}`}
@@ -257,6 +283,7 @@ function Home() {
           </div>
         </div>
       </section>
+      )}
 
       {catTop && (catTop.desktop_image_url || catTop.mobile_image_url || catTop.title) && (
         <div className="mt-4 sm:mt-6">
@@ -296,14 +323,8 @@ function Home() {
         </div>
       )}
 
-      {(rowSections
-        ? rowSections
-            .map((section) => ({
-              key: section.id,
-              title: section.title || '',
-              products: resolveRowProducts(section, enrichedProducts),
-            }))
-            .filter((row) => row.products.length > 0)
+      {(usingEditorRows
+        ? visibleRows
         : fallbackRows.map(([category, catProducts]) => ({
             key: category,
             title: category.toUpperCase(),
@@ -344,7 +365,7 @@ function Home() {
                 </div>
                 <div className="p-2 sm:p-4 space-y-1 sm:space-y-2">
                   <span className="inline-block bg-red-800 text-white text-[9px] sm:text-xs font-semibold px-1 py-0.5 rounded leading-tight">
-                    {rowSections ? (product.category || 'Shop') : row.title}
+                    {usingEditorRows ? (product.category || 'Shop') : row.title}
                   </span>
                   <p className="text-xs sm:text-base font-semibold text-gray-800 dark:text-gray-100 line-clamp-2 leading-tight min-h-[2rem] sm:min-h-[2.5rem]">{product.prod_name}</p>
         {product.price > 0 ? (
