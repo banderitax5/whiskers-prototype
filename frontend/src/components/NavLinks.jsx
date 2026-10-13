@@ -1,22 +1,42 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { fetchSiteContent, contentBanners, contentNav } from '../lib/siteContent.js'
+import { fetchSiteContent, contentBanners, contentNav, trackBannerEvent } from '../lib/siteContent.js'
+import { bannerHref } from '../lib/bannerLink.js'
+
+// label a brand-strip row by whichever field shape it has: banner rows from
+// the admin (alt/title) or the built-in fallback array (label)
+function brandLabel(brand) {
+  return brand.title || brand.alt || brand.label || ''
+}
 
 // brand tile that hides its image if the file fails to load so a missing
 // asset never renders as a broken grey box (C3)
 function BrandTile({ brand, active }) {
   const [failed, setFailed] = useState(false)
-  const image = brand.image_url || brand.image
-  const label = brand.label
+  const image = brand.desktop_image_url || brand.image_url || brand.image
+  const label = brandLabel(brand)
+  // honor the destination the admin configured; legacy rows whose target
+  // cannot be interpreted keep the old behavior: this tile opens the menu
+  // filtered to its own brand
+  const href = bannerHref(brand) || (label ? `/menu?brand=${encodeURIComponent(label)}` : null)
+
+  // one impression per display; clicks counted on activation
+  useEffect(() => {
+    if (brand?.id) trackBannerEvent(brand.id, 'impression')
+  }, [brand?.id])
+
+  if (!href) return null
+
   return (
     <Link
-      to={`/menu?brand=${encodeURIComponent(label)}`}
+      to={href}
+      onClick={() => { if (brand?.id) trackBannerEvent(brand.id, 'click') }}
       className={`h-8 min-h-[2rem] min-w-0 flex-1 cursor-pointer rounded-lg transition-all duration-200 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0b2e59] focus:ring-offset-2 sm:h-12 md:h-14 flex items-center justify-center overflow-hidden ${
         active
           ? 'bg-[#0b2e59] ring-2 ring-[#ffd21e] dark:bg-[#0b2e59]'
           : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600'
       }`}
-      aria-label={`Shop ${label}`}
+      aria-label={`Shop ${label || 'brand'}`}
     >
       {image && !failed && (
         <img
@@ -89,7 +109,11 @@ function NavLinks() {
           aria-label="Popular brands"
         >
           {brands.map((brand) => (
-            <BrandTile key={brand.id || brand.label} brand={brand} active={activeBrand === brand.label} />
+            <BrandTile
+              key={brand.id || brandLabel(brand)}
+              brand={brand}
+              active={activeBrand === brandLabel(brand)}
+            />
           ))}
         </div>
       </div>
