@@ -47,6 +47,16 @@ export function bannersFor(placement, banners, now = new Date()) {
   return visibleRows(banners, now).filter((b) => wanted.includes(b.placement))
 }
 
+// preview mode: the same rows minus the draft/schedule filters - used only by
+// the admin-only ?preview=1 site-content path, never by the public payload.
+// Archived rows still never show (archive means the owner took it down).
+export function previewRows(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((r) => !r.archived_at)
+    .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
+}
+
 // link targets are internal paths only or absolute http(s). Anything else
 // (javascript:, data:, protocol-relative //evil.com) is dropped to "#"
 export function safeHref(linkType, linkTarget) {

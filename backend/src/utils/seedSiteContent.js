@@ -1,66 +1,21 @@
 // Seed script for the Phase 5 content tables.
-// Copies today's hardcoded storefront content into site_banners,
-// site_home_sections, site_nav_items and site_categories as PUBLISHED rows,
-// in the same order the site renders them, so enabling the content endpoints
-// changes nothing visually. Run after the migration:
+// Copies the built-in storefront defaults (utils/siteContentDefaults.js) into
+// site_banners, site_nav_items and site_home_sections as PUBLISHED rows
+// (home sections as drafts), in the same order the site renders them, so
+// enabling the content endpoints changes nothing visually. Run after the
+// migration:
 //   node src/utils/seedSiteContent.js
 // Safe to re-run: it skips entities that are already seeded.
+// Category overrides (site_categories) are never seeded - the filter list is
+// derived from the live catalog until the owner saves an override.
 
 import 'dotenv/config'
 import { supabaseAdmin } from '../config/supabase.js'
 import logger from './logger.js'
+import { HERO_SLIDES, BRAND_TILES, NAVBAR_LINKS, FOOTER_SHOP, FOOTER_ACCOUNT, FOOTER_SOCIAL, HOME_CATEGORY_ROWS } from './siteContentDefaults.js'
 
-// mirror of Home.jsx CAROUSEL_SLIDES (kept in sync until Phase 5c ships the
-// banner editor; after that this seed exists only for fresh installs)
-const HERO_SLIDES = [
-  { image: '/banner.png', alt: 'Whiskers Pet Shop' },
-  { image: '/categoryshop/dog.jpg', alt: 'Dog Food Collection' },
-  { image: '/categoryshop/cat.jpg', alt: 'Cat Food Collection' },
-  { image: '/categoryshop/fish.png', alt: 'Fish Supplies' },
-  { image: '/categoryshop/berd.jpg', alt: 'Bird Supplies' },
-]
-
-// mirror of NavLinks.jsx brand tiles (public/brands/*)
-const BRAND_TILES = [
-  { image: '/brands/ROYAL.webp', label: 'Royal Canin' },
-  { image: '/brands/aozi.png', label: 'Aozi' },
-  { image: '/brands/vitality.png', label: 'Vitality' },
-  { image: '/brands/topbreed.png', label: 'Top Breed' },
-  { image: '/brands/special.png', label: 'Special' },
-]
-
-// mirror of NavLinks.jsx category links
-const NAVBAR_LINKS = [
-  { label: 'Menu', to: '/menu' },
-  { label: 'Cats', to: '/menu?category=Cats' },
-  { label: 'Dogs', to: '/menu?category=Dogs' },
-  { label: 'Fish', to: '/menu?category=Fish' },
-  { label: 'Dry Food', to: '/menu?category=Dogs - DRY' },
-  { label: 'Wet Food', to: '/menu?category=Wet Food' },
-  { label: 'Pet Recommendation', to: '/pets' },
-]
-
-// mirror of Footer.jsx link groups
-const FOOTER_SHOP = [
-  { label: 'Dog', to: '/menu?category=Dogs' },
-  { label: 'Cat', to: '/menu?category=Cats' },
-  { label: 'Bird', to: '/menu?category=Birds' },
-  { label: 'Small Pet', to: '/menu?category=Small Pets' },
-]
-const FOOTER_ACCOUNT = [
-  { label: 'My Account', to: '/profile' },
-  { label: 'Orders', to: '/orders' },
-  { label: 'FAQs', to: '/about' },
-]
-const FOOTER_SOCIAL = [
-  { label: 'Instagram', to: 'https://www.instagram.com/petcareswhiskers?igsh=aTN5NXN3Mm5nbXV1&utm_source=qr' },
-  { label: 'Facebook', to: 'https://facebook.com/profile.php?id=61561539844519' },
-]
-
-// the home page derives the first six categories from the catalog; the seed
-// leaves those rows empty on purpose (they are generated at render time from
-// live products) and only seeds the static parts it can know today.
-const HOME_CATEGORY_ROWS = 6
+// defaults moved to utils/siteContentDefaults.js so the restore-defaults
+// admin endpoint uses the exact same rows as this seed script
 
 async function seededCount(table, column, value) {
   let query = supabaseAdmin.from(table).select('*', { count: 'exact', head: true })

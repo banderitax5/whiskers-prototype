@@ -21,6 +21,8 @@ import { sanitizeSection } from '../utils/sectionRules.js'
 import { sanitizeNavItem, sanitizeCategoryBatch, NAV_SECTIONS } from '../utils/navRules.js'
 import { missingColumnOf, isSchemaPendingError } from '../utils/pgErrors.js'
 import { effectiveUnitPrice, lineMargin } from '../utils/orderCosting.js'
+import { recordContentHistory } from '../utils/contentHistory.js'
+import { defaultRowsFor, RESTORE_SCOPES } from '../utils/siteContentDefaults.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -1354,6 +1356,7 @@ router.post('/media', requireAdmin, runUpload, async (req, res) => {
     }
     res.status(201).json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'media_upload', target: fileName, details: `alt: ${alt.value}` })
+    recordContentHistory('media', data.id, 'create', data, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Media upload error')
     res.status(500).json({ error: 'Failed to upload media' })
@@ -1380,6 +1383,7 @@ router.patch('/media/:id', requireAdmin, async (req, res) => {
     if (error) throw error
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'media_update', target: req.params.id, details: `alt: '${before.alt_text}' -> '${alt.value}'` })
+    recordContentHistory('media', req.params.id, 'update', data, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Media update error')
     res.status(500).json({ error: 'Failed to update media' })
@@ -1408,6 +1412,7 @@ router.delete('/media/:id', requireAdmin, async (req, res) => {
     if (error) throw error
     res.json({ success: true })
     logAudit({ adminEmail: req.userEmail, action: 'media_archive', target: media.storage_path || req.params.id, details: usedIn.length ? `forced, used by: ${usedIn.map((u) => u.label).join(', ')}` : 'unused' })
+    recordContentHistory('media', req.params.id, 'archive', media, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Media archive error')
     res.status(500).json({ error: 'Failed to archive media' })
@@ -1428,6 +1433,7 @@ router.post('/media/:id/restore', requireAdmin, async (req, res) => {
     if (!data) return res.status(404).json({ error: 'Media not found' })
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'media_restore', target: data.storage_path || req.params.id })
+    recordContentHistory('media', data.id, 'restore', data, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Media restore error')
     res.status(500).json({ error: 'Failed to restore media' })
@@ -1509,6 +1515,7 @@ router.post('/banners', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.status(201).json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'banner_create', target: data.id, details: `${data.placement} "${data.alt}" ${data.status}` })
+    recordContentHistory('banners', data.id, 'create', data, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Banner create error')
     res.status(500).json({ error: 'Failed to create banner' })
@@ -1534,6 +1541,7 @@ router.patch('/banners/:id', requireAdmin, async (req, res) => {
     res.json({ item: data })
     const changed = Object.keys(clean.values).join(', ')
     logAudit({ adminEmail: req.userEmail, action: 'banner_update', target: req.params.id, details: `changed: ${changed}` })
+    recordContentHistory('banners', req.params.id, 'update', data, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Banner update error')
     res.status(500).json({ error: 'Failed to update banner' })
@@ -1545,7 +1553,7 @@ router.patch('/banners/:id', requireAdmin, async (req, res) => {
 router.delete('/banners/:id', requireAdmin, async (req, res) => {
   if (!requireUuidParam(req, res)) return
   try {
-    const { data: before } = await supabaseAdmin.from('site_banners').select('id, placement, alt').eq('id', req.params.id).single()
+    const { data: before } = await supabaseAdmin.from('site_banners').select(BANNER_COLUMNS).eq('id', req.params.id).single()
     if (!before) return res.status(404).json({ error: 'Banner not found' })
     const { error } = await supabaseAdmin
       .from('site_banners')
@@ -1555,6 +1563,7 @@ router.delete('/banners/:id', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ success: true })
     logAudit({ adminEmail: req.userEmail, action: 'banner_archive', target: req.params.id, details: `${before.placement} "${before.alt}"` })
+    recordContentHistory('banners', req.params.id, 'archive', before, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Banner archive error')
     res.status(500).json({ error: 'Failed to archive banner' })
@@ -1576,6 +1585,7 @@ router.post('/banners/:id/restore', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'banner_restore', target: data.id, details: data.placement })
+    recordContentHistory('banners', data.id, 'restore', data, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Banner restore error')
     res.status(500).json({ error: 'Failed to restore banner' })
@@ -1603,6 +1613,7 @@ router.post('/banners/reorder', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ success: true, count: ids.length })
     logAudit({ adminEmail: req.userEmail, action: 'banner_reorder', target: placement, details: `${ids.length} banners reordered` })
+    recordContentHistory('banners', placement, 'reorder', { ids }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Banner reorder error')
     res.status(500).json({ error: 'Failed to reorder banners' })
@@ -1651,6 +1662,7 @@ router.post('/sections', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.status(201).json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'section_create', target: data.id, details: `${data.type} "${data.title}" ${data.status}` })
+    recordContentHistory('sections', data.id, 'create', data, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Section create error')
     res.status(500).json({ error: 'Failed to create section' })
@@ -1676,6 +1688,7 @@ router.patch('/sections/:id', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'section_update', target: req.params.id, details: `changed: ${Object.keys(clean.values).join(', ')}` })
+    recordContentHistory('sections', req.params.id, 'update', data, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Section update error')
     res.status(500).json({ error: 'Failed to update section' })
@@ -1687,7 +1700,7 @@ router.patch('/sections/:id', requireAdmin, async (req, res) => {
 router.delete('/sections/:id', requireAdmin, async (req, res) => {
   if (!requireUuidParam(req, res)) return
   try {
-    const { data: before } = await supabaseAdmin.from('site_home_sections').select('id, type, title').eq('id', req.params.id).single()
+    const { data: before } = await supabaseAdmin.from('site_home_sections').select(SECTION_COLUMNS).eq('id', req.params.id).single()
     if (!before) return res.status(404).json({ error: 'Section not found' })
     const { error } = await supabaseAdmin
       .from('site_home_sections')
@@ -1697,6 +1710,7 @@ router.delete('/sections/:id', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ success: true })
     logAudit({ adminEmail: req.userEmail, action: 'section_archive', target: req.params.id, details: `${before.type} "${before.title}"` })
+    recordContentHistory('sections', req.params.id, 'archive', before, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Section archive error')
     res.status(500).json({ error: 'Failed to archive section' })
@@ -1718,6 +1732,7 @@ router.post('/sections/:id/restore', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'section_restore', target: data.id, details: data.type })
+    recordContentHistory('sections', data.id, 'restore', data, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Section restore error')
     res.status(500).json({ error: 'Failed to restore section' })
@@ -1741,6 +1756,7 @@ router.post('/sections/reorder', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ success: true, count: ids.length })
     logAudit({ adminEmail: req.userEmail, action: 'section_reorder', target: 'site_home_sections', details: `${ids.length} sections reordered` })
+    recordContentHistory('sections', 'site_home_sections', 'reorder', { ids }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Section reorder error')
     res.status(500).json({ error: 'Failed to reorder sections' })
@@ -1800,6 +1816,7 @@ router.post('/nav-items', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.status(201).json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'nav_create', target: data.id, details: `${data.section} "${data.label}"` })
+    recordContentHistory('nav_items', data.id, 'create', data, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Nav item create error')
     res.status(500).json({ error: 'Failed to create navigation link' })
@@ -1824,6 +1841,7 @@ router.patch('/nav-items/:id', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'nav_update', target: req.params.id, details: `changed: ${Object.keys(clean.values).join(', ')}` })
+    recordContentHistory('nav_items', req.params.id, 'update', data, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Nav item update error')
     res.status(500).json({ error: 'Failed to update navigation link' })
@@ -1835,7 +1853,7 @@ router.patch('/nav-items/:id', requireAdmin, async (req, res) => {
 router.delete('/nav-items/:id', requireAdmin, async (req, res) => {
   if (!requireUuidParam(req, res)) return
   try {
-    const { data: before } = await supabaseAdmin.from('site_nav_items').select('id, section, label').eq('id', req.params.id).single()
+    const { data: before } = await supabaseAdmin.from('site_nav_items').select(NAV_COLUMNS).eq('id', req.params.id).single()
     if (!before) return res.status(404).json({ error: 'Link not found' })
     const { error } = await supabaseAdmin
       .from('site_nav_items')
@@ -1845,6 +1863,7 @@ router.delete('/nav-items/:id', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ success: true })
     logAudit({ adminEmail: req.userEmail, action: 'nav_archive', target: req.params.id, details: `${before.section} "${before.label}"` })
+    recordContentHistory('nav_items', req.params.id, 'archive', before, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Nav item archive error')
     res.status(500).json({ error: 'Failed to archive navigation link' })
@@ -1868,6 +1887,7 @@ router.post('/nav-items/:id/restore', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'nav_restore', target: data.id, details: `${data.section} "${data.label}"` })
+    recordContentHistory('nav_items', data.id, 'restore', data, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Nav item restore error')
     res.status(500).json({ error: 'Failed to restore navigation link' })
@@ -1895,6 +1915,7 @@ router.post('/nav-items/reorder', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ success: true, count: ids.length })
     logAudit({ adminEmail: req.userEmail, action: 'nav_reorder', target: 'site_nav_items', details: `${section}: ${ids.length} links reordered` })
+    recordContentHistory('nav_items', section, 'reorder', { ids }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Nav item reorder error')
     res.status(500).json({ error: 'Failed to reorder navigation links' })
@@ -1962,9 +1983,95 @@ router.post('/categories', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ success: true, count: clean.values.length })
     logAudit({ adminEmail: req.userEmail, action: 'category_batch_save', target: 'site_categories', details: `${clean.values.length} categories saved` })
+    recordContentHistory('categories', 'site_categories', 'save', { items: clean.values }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Category batch save error')
     res.status(500).json({ error: 'Failed to save categories' })
+  }
+})
+
+// ── Content history + restore defaults (Phase 5g) ────────────────────────────
+
+// GET /api/admin/content-history?entity=&entityId=&page=&pageSize=
+// newest first; entity is one of banners/sections/nav_items/categories/media
+router.get('/content-history', requireAdmin, async (req, res) => {
+  try {
+    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 50, 1), 100)
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1)
+    let query = supabaseAdmin.from('site_content_history').select('*', { count: 'exact' })
+    if (req.query.entity) query = query.eq('entity', String(req.query.entity))
+    if (req.query.entityId) query = query.eq('entity_id', String(req.query.entityId))
+    const { data, error, count } = await query
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range((page - 1) * pageSize, page * pageSize - 1)
+    if (error) {
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      throw error
+    }
+    res.json({ items: data || [], total: count ?? 0 })
+  } catch (err) {
+    logger.error({ err }, 'Content history list error')
+    res.status(500).json({ error: 'Failed to load content history' })
+  }
+})
+
+// POST /api/admin/content/restore-defaults { scope }
+// Archives every current row in the scope, then inserts the built-in
+// defaults fresh. Nothing is hard-deleted, so the owner's rows stay
+// restorable from each page's archived view, and the whole operation is one
+// history row. If the insert fails the archive is rolled back (unarchive),
+// so a failed restore leaves the storefront exactly as it was.
+router.post('/content/restore-defaults', requireAdmin, async (req, res) => {
+  const { scope } = req.body ?? {}
+  const def = defaultRowsFor(scope)
+  if (!def) {
+    return res.status(400).json({ error: `Scope must be one of: ${RESTORE_SCOPES.join(', ')}` })
+  }
+  try {
+    const now = new Date().toISOString()
+    let archQuery = supabaseAdmin
+      .from(def.table)
+      .update({ archived_at: now, updated_at: now })
+      .is('archived_at', null)
+    if (def.filter) archQuery = archQuery.eq(def.filter.column, def.filter.value)
+    const { data: archivedRows, error: archErr } = await archQuery.select('id')
+    if (archErr) {
+      if (isSchemaPendingError(archErr)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      throw archErr
+    }
+    const { data: inserted, error: insErr } = await supabaseAdmin
+      .from(def.table)
+      .insert(def.rows.map((r) => ({ ...r, created_by: req.userEmail })))
+      .select('*')
+    if (insErr) {
+      // put the owner's rows back before reporting failure
+      const ids = (archivedRows || []).map((r) => r.id)
+      if (ids.length) {
+        await supabaseAdmin.from(def.table).update({ archived_at: null, updated_at: new Date().toISOString() }).in('id', ids)
+      }
+      throw insErr
+    }
+    invalidateContentCache()
+    const archivedCount = (archivedRows || []).length
+    const restoredCount = (inserted || []).length
+    res.json({ success: true, archived: archivedCount, restored: restoredCount })
+    logAudit({
+      adminEmail: req.userEmail,
+      action: 'content_restore_defaults',
+      target: `${def.table}:${scope}`,
+      details: `archived ${archivedCount}, restored ${restoredCount} default rows`,
+    })
+    recordContentHistory(
+      def.table.replace('site_', ''),
+      `scope:${scope}`,
+      'reset',
+      { archivedIds: (archivedRows || []).map((r) => r.id), restored: inserted || [] },
+      req.userEmail,
+    )
+  } catch (err) {
+    logger.error({ err }, 'Restore defaults error')
+    res.status(500).json({ error: 'Failed to restore defaults' })
   }
 })
 

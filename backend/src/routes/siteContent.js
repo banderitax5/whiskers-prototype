@@ -3,7 +3,7 @@ import { supabaseAdmin } from '../config/supabase.js'
 import { contentLimiter, eventLimiter } from '../middleware/rateLimiter.js'
 import { isSchemaPendingError } from '../utils/pgErrors.js'
 import { isUuid } from '../utils/uuid.js'
-import { visibleSections, bannersFor } from '../utils/siteContent.js'
+import { visibleSections, bannersFor, previewRows } from '../utils/siteContent.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -47,7 +47,7 @@ function navGroup(rows, section) {
     .map((n) => pick(n, NAV_FIELDS))
 }
 
-async function loadContent() {
+async function loadContent({ preview = false } = {}) {
   const [bannersRes, sectionsRes, navRes, promosRes, catsRes] = await Promise.all([
     supabaseAdmin.from('site_banners').select('*').is('archived_at', null),
     supabaseAdmin.from('site_home_sections').select('*').is('archived_at', null),
@@ -71,15 +71,26 @@ async function loadContent() {
   const now = new Date()
   const navRows = navRes.data || []
   const bannerRows = bannersRes.data || []
+  const sectionRows = sectionsRes.data || []
+  // preview drops the draft/schedule filters so the owner sees what WILL show
+  // once published; archived rows stay excluded, and hidden nav links stay
+  // filtered (they are a separate toggle the owner flips to see them)
+  const bannerPick = (placement) =>
+    preview
+      ? previewRows(bannerRows).filter((b) => (Array.isArray(placement) ? placement : [placement]).includes(b.placement))
+      : bannersFor(placement, bannerRows, now)
+  const sectionPick = () => (preview ? previewRows(sectionRows) : visibleSections(sectionRows, now))
+  const sectionFields = preview ? [...SECTION_FIELDS, 'status'] : SECTION_FIELDS
   return {
     seeded: true,
-    banners: bannersFor('home_hero', bannerRows, now).map((b) => pick(b, BANNER_FIELDS)),
-    brand_strip: bannersFor('brand_strip', bannerRows, now).map((b) => pick(b, BANNER_FIELDS)),
-    strip_banners: bannersFor(['promo_strip', 'category_top'], bannerRows, now).map((b) => pick(b, BANNER_FIELDS)),
-    promo_strip: bannersFor('promo_strip', bannerRows, now).map((b) => pick(b, BANNER_FIELDS)),
-    category_top: bannersFor('category_top', bannerRows, now).map((b) => pick(b, BANNER_FIELDS)),
-    announcement: bannersFor('announcement_bar', bannerRows, now).map((b) => pick(b, BANNER_FIELDS)),
-    sections: visibleSections(sectionsRes.data || [], now).map((s) => pick(s, SECTION_FIELDS)),
+    preview,
+    banners: bannerPick('home_hero').map((b) => pick(b, BANNER_FIELDS)),
+    brand_strip: bannerPick('brand_strip').map((b) => pick(b, BANNER_FIELDS)),
+    strip_banners: bannerPick(['promo_strip', 'category_top']).map((b) => pick(b, BANNER_FIELDS)),
+    promo_strip: bannerPick('promo_strip').map((b) => pick(b, BANNER_FIELDS)),
+    category_top: bannerPick('category_top').map((b) => pick(b, BANNER_FIELDS)),
+    announcement: bannerPick('announcement_bar').map((b) => pick(b, BANNER_FIELDS)),
+    sections: sectionPick().map((s) => pick(s, sectionFields)),
     promos: promoRows.map((p) => pick(p, PROMO_FIELDS)),
     categories: (catsRes.data || []).map((c) => pick(c, ['name', 'label', 'sort_order', 'is_visible'])),
     nav: {
@@ -91,9 +102,33 @@ async function loadContent() {
   }
 }
 
+// ?preview=1 with a valid admin session serves drafts + scheduled-out content
+// so the owner can see the storefront before publishing. Any other caller
+// (anon, non-admin, expired token) gets the ordinary public payload - preview
+// is an addition to the public endpoint, never a widening of it.
+async function isAdminPreview(req) {
+  if (String(req.query.preview) !== '1') return false
+  const auth = req.headers.authorization || ''
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null
+  if (!token) return false
+  try {
+    const { data, error } = await supabaseAdmin.auth.getUser(token)
+    if (error || !data?.user) return false
+    const { data: prof } = await supabaseAdmin.from('profiles').select('role').eq('id', data.user.id).single()
+    return prof?.role === 'admin'
+  } catch {
+    return false
+  }
+}
+
 // GET /api/site-content - public storefront content
 router.get('/', contentLimiter, async (req, res) => {
   try {
+    // preview answers are never cached - the owner edits and re-checks in the
+    // same session, and mixing draft payloads into the public cache would leak
+    if (await isAdminPreview(req)) {
+      return res.json(await loadContent({ preview: true }))
+    }
     if (Date.now() - cache.at >= CACHE_TTL_MS) {
       try {
         cache = { at: Date.now(), payload: await loadContent() }

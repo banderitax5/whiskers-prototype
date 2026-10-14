@@ -701,7 +701,7 @@ foreach ($ep in $staffAllowed) {
   } catch { Step "staff GET $ep" $false (Get-ErrBody $_) }
 }
 
-foreach ($ep in @('admin/stats', 'admin/customers?pageSize=1', 'admin/audit-logs', 'admin/nav-items?section=navbar', 'admin/categories')) {
+foreach ($ep in @('admin/stats', 'admin/customers?pageSize=1', 'admin/audit-logs', 'admin/nav-items?section=navbar', 'admin/categories', 'admin/content-history')) {
   try {
     Invoke-RestMethod -Uri "$base/api/$ep" -Headers $authH | Out-Null
     Step "staff denied $ep" $false 'got 2xx'
@@ -1140,6 +1140,43 @@ if ($cats0 -and $cats0.total -gt 0) {
   Step 'category: label override is live in site-content' $false 'no catalog categories' 'SKIP'
 }
 
+# content history + admin preview (5g) - the nav probe above already wrote
+# history rows; the draft-section probe verifies preview never widens access
+try {
+  $navHist = Invoke-RestMethod -Uri "$base/api/admin/content-history?entity=nav_items&entityId=$navId" -Headers $authH
+  $acts = @($navHist.items | ForEach-Object { $_.action })
+  $actorOk = @($navHist.items | Where-Object { $_.actor -eq $email }).Count -eq @($navHist.items).Count
+  Step 'content-history: nav writes recorded with actor' (($acts -contains 'create') -and ($acts -contains 'archive') -and ($acts -contains 'restore') -and $actorOk) "actions=$($acts -join ',')"
+} catch { Step 'content-history: nav writes recorded with actor' $false (Get-ErrBody $_) }
+
+$prevSecId = $null
+try {
+  $ps1 = Invoke-RestMethod -Uri "$base/api/admin/sections" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+    -Body (@{ type = 'product_row'; title = 'E2E Preview Draft'; config = @{ rule = 'newest' } } | ConvertTo-Json -Compress)
+  $prevSecId = $ps1.item.id
+  Step 'preview: draft section created' ([bool]$prevSecId) $prevSecId
+} catch { Step 'preview: draft section created' $false (Get-ErrBody $_) }
+
+if ($prevSecId) {
+  try {
+    $scPub = Invoke-RestMethod -Uri "$base/api/site-content"
+    $leak = @($scPub.sections | Where-Object { $_.id -eq $prevSecId }).Count
+    Step 'preview: draft hidden from public payload' ($leak -eq 0) "leaked=$leak"
+  } catch { Step 'preview: draft hidden from public payload' $false (Get-ErrBody $_) }
+
+  try {
+    $scPrev = Invoke-RestMethod -Uri "$base/api/site-content?preview=1" -Headers $authH
+    $seen = @($scPrev.sections | Where-Object { $_.id -eq $prevSecId }).Count
+    Step 'preview: admin sees drafts with preview=1' ($scPrev.preview -eq $true -and $seen -eq 1) "preview=$($scPrev.preview) seen=$seen"
+  } catch { Step 'preview: admin sees drafts with preview=1' $false (Get-ErrBody $_) }
+
+  try {
+    $scAnon = Invoke-RestMethod -Uri "$base/api/site-content?preview=1"
+    $anonSeen = @($scAnon.sections | Where-Object { $_.id -eq $prevSecId }).Count
+    Step 'preview: ignored without an admin session' ($anonSeen -eq 0 -and $scAnon.preview -ne $true) "seen=$anonSeen"
+  } catch { Step 'preview: ignored without an admin session' $false (Get-ErrBody $_) }
+}
+
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' -Body (@{ role = 'user' } | ConvertTo-Json -Compress) | Out-Null
 Step 'role reverted to user' $true
 
@@ -1205,6 +1242,11 @@ if ($catProbeName -and -not $catHadOverride) {
   Step 'category: probe override row removed' $true $catProbeName
 } elseif ($catProbeName) {
   Step 'category: pre-existing override kept' $true $catProbeName
+}
+if ($prevSecId) {
+  Invoke-RestMethod -Uri "$SU/rest/v1/site_home_sections?id=eq.$prevSecId" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+  Invoke-RestMethod -Uri "$SU/rest/v1/site_content_history?entity=eq.sections&entity_id=eq.$prevSecId" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+  Step 'preview: probe section removed' $true $prevSecId
 }
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
 try {

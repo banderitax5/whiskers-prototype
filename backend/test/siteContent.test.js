@@ -4,6 +4,7 @@ import {
   isVisible,
   visibleRows,
   bannersFor,
+  previewRows,
   safeHref,
   parseRule,
   applyReorder,
@@ -156,5 +157,26 @@ describe('siteContent validity', () => {
     assert.equal(isValidSection({ type: 'text_block', status: 'draft' }), true)
     assert.equal(isValidSection({ type: 'text_block', status: 'wat' }), false)
     assert.equal(isValidSection(null), false)
+  })
+})
+
+describe('previewRows (admin preview mode)', () => {
+  test('drafts and scheduled-out rows ARE included', () => {
+    const rows = [row({ id: 'a' }), row({ id: 'b', status: 'draft' }), row({ id: 'c', status: 'scheduled', starts_at: '2030-01-01T00:00:00Z' })]
+    const ids = previewRows(rows, NOW).map((r) => r.id)
+    assert.deepEqual(ids, ['a', 'b', 'c'])
+  })
+
+  test('archived rows are still excluded', () => {
+    const rows = [row({ id: 'a' }), row({ id: 'b', archived_at: '2026-10-01T00:00:00Z' })]
+    const ids = previewRows(rows, NOW).map((r) => r.id)
+    assert.deepEqual(ids, ['a'])
+  })
+
+  test('sorted by sort_order; non-array input returns []', () => {
+    const rows = [row({ id: 'b', sort_order: 5 }), row({ id: 'a', sort_order: 1 })]
+    assert.deepEqual(previewRows(rows).map((r) => r.id), ['a', 'b'])
+    assert.deepEqual(previewRows(null), [])
+    assert.deepEqual(previewRows(undefined), [])
   })
 })
