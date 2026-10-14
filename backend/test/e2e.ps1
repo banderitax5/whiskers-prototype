@@ -1177,6 +1177,177 @@ if ($prevSecId) {
   } catch { Step 'preview: ignored without an admin session' $false (Get-ErrBody $_) }
 }
 
+# ── Phase 6: site settings, FAQs, policies ──────────────────────────────────
+# M6 (owner-run migration) adds site_settings / site_faqs / site_policies.
+# Probe the table directly via the service key (GET /admin/settings degrades
+# to 200 + defaults pre-migration, so it cannot be used as the probe).
+$m6Ready = $false
+$m6Reason = 'M6 migration not applied yet (owner pending)'
+try {
+  Invoke-RestMethod -Uri "$SU/rest/v1/site_settings?select=id&limit=1" -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+  $m6Ready = $true
+  Step 'settings: M6 schema present' $true 'site_settings table selectable'
+} catch {
+  $m6Body = Get-ErrBody $_
+  if ($m6Body -like '*site_settings*' -or $m6Body -like '*PGRST204*' -or $m6Body -like '*does not exist*') {
+    Step 'settings: M6 schema present' $false $m6Reason 'SKIP'
+  } else { Step 'settings: M6 schema present' $false $m6Body }
+}
+
+# staff cannot read settings / faqs / policies (admin-only matrix).
+# The user is admin at this point in the suite - drop to staff, check, restore.
+# PS 5.1 has no -SkipHttpErrorCheck, so each 403 is caught individually.
+try {
+  Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' `
+    -Body (@{ role = 'staff' } | ConvertTo-Json -Compress) | Out-Null
+  $staffH = @{ Authorization = "Bearer $AT" }
+  $codes = @()
+  foreach ($path in @('/admin/settings', '/admin/faqs', '/admin/policies')) {
+    try { Invoke-RestMethod -Uri "$base/api$path" -Headers $staffH | Out-Null; $codes += 200 }
+    catch { $codes += $_.Exception.Response.StatusCode.value__ }
+  }
+  Step 'settings: staff GET denied' (($codes | Where-Object { $_ -eq 403 }).Count -eq 3) "codes=$($codes -join ',')"
+  Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' `
+    -Body (@{ role = 'admin' } | ConvertTo-Json -Compress) | Out-Null
+} catch { Step 'settings: staff GET denied' $false (Get-ErrBody $_) }
+
+# public site-content always has settings/faqs/policies keys (even pre-M6)
+try {
+  $scNow = Invoke-RestMethod -Uri "$base/api/site-content"
+  $hasKeys = ($null -ne $scNow.settings) -and ($null -ne $scNow.faqs) -and ($null -ne $scNow.policies)
+  $shipOk = [math]::Abs([double]$scNow.settings.shipping_fee - 75) -lt 0.001
+  Step 'settings: public payload has settings keys' ($hasKeys -and $shipOk) "shipping_fee=$($scNow.settings.shipping_fee) faqs=$(@($scNow.faqs).Count) policies=$(@($scNow.policies).Count)"
+} catch { Step 'settings: public payload has settings keys' $false (Get-ErrBody $_) }
+
+if ($m6Ready) {
+  # admin writes settings, reads them back, then restores defaults
+  $settingsOrig = $null
+  try {
+    $settingsOrig = Invoke-RestMethod -Uri "$base/api/admin/settings" -Headers $authH
+    Invoke-RestMethod -Uri "$base/api/admin/settings" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ store_name = 'E2E Shop'; shipping_fee = 40; free_shipping_threshold = 500 } | ConvertTo-Json -Compress) | Out-Null
+    $sBack = Invoke-RestMethod -Uri "$base/api/admin/settings" -Headers $authH
+    $ok = ($sBack.settings.store_name -eq 'E2E Shop') -and ([math]::Abs([double]$sBack.settings.shipping_fee - 40) -lt 0.001) -and ([double]$sBack.settings.free_shipping_threshold -eq 500)
+    Step 'settings: admin writes and reads back' $ok "store_name=$($sBack.settings.store_name) fee=$($sBack.settings.shipping_fee) threshold=$($sBack.settings.free_shipping_threshold)"
+  } catch { Step 'settings: admin writes and reads back' $false (Get-ErrBody $_) }
+
+  # public payload reflects the saved settings immediately (no cache stale read)
+  try {
+    $sc2 = Invoke-RestMethod -Uri "$base/api/site-content"
+    $ok = ($sc2.settings.store_name -eq 'E2E Shop') -and ([math]::Abs([double]$sc2.settings.shipping_fee - 40) -lt 0.001)
+    Step 'settings: public payload reflects saved values' $ok "store_name=$($sc2.settings.store_name) fee=$($sc2.settings.shipping_fee)"
+  } catch { Step 'settings: public payload reflects saved values' $false (Get-ErrBody $_) }
+
+  # restore original settings so the live site is untouched after the run
+  try {
+    if ($settingsOrig) {
+      $restore = @{ store_name = $settingsOrig.settings.store_name; shipping_fee = $settingsOrig.settings.shipping_fee; free_shipping_threshold = $settingsOrig.settings.free_shipping_threshold }
+      Invoke-RestMethod -Uri "$base/api/admin/settings" -Method Patch -Headers $stepUpH -ContentType 'application/json' -Body ($restore | ConvertTo-Json -Compress) | Out-Null
+    }
+    Step 'settings: originals restored' $true
+  } catch { Step 'settings: originals restored' $false (Get-ErrBody $_) }
+
+  # FAQ CRUD: create -> list -> public payload -> archive -> restore -> delete
+  $faqId = $null
+  try {
+    $faqRes = Invoke-RestMethod -Uri "$base/api/admin/faqs" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ question = 'E2E FAQ?'; answer = 'E2E answer.'; is_visible = $true } | ConvertTo-Json -Compress)
+    $faqId = $faqRes.item.id
+    Step 'settings: admin creates FAQ' ([bool]$faqId) $faqId
+  } catch { Step 'settings: admin creates FAQ' $false (Get-ErrBody $_) }
+
+  if ($faqId) {
+    try {
+      $sc3 = Invoke-RestMethod -Uri "$base/api/site-content"
+      $found = @($sc3.faqs | Where-Object { $_.id -eq $faqId }).Count
+      Step 'settings: FAQ visible in public payload' ($found -eq 1) "found=$found"
+    } catch { Step 'settings: FAQ visible in public payload' $false (Get-ErrBody $_) }
+
+    try {
+      Invoke-RestMethod -Uri "$base/api/admin/faqs/$faqId" -Method Delete -Headers $stepUpH | Out-Null
+      $sc4 = Invoke-RestMethod -Uri "$base/api/site-content"
+      $gone = @($sc4.faqs | Where-Object { $_.id -eq $faqId }).Count
+      Step 'settings: archived FAQ hidden from public' ($gone -eq 0) "remaining=$gone"
+    } catch { Step 'settings: archived FAQ hidden from public' $false (Get-ErrBody $_) }
+
+    try {
+      Invoke-RestMethod -Uri "$base/api/admin/faqs/$faqId/restore" -Method Post -Headers $stepUpH | Out-Null
+      Step 'settings: FAQ restore roundtrip' $true $faqId
+    } catch { Step 'settings: FAQ restore roundtrip' $false (Get-ErrBody $_) }
+
+    try {
+      Invoke-RestMethod -Uri "$SU/rest/v1/site_faqs?id=eq.$faqId" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+      Step 'settings: FAQ probe row deleted' $true $faqId
+    } catch { Step 'settings: FAQ probe row deleted' $false (Get-ErrBody $_) }
+  }
+
+  # policy CRUD: create -> list -> public -> delete
+  $polId = $null
+  try {
+    $polRes = Invoke-RestMethod -Uri "$base/api/admin/policies" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ title = 'E2E Policy'; body = 'Line one.'; is_visible = $true } | ConvertTo-Json -Compress)
+    $polId = $polRes.item.id
+    $polSlug = $polRes.item.slug
+    Step 'settings: admin creates policy' ([bool]$polId -and $polSlug -eq 'e2e-policy') "slug=$polSlug"
+  } catch { Step 'settings: admin creates policy' $false (Get-ErrBody $_) }
+
+  if ($polId) {
+    try {
+      $sc5 = Invoke-RestMethod -Uri "$base/api/site-content"
+      $found = @($sc5.policies | Where-Object { $_.id -eq $polId }).Count
+      Step 'settings: policy visible in public payload' ($found -eq 1) "found=$found"
+    } catch { Step 'settings: policy visible in public payload' $false (Get-ErrBody $_) }
+
+    try {
+      Invoke-RestMethod -Uri "$SU/rest/v1/site_policies?id=eq.$polId" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+      Step 'settings: policy probe row deleted' $true $polId
+    } catch { Step 'settings: policy probe row deleted' $false (Get-ErrBody $_) }
+  }
+
+  # free-shipping threshold: set threshold to 1, place a probe order, verify
+  # the order response waives shipping. Restored to null afterwards.
+  $freeShipOk = $false
+  try {
+    $priceRow = Invoke-RestMethod -Uri "$SU/rest/v1/product?select=price&prod_id=eq.$prodId" -Headers @{ apikey = $SK; Authorization = "Bearer $SK" }
+    $expectedPrice = [double]$priceRow[0].price
+    Invoke-RestMethod -Uri "$base/api/admin/settings" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ free_shipping_threshold = 1 } | ConvertTo-Json -Compress) | Out-Null
+    $orderRes = Invoke-RestMethod -Uri "$base/api/orders" -Method Post -Headers $authH -ContentType 'application/json' `
+      -Body (@{ items = @(@{ productId = $prodId; quantity = 1 }); paymentMethod = 'cod'; customerName = 'E2E Free'; phone = '09171234567'; address = '1 Test St' } | ConvertTo-Json -Compress -Depth 5)
+    # with threshold=1 the fee is waived, so total_amount == product price (not price+75)
+    $freeShipOk = ([math]::Abs([double]$orderRes.total_amount - $expectedPrice) -lt 0.01)
+    Step 'settings: free-shipping threshold waives fee' $freeShipOk "total=$($orderRes.total_amount) expected=$expectedPrice"
+    if ($orderRes.order_id) {
+      Invoke-RestMethod -Uri "$SU/rest/v1/payment?order_id=eq.$($orderRes.order_id)" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+      Invoke-RestMethod -Uri "$SU/rest/v1/order_details?order_id=eq.$($orderRes.order_id)" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+      Invoke-RestMethod -Uri "$SU/rest/v1/orders?order_id=eq.$($orderRes.order_id)" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+    }
+    $p3 = Invoke-RestMethod -Uri "$SU/rest/v1/product?select=stock_quantity&prod_id=eq.$prodId" -Headers @{ apikey = $SK; Authorization = "Bearer $SK" }
+    Invoke-RestMethod -Uri "$SU/rest/v1/product?prod_id=eq.$prodId" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' `
+      -Body (@{ stock_quantity = ([int]$p3[0].stock_quantity + 1) } | ConvertTo-Json -Compress) | Out-Null
+  } catch { Step 'settings: free-shipping threshold waives fee' $false (Get-ErrBody $_) }
+
+  try {
+    Invoke-RestMethod -Uri "$base/api/admin/settings" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ free_shipping_threshold = $null } | ConvertTo-Json -Compress) | Out-Null
+    Step 'settings: threshold reset to null' $true
+  } catch { Step 'settings: threshold reset to null' $false (Get-ErrBody $_) }
+} else {
+  Step 'settings: admin writes and reads back' $false $m6Reason 'SKIP'
+  Step 'settings: public payload reflects saved values' $false $m6Reason 'SKIP'
+  Step 'settings: originals restored' $false $m6Reason 'SKIP'
+  Step 'settings: admin creates FAQ' $false $m6Reason 'SKIP'
+  Step 'settings: FAQ visible in public payload' $false $m6Reason 'SKIP'
+  Step 'settings: archived FAQ hidden from public' $false $m6Reason 'SKIP'
+  Step 'settings: FAQ restore roundtrip' $false $m6Reason 'SKIP'
+  Step 'settings: FAQ probe row deleted' $false $m6Reason 'SKIP'
+  Step 'settings: admin creates policy' $false $m6Reason 'SKIP'
+  Step 'settings: policy visible in public payload' $false $m6Reason 'SKIP'
+  Step 'settings: policy probe row deleted' $false $m6Reason 'SKIP'
+  Step 'settings: free-shipping threshold waives fee' $false $m6Reason 'SKIP'
+  Step 'settings: threshold reset to null' $false $m6Reason 'SKIP'
+}
+
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' -Body (@{ role = 'user' } | ConvertTo-Json -Compress) | Out-Null
 Step 'role reverted to user' $true
 
