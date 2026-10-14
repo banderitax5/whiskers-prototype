@@ -5,6 +5,7 @@ import ProductQuickViewDialog from '../components/ProductQuickViewDialog.jsx'
 import { apiGet } from '../lib/api.js'
 import { attachSizeVariants } from '../lib/productUtils.js'
 import { formatPesos } from '../lib/cartLogic'
+import { fetchSiteContent, applyCategoryOverrides } from '../lib/siteContent'
 
 const PAGE_SIZES = [8, 16, 24, 36]
 const SORT_OPTIONS = [
@@ -34,6 +35,8 @@ function Menu() {
   const [attempt, setAttempt] = useState(0)
   const [categories, setCategories] = useState([])
   const [brands, setBrands] = useState([])
+  // owner's category overrides (label/order/visibility) from site-content
+  const [siteContent, setSiteContent] = useState(null)
 
   // category, brand, and search filters can arrive via URL (nav links, brand tiles)
   // lists are comma-separated in the URL so multi-select survives refresh and Back
@@ -102,14 +105,18 @@ function Menu() {
       setLoading(true)
       setLoadFailed(false)
       try {
-        const [prodRes, catRes, brandRes] = await Promise.all([
+        const [prodRes, catRes, brandRes, contentRes] = await Promise.all([
           apiGet('/products?pageSize=500'),
           apiGet('/products/categories'),
           apiGet('/products/brands'),
+          // force=true: an admin edit to category labels/order shows on the
+          // next visit; fetchSiteContent never rejects, so this cannot fail load
+          fetchSiteContent(true),
         ])
         setProducts(prodRes.items || [])
         setCategories(catRes.items || [])
         setBrands(brandRes.items || [])
+        setSiteContent(contentRes)
       } catch (err) {
         console.error('Failed to load products:', err)
         setLoadFailed(true)
@@ -122,6 +129,17 @@ function Menu() {
 
   // enrich products with size variant info
   const enrichedProducts = useMemo(() => attachSizeVariants(products), [products])
+
+  // category filter list with the owner's label/order/visibility applied;
+  // filter values stay the raw category name so URLs and matching are unchanged
+  const categoryOptions = useMemo(
+    () => applyCategoryOverrides(categories, siteContent?.categories),
+    [categories, siteContent],
+  )
+  const categoryLabel = useCallback(
+    (name) => categoryOptions.find((c) => c.name === name)?.label || name,
+    [categoryOptions],
+  )
 
   function updateFilter(key, value) {
     setFilters((prev) => ({ ...prev, [key]: value }))
@@ -366,7 +384,7 @@ function Menu() {
               )}
               {filters.categories.map((cat) => (
                 <span key={cat} className="inline-flex items-center gap-1 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-medium px-2.5 py-1">
-                  {cat}
+                  {categoryLabel(cat)}
                   <button type="button" onClick={() => toggleCategory(cat)} className="hover:text-blue-900 dark:hover:text-blue-100">&times;</button>
                 </span>
               ))}
@@ -582,15 +600,15 @@ function Menu() {
                     />
                     <span className="text-sm text-gray-700 dark:text-gray-200">All</span>
                   </label>
-                  {categories.map((cat) => (
-                    <label key={cat} className="flex items-center gap-2 cursor-pointer px-1 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-600 transition">
+                  {categoryOptions.map((cat) => (
+                    <label key={cat.name} className="flex items-center gap-2 cursor-pointer px-1 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-600 transition">
                       <input
                         type="checkbox"
-                        checked={filters.categories.includes(cat)}
-                        onChange={() => toggleCategory(cat)}
+                        checked={filters.categories.includes(cat.name)}
+                        onChange={() => toggleCategory(cat.name)}
                         className="h-4 w-4 rounded border-gray-300 text-[#0b2e59] focus:ring-[#0b2e59]"
                       />
-                      <span className="text-sm text-gray-700 dark:text-gray-200 truncate">{cat}</span>
+                      <span className="text-sm text-gray-700 dark:text-gray-200 truncate">{cat.label}</span>
                     </label>
                   ))}
                 </div>

@@ -32,6 +32,7 @@ const AdminPromos = lazy(() => import('./components/AdminPromos.jsx'))
 const AdminMedia = lazy(() => import('./components/AdminMedia.jsx'))
 const AdminBanners = lazy(() => import('./components/AdminBanners.jsx'))
 const AdminHomeSections = lazy(() => import('./components/AdminHomeSections.jsx'))
+const AdminNavigation = lazy(() => import('./components/AdminNavigation.jsx'))
 
 import supabase from './lib/supabase'
 
@@ -237,8 +238,9 @@ const router = createBrowserRouter([
       { path: 'payments', element: <AdminPayments /> },
       { path: 'promos', element: <RequireRole role="admin" fallback="/admin/orders"><AdminPromos /></RequireRole> },
       { path: 'media', element: <RequireRole role="admin" fallback="/admin/orders"><AdminMedia /></RequireRole> },
-{ path: 'banners', element: <RequireRole role="admin" fallback="/admin/orders"><AdminBanners /></RequireRole> },
-{ path: 'home-sections', element: <RequireRole role="admin" fallback="/admin/orders"><AdminHomeSections /></RequireRole> },
+      { path: 'banners', element: <RequireRole role="admin" fallback="/admin/orders"><AdminBanners /></RequireRole> },
+      { path: 'home-sections', element: <RequireRole role="admin" fallback="/admin/orders"><AdminHomeSections /></RequireRole> },
+      { path: 'navigation', element: <RequireRole role="admin" fallback="/admin/orders"><AdminNavigation /></RequireRole> },
       { path: 'support', element: <AdminSupports /> },
       { path: 'audit-logs', element: <RequireRole role="admin" fallback="/admin/orders"><AdminAuditLogs /></RequireRole> },
     ],

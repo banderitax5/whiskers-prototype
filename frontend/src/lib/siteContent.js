@@ -62,6 +62,35 @@ export function contentNav(content, section) {
   return Array.isArray(rows) && rows.length > 0 ? rows : null
 }
 
+// merges the catalog's category names with the owner's category overrides:
+// hidden rows drop out of the list, labels replace the display text (the
+// filter value stays the raw category name), a saved sort_order wins, and
+// categories the owner never saved keep their base position at the end.
+// No override rows -> the base list comes back unchanged, so a fresh install
+// looks exactly like it did before this feature existed.
+export function applyCategoryOverrides(baseNames, rows) {
+  const names = Array.isArray(baseNames) ? baseNames : []
+  const overrides = new Map()
+  if (Array.isArray(rows)) {
+    for (const r of rows) {
+      if (r && typeof r.name === 'string' && r.name) overrides.set(r.name, r)
+    }
+  }
+  const merged = []
+  names.forEach((name, idx) => {
+    const o = overrides.get(name)
+    if (o && o.is_visible === false) return
+    merged.push({
+      name,
+      label: (o && o.label) || name,
+      sort: o && Number.isInteger(o.sort_order) ? o.sort_order : Infinity,
+      idx,
+    })
+  })
+  merged.sort((a, b) => a.sort - b.sort || a.idx - b.idx)
+  return merged.map(({ name, label }) => ({ name, label }))
+}
+
 // record a banner event; never throws, never blocks the UI
 export async function trackBannerEvent(bannerId, event) {
   try {
