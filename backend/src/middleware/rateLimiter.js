@@ -32,10 +32,13 @@ export const signupLimiter = rateLimit({
   keyGenerator: clientKey,
 })
 
-// 5 step-up (password re-verification) attempts per 15 minutes per IP
+// 15 step-up (password re-verification) attempts per 15 minutes per IP.
+// Owner-approved (2026-10-14): was 5, which locked admins out mid-session.
+// Still abuse-resistant (password required per token) but generous enough
+// for an editing session; the token itself only lives 5 minutes.
 export const stepUpLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: 15,
   message: { error: 'Too many verification attempts. Please try again in 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
