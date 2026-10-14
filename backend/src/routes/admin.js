@@ -19,6 +19,8 @@ import { sanitizeAltText, mediaPageParams, buildUsageIndex } from '../utils/medi
 import { sanitizeBanner, PLACEMENTS } from '../utils/bannerRules.js'
 import { sanitizeSection } from '../utils/sectionRules.js'
 import { sanitizeNavItem, sanitizeCategoryBatch, NAV_SECTIONS } from '../utils/navRules.js'
+import { sanitizeSettings, sanitizeFaq, sanitizePolicy, mergeSettings } from '../utils/siteSettingsRules.js'
+import { invalidateSettingsCache } from '../utils/shopSettings.js'
 import { missingColumnOf, isSchemaPendingError } from '../utils/pgErrors.js'
 import { effectiveUnitPrice, lineMargin } from '../utils/orderCosting.js'
 import { recordContentHistory } from '../utils/contentHistory.js'
@@ -2072,6 +2074,337 @@ router.post('/content/restore-defaults', requireAdmin, async (req, res) => {
   } catch (err) {
     logger.error({ err }, 'Restore defaults error')
     res.status(500).json({ error: 'Failed to restore defaults' })
+  }
+})
+
+// ── Site settings, FAQs, and policies (Phase 6) ─────────────────────────────
+
+const FAQ_COLUMNS = 'id, question, answer, sort_order, is_visible, archived_at, created_at, updated_at'
+const POLICY_COLUMNS = 'id, slug, title, body, is_visible, archived_at, created_at, updated_at'
+
+// GET /api/admin/settings - the full settings row for the admin form. Before
+// the Phase 6 migration this answers the built-in defaults with seeded=false.
+router.get('/settings', requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('site_settings')
+      .select('*')
+      .eq('id', 1)
+      .maybeSingle()
+    if (error) {
+      if (isSchemaPendingError(error)) {
+        return res.json({ settings: mergeSettings({}, {}), updated_at: null, updated_by: null, seeded: false })
+      }
+      throw error
+    }
+    res.json({
+      settings: mergeSettings(data?.data || {}, {}),
+      updated_at: data?.updated_at || null,
+      updated_by: data?.updated_by || null,
+      seeded: Boolean(data),
+    })
+  } catch (err) {
+    logger.error({ err }, 'Settings read error')
+    res.status(500).json({ error: 'Failed to load settings' })
+  }
+})
+
+// PATCH /api/admin/settings - partial update; only validated keys are
+// written, merged onto the saved row (defaults fill the rest)
+router.patch('/settings', requireAdmin, async (req, res) => {
+  const clean = sanitizeSettings(req.body ?? {})
+  if (!clean.ok) return res.status(400).json({ error: clean.error })
+  if (Object.keys(clean.values).length === 0) {
+    return res.status(400).json({ error: 'No valid settings provided' })
+  }
+  try {
+    const { data: current } = await supabaseAdmin.from('site_settings').select('data').eq('id', 1).maybeSingle()
+    const merged = mergeSettings(current?.data || {}, clean.values)
+    const { data: saved, error } = await supabaseAdmin
+      .from('site_settings')
+      .upsert(
+        { id: 1, data: merged, updated_by: req.userEmail, updated_at: new Date().toISOString() },
+        { onConflict: 'id' },
+      )
+      .select('*')
+      .single()
+    if (error) {
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      throw error
+    }
+    // both caches: checkout reads settings through its own reader, the
+    // storefront through site-content
+    invalidateSettingsCache()
+    invalidateContentCache()
+    res.json({ settings: mergeSettings(saved.data || {}, {}), updated_at: saved.updated_at, seeded: true })
+    logAudit({ adminEmail: req.userEmail, action: 'settings_update', target: 'site_settings', details: `updated: ${Object.keys(clean.values).join(', ')}` })
+    recordContentHistory('site_settings', 'site_settings', 'update', { keys: Object.keys(clean.values) }, req.userEmail)
+  } catch (err) {
+    logger.error({ err }, 'Settings update error')
+    res.status(500).json({ error: 'Failed to save settings' })
+  }
+})
+
+// GET /api/admin/faqs?archived=true
+router.get('/faqs', requireAdmin, async (req, res) => {
+  try {
+    let query = supabaseAdmin.from('site_faqs').select(FAQ_COLUMNS, { count: 'exact' })
+    if (String(req.query.archived) === 'true') query = query.not('archived_at', 'is', null)
+    else query = query.is('archived_at', null)
+    const { data, error, count } = await query.order('sort_order')
+    if (error) {
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      throw error
+    }
+    res.json({ items: data || [], total: count ?? 0 })
+  } catch (err) {
+    logger.error({ err }, 'FAQ list error')
+    res.status(500).json({ error: 'Failed to load FAQs' })
+  }
+})
+
+// POST /api/admin/faqs
+router.post('/faqs', requireAdmin, async (req, res) => {
+  try {
+    const clean = sanitizeFaq(req.body)
+    if (!clean.ok) return res.status(400).json({ error: clean.error })
+    const { data: last } = await supabaseAdmin
+      .from('site_faqs')
+      .select('sort_order')
+      .is('archived_at', null)
+      .order('sort_order', { ascending: false })
+      .limit(1)
+    const { data, error } = await supabaseAdmin
+      .from('site_faqs')
+      .insert({
+        ...clean.values,
+        sort_order: clean.values.sort_order ?? (last?.[0]?.sort_order ?? -1) + 1,
+        created_by: req.userEmail,
+      })
+      .select(FAQ_COLUMNS)
+      .single()
+    if (error) {
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      throw error
+    }
+    invalidateContentCache()
+    res.status(201).json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'faq_create', target: data.id, details: data.question })
+    recordContentHistory('faqs', data.id, 'create', data, req.userEmail)
+  } catch (err) {
+    logger.error({ err }, 'FAQ create error')
+    res.status(500).json({ error: 'Failed to create FAQ' })
+  }
+})
+
+// PATCH /api/admin/faqs/:id
+router.patch('/faqs/:id', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const { data: before } = await supabaseAdmin.from('site_faqs').select(FAQ_COLUMNS).eq('id', req.params.id).single()
+    if (!before || before.archived_at) return res.status(404).json({ error: 'FAQ not found' })
+    const clean = sanitizeFaq(req.body)
+    if (!clean.ok) return res.status(400).json({ error: clean.error })
+    const { data, error } = await supabaseAdmin
+      .from('site_faqs')
+      .update({ ...clean.values, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select(FAQ_COLUMNS)
+      .single()
+    if (error) throw error
+    invalidateContentCache()
+    res.json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'faq_update', target: req.params.id, details: `changed: ${Object.keys(clean.values).join(', ')}` })
+    recordContentHistory('faqs', req.params.id, 'update', data, req.userEmail)
+  } catch (err) {
+    logger.error({ err }, 'FAQ update error')
+    res.status(500).json({ error: 'Failed to update FAQ' })
+  }
+})
+
+// DELETE /api/admin/faqs/:id - soft archive
+router.delete('/faqs/:id', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const { data: before } = await supabaseAdmin.from('site_faqs').select(FAQ_COLUMNS).eq('id', req.params.id).single()
+    if (!before) return res.status(404).json({ error: 'FAQ not found' })
+    const { error } = await supabaseAdmin
+      .from('site_faqs')
+      .update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+    if (error) throw error
+    invalidateContentCache()
+    res.json({ success: true })
+    logAudit({ adminEmail: req.userEmail, action: 'faq_archive', target: req.params.id, details: before.question })
+    recordContentHistory('faqs', req.params.id, 'archive', before, req.userEmail)
+  } catch (err) {
+    logger.error({ err }, 'FAQ archive error')
+    res.status(500).json({ error: 'Failed to archive FAQ' })
+  }
+})
+
+// POST /api/admin/faqs/:id/restore
+router.post('/faqs/:id/restore', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('site_faqs')
+      .update({ archived_at: null, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select(FAQ_COLUMNS)
+      .single()
+    if (error) {
+      if (isNoRowError(error)) return res.status(404).json({ error: 'FAQ not found' })
+      throw error
+    }
+    invalidateContentCache()
+    res.json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'faq_restore', target: data.id, details: data.question })
+    recordContentHistory('faqs', data.id, 'restore', data, req.userEmail)
+  } catch (err) {
+    logger.error({ err }, 'FAQ restore error')
+    res.status(500).json({ error: 'Failed to restore FAQ' })
+  }
+})
+
+// POST /api/admin/faqs/reorder - body { ids: [...] }
+router.post('/faqs/reorder', requireAdmin, async (req, res) => {
+  try {
+    const { ids } = req.body ?? {}
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'Provide a non-empty ids list' })
+    if (ids.length > 500) return res.status(400).json({ error: 'Too many ids' })
+    if (ids.some((id) => !isUuid(id))) return res.status(400).json({ error: 'ids must be uuids' })
+    for (let i = 0; i < ids.length; i++) {
+      const { error } = await supabaseAdmin
+        .from('site_faqs')
+        .update({ sort_order: i, updated_at: new Date().toISOString() })
+        .eq('id', ids[i])
+      if (error) throw error
+    }
+    invalidateContentCache()
+    res.json({ success: true, count: ids.length })
+    logAudit({ adminEmail: req.userEmail, action: 'faq_reorder', target: 'site_faqs', details: `${ids.length} FAQs reordered` })
+    recordContentHistory('faqs', 'site_faqs', 'reorder', { ids }, req.userEmail)
+  } catch (err) {
+    logger.error({ err }, 'FAQ reorder error')
+    res.status(500).json({ error: 'Failed to reorder FAQs' })
+  }
+})
+
+// GET /api/admin/policies?archived=true
+router.get('/policies', requireAdmin, async (req, res) => {
+  try {
+    let query = supabaseAdmin.from('site_policies').select(POLICY_COLUMNS, { count: 'exact' })
+    if (String(req.query.archived) === 'true') query = query.not('archived_at', 'is', null)
+    else query = query.is('archived_at', null)
+    const { data, error, count } = await query.order('slug')
+    if (error) {
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      throw error
+    }
+    res.json({ items: data || [], total: count ?? 0 })
+  } catch (err) {
+    logger.error({ err }, 'Policy list error')
+    res.status(500).json({ error: 'Failed to load policies' })
+  }
+})
+
+// POST /api/admin/policies
+router.post('/policies', requireAdmin, async (req, res) => {
+  try {
+    const clean = sanitizePolicy(req.body)
+    if (!clean.ok) return res.status(400).json({ error: clean.error })
+    const { data, error } = await supabaseAdmin
+      .from('site_policies')
+      .insert({ ...clean.values, created_by: req.userEmail })
+      .select(POLICY_COLUMNS)
+      .single()
+    if (error) {
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      if (error.code === '23505') return res.status(409).json({ error: 'A policy with that slug already exists' })
+      throw error
+    }
+    invalidateContentCache()
+    res.status(201).json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'policy_create', target: data.slug, details: data.title })
+    recordContentHistory('policies', data.id, 'create', data, req.userEmail)
+  } catch (err) {
+    logger.error({ err }, 'Policy create error')
+    res.status(500).json({ error: 'Failed to create policy' })
+  }
+})
+
+// PATCH /api/admin/policies/:id
+router.patch('/policies/:id', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const { data: before } = await supabaseAdmin.from('site_policies').select(POLICY_COLUMNS).eq('id', req.params.id).single()
+    if (!before || before.archived_at) return res.status(404).json({ error: 'Policy not found' })
+    const clean = sanitizePolicy({ ...req.body, slug: req.body?.slug ?? before.slug })
+    if (!clean.ok) return res.status(400).json({ error: clean.error })
+    if (clean.values.slug !== before.slug) {
+      const { data: clash } = await supabaseAdmin.from('site_policies').select('id').eq('slug', clean.values.slug).maybeSingle()
+      if (clash) return res.status(409).json({ error: 'A policy with that slug already exists' })
+    }
+    const { data, error } = await supabaseAdmin
+      .from('site_policies')
+      .update({ ...clean.values, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select(POLICY_COLUMNS)
+      .single()
+    if (error) throw error
+    invalidateContentCache()
+    res.json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'policy_update', target: req.params.id, details: `changed: ${Object.keys(clean.values).join(', ')}` })
+    recordContentHistory('policies', req.params.id, 'update', data, req.userEmail)
+  } catch (err) {
+    logger.error({ err }, 'Policy update error')
+    res.status(500).json({ error: 'Failed to update policy' })
+  }
+})
+
+// DELETE /api/admin/policies/:id - soft archive
+router.delete('/policies/:id', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const { data: before } = await supabaseAdmin.from('site_policies').select(POLICY_COLUMNS).eq('id', req.params.id).single()
+    if (!before) return res.status(404).json({ error: 'Policy not found' })
+    const { error } = await supabaseAdmin
+      .from('site_policies')
+      .update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+    if (error) throw error
+    invalidateContentCache()
+    res.json({ success: true })
+    logAudit({ adminEmail: req.userEmail, action: 'policy_archive', target: req.params.id, details: `${before.slug} "${before.title}"` })
+    recordContentHistory('policies', req.params.id, 'archive', before, req.userEmail)
+  } catch (err) {
+    logger.error({ err }, 'Policy archive error')
+    res.status(500).json({ error: 'Failed to archive policy' })
+  }
+})
+
+// POST /api/admin/policies/:id/restore
+router.post('/policies/:id/restore', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('site_policies')
+      .update({ archived_at: null, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select(POLICY_COLUMNS)
+      .single()
+    if (error) {
+      if (isNoRowError(error)) return res.status(404).json({ error: 'Policy not found' })
+      throw error
+    }
+    invalidateContentCache()
+    res.json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'policy_restore', target: data.id, details: `${data.slug} "${data.title}"` })
+    recordContentHistory('policies', data.id, 'restore', data, req.userEmail)
+  } catch (err) {
+    logger.error({ err }, 'Policy restore error')
+    res.status(500).json({ error: 'Failed to restore policy' })
   }
 })
 

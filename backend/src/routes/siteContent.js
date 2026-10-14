@@ -4,6 +4,7 @@ import { contentLimiter, eventLimiter } from '../middleware/rateLimiter.js'
 import { isSchemaPendingError } from '../utils/pgErrors.js'
 import { isUuid } from '../utils/uuid.js'
 import { visibleSections, bannersFor, previewRows } from '../utils/siteContent.js'
+import { publicSettings } from '../utils/siteSettingsRules.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -39,6 +40,8 @@ const NAV_FIELDS = ['id', 'section', 'label', 'href', 'image_url', 'alt_text', '
 // sanitized promo fields for storefront display - the code and usage counts
 // never leave the server; shoppers see the discount, not how to type it
 const PROMO_FIELDS = ['type', 'value', 'scope', 'target_id', 'min_subtotal', 'max_discount', 'starts_at', 'ends_at']
+const FAQ_FIELDS = ['id', 'question', 'answer', 'sort_order']
+const POLICY_FIELDS = ['id', 'slug', 'title', 'body']
 
 function navGroup(rows, section) {
   return rows
@@ -48,7 +51,7 @@ function navGroup(rows, section) {
 }
 
 async function loadContent({ preview = false } = {}) {
-  const [bannersRes, sectionsRes, navRes, promosRes, catsRes] = await Promise.all([
+  const [bannersRes, sectionsRes, navRes, promosRes, catsRes, settingsRes, faqsRes, policiesRes] = await Promise.all([
     supabaseAdmin.from('site_banners').select('*').is('archived_at', null),
     supabaseAdmin.from('site_home_sections').select('*').is('archived_at', null),
     supabaseAdmin.from('site_nav_items').select('*').is('archived_at', null),
@@ -61,12 +64,24 @@ async function loadContent({ preview = false } = {}) {
     // category overrides ship in full (hidden rows included) - the storefront
     // needs the hidden names to drop them from its own derived list
     supabaseAdmin.from('site_categories').select('name, label, sort_order, is_visible'),
+    // Phase 6 tables: like promos, a database without them still serves
+    // content; the storefront just falls back to built-in settings/FAQs
+    supabaseAdmin.from('site_settings').select('data').eq('id', 1).maybeSingle(),
+    supabaseAdmin.from('site_faqs').select('*').is('archived_at', null),
+    supabaseAdmin.from('site_policies').select('*').is('archived_at', null),
   ])
   const schemaError = bannersRes.error || sectionsRes.error || navRes.error || catsRes.error
   if (schemaError) throw schemaError
   // a database without the Phase 4 promos table still serves content; the
   // storefront just has nothing to put on sale
   const promoRows = promosRes.error ? [] : promosRes.data || []
+  const settings = publicSettings(settingsRes.error ? {} : settingsRes.data?.data || {})
+  const visibleList = (res) =>
+    (res.error ? [] : res.data || [])
+      .filter((r) => r.is_visible !== false)
+      .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
+  const faqRows = visibleList(faqsRes)
+  const policyRows = visibleList(policiesRes)
 
   const now = new Date()
   const navRows = navRes.data || []
@@ -92,6 +107,9 @@ async function loadContent({ preview = false } = {}) {
     announcement: bannerPick('announcement_bar').map((b) => pick(b, BANNER_FIELDS)),
     sections: sectionPick().map((s) => pick(s, sectionFields)),
     promos: promoRows.map((p) => pick(p, PROMO_FIELDS)),
+    settings,
+    faqs: faqRows.map((f) => pick(f, FAQ_FIELDS)),
+    policies: policyRows.map((p) => pick(p, POLICY_FIELDS)),
     categories: (catsRes.data || []).map((c) => pick(c, ['name', 'label', 'sort_order', 'is_visible'])),
     nav: {
       navbar: navGroup(navRows, 'navbar'),

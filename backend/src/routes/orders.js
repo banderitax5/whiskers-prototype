@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { authMiddleware } from '../middleware/auth.js'
 import { orderLimiter } from '../middleware/rateLimiter.js'
 import { supabaseAdmin } from '../config/supabase.js'
-import { SHIPPING_FEE_PHP } from '../utils/shopRules.js'
+import { getShippingRules } from '../utils/shopSettings.js'
 import { isSchemaPendingError } from '../utils/pgErrors.js'
 import { validatePromo, buildDiscountAmounts, pickBestPromo } from '../utils/promoEngine.js'
 import logger from '../utils/logger.js'
@@ -34,7 +34,9 @@ router.post('/', orderLimiter, async (req, res) => {
     return res.status(400).json({ error: 'paymentMethod is required' })
   }
 
-  const shipping = SHIPPING_FEE_PHP
+  // owner-editable shipping (site settings), falling back to the built-in
+  // flat fee; the threshold waives the fee once the priced subtotal reaches it
+  let { fee: shipping, freeThreshold: freeShippingThreshold } = await getShippingRules()
 
   try {
     const productIds = items.map(i => i.productId).filter(Boolean)
@@ -97,6 +99,16 @@ router.post('/', orderLimiter, async (req, res) => {
         subtotal,
         unitCost: costByProduct.get(item.productId) ?? null,
       })
+    }
+
+    // free-shipping threshold: waive the fee already folded into totalAmount
+    // once the priced items subtotal reaches the owner's setting (null = off)
+    if (freeShippingThreshold !== null && Number.isFinite(freeShippingThreshold)) {
+      const itemsSubtotal = validatedItems.reduce((sum, i) => sum + i.subtotal, 0)
+      if (itemsSubtotal >= freeShippingThreshold) {
+        totalAmount -= shipping
+        shipping = 0
+      }
     }
 
     let promoResult = null
