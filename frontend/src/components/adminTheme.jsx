@@ -371,6 +371,10 @@ export function EmptyState({ icon, title, message, action }) {
 
 export const btnPrimary = `${ACCENT} px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-[10px] sm:text-xs font-black uppercase tracking-widest transition`;
 
+// secondary/quiet action next to btnPrimary (History, Restore defaults,
+// Preview storefront, Discard) - kept here so every admin page uses one style
+export const btnGhost = 'px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-[10px] sm:text-xs font-black uppercase tracking-widest border border-gray-300 dark:border-[#1e3a5f] text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#162d4a] transition whitespace-nowrap';
+
 export function StatusPill({ kind = 'neutral', children }) {
   const map = {
     success: 'bg-green-100 text-green-800 border border-green-300 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700',

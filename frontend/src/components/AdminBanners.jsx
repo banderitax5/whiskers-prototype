@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
 import supabase from "../lib/supabase"
 import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from "../lib/api.js"
-import { AdminPage, StatusPill, EmptyState, btnPrimary, ConfirmDialog } from "./adminTheme.jsx"
+import { AdminPage, StatusPill, EmptyState, btnPrimary, btnGhost, ConfirmDialog } from "./adminTheme.jsx"
 import ImagePicker from "./ImagePicker.jsx"
 import ProductPicker from "./ProductPicker.jsx"
+import ContentHistoryDialog from "./ContentHistoryDialog.jsx"
 
 const PLACEMENTS = [
   { id: "home_hero", label: "Hero carousel", hint: "Big slides at the top of the home page." },
@@ -412,6 +413,8 @@ function AdminBanners() {
   const [error, setError] = useState("")
   const [dialog, setDialog] = useState(null)
   const [confirm, setConfirm] = useState(null)
+  const [confirmRestore, setConfirmRestore] = useState(false)
+  const [history, setHistory] = useState(false)
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState("")
 
@@ -478,6 +481,22 @@ function AdminBanners() {
     } catch (err) { setToast(err.message) } finally { setBusy(false) }
   }
 
+  async function handleRestoreDefaults() {
+    setBusy(true)
+    try {
+      const token = await sessionToken()
+      const res = await apiPostAuth("/admin/content/restore-defaults", { scope: placement }, token)
+      setConfirmRestore(false)
+      setToast(`Restored ${res.restored} default slide${res.restored === 1 ? "" : "s"} (${res.archived} previous archived)`)
+      await load()
+    } catch (err) { setConfirmRestore(false); setToast(err.message) } finally { setBusy(false) }
+  }
+
+  // only the hero carousel and brand strip had built-in defaults at launch;
+  // the other placements started empty, so "restore defaults" would just
+  // archive the owner's rows with nothing to put back
+  const hasDefaults = ["home_hero", "brand_strip"].includes(placement)
+
   return (
     <AdminPage title="Banners & Carousel" subtitle="Slides, strips and bars across the storefront. New banners start as drafts.">
       <div className="mb-4 flex flex-col gap-3">
@@ -497,7 +516,14 @@ function AdminBanners() {
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-gray-500 dark:text-slate-400">{placementMeta?.hint}</p>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button type="button" onClick={() => window.open("/?scPreview=1", "_blank")} className={btnGhost}>Preview storefront</button>
+            <button type="button" onClick={() => setHistory(true)} className={btnGhost}>History</button>
+            {hasDefaults && (
+              <button type="button" onClick={() => setConfirmRestore(true)} disabled={busy} className={`${btnGhost} border-amber-300 text-amber-700 dark:border-amber-600 dark:text-amber-300 disabled:opacity-50`}>
+                Restore default slides
+              </button>
+            )}
             <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 dark:text-slate-300">
               <input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} className="rounded border-gray-300" />
               Show archived
@@ -577,6 +603,19 @@ function AdminBanners() {
           onCancel={() => setConfirm(null)}
         />
       )}
+      {confirmRestore && (
+        <ConfirmDialog
+          open
+          danger
+          busy={busy}
+          title="Restore default slides?"
+          message={`Archives every current ${placementMeta?.label.toLowerCase()} banner and puts the built-in defaults back. Your banners stay restorable from Show archived.`}
+          confirmLabel="Restore defaults"
+          onConfirm={handleRestoreDefaults}
+          onCancel={() => setConfirmRestore(false)}
+        />
+      )}
+      {history && <ContentHistoryDialog entity="banners" onClose={() => setHistory(false)} />}
     </AdminPage>
   )
 }

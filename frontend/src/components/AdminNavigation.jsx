@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from "react"
 import supabase from "../lib/supabase"
 import { apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from "../lib/api.js"
-import { AdminPage, StatusPill, EmptyState, btnPrimary, ConfirmDialog } from "./adminTheme.jsx"
+import { AdminPage, StatusPill, EmptyState, btnPrimary, btnGhost, ConfirmDialog } from "./adminTheme.jsx"
 import ImagePicker from "./ImagePicker.jsx"
+import ContentHistoryDialog from "./ContentHistoryDialog.jsx"
 
 // One page for everything the owner can edit about category links and
 // footer/menu links. The four link groups mirror site_nav_items.section;
@@ -138,6 +139,8 @@ function AdminNavigation() {
   const [error, setError] = useState("")
   const [dialog, setDialog] = useState(null)
   const [confirm, setConfirm] = useState(null)
+  const [confirmRestore, setConfirmRestore] = useState(false)
+  const [history, setHistory] = useState(false)
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState("")
 
@@ -234,6 +237,17 @@ function AdminNavigation() {
     } catch (err) { setToast(err.message) } finally { setBusy(false) }
   }
 
+  async function handleRestoreDefaults() {
+    setBusy(true)
+    try {
+      const token = await sessionToken()
+      const res = await apiPostAuth("/admin/content/restore-defaults", { scope: tab }, token)
+      setConfirmRestore(false)
+      setToast(`Restored ${res.restored} default link${res.restored === 1 ? "" : "s"} (${res.archived} previous archived)`)
+      await loadLinks(tab, archived)
+    } catch (err) { setConfirmRestore(false); setToast(err.message) } finally { setBusy(false) }
+  }
+
   function moveCat(index, dir) {
     setCatRows((rows) => {
       const next = [...rows]
@@ -295,7 +309,9 @@ function AdminNavigation() {
             <p className="text-xs font-semibold text-gray-500 dark:text-slate-400">
               {catRows ? `${catRows.length} categories from your active products` : "Loading categories..."}
             </p>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => window.open("/?scPreview=1", "_blank")} className={btnGhost}>Preview storefront</button>
+              <button type="button" onClick={() => setHistory(true)} className={btnGhost}>History</button>
               {catDirty && (
                 <button type="button" disabled={catSaving} onClick={() => { setCatRows(JSON.parse(catOriginal)); setCatError("") }} className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-60">
                   Discard changes
@@ -361,7 +377,14 @@ function AdminNavigation() {
               <input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} className="rounded border-gray-300" />
               Show archived
             </label>
-            <button type="button" onClick={() => setDialog({ mode: "create" })} className={`${btnPrimary} whitespace-nowrap`}>New link</button>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => window.open("/?scPreview=1", "_blank")} className={btnGhost}>Preview storefront</button>
+              <button type="button" onClick={() => setHistory(true)} className={btnGhost}>History</button>
+              <button type="button" onClick={() => setConfirmRestore(true)} disabled={busy} className={`${btnGhost} border-amber-300 text-amber-700 dark:border-amber-600 dark:text-amber-300 disabled:opacity-50`}>
+                Restore default links
+              </button>
+              <button type="button" onClick={() => setDialog({ mode: "create" })} className={`${btnPrimary} whitespace-nowrap`}>New link</button>
+            </div>
           </div>
 
           {error && (
@@ -421,6 +444,24 @@ function AdminNavigation() {
           confirmLabel="Archive"
           onConfirm={handleArchive}
           onCancel={() => setConfirm(null)}
+        />
+      )}
+      {confirmRestore && (
+        <ConfirmDialog
+          open
+          danger
+          busy={busy}
+          title="Restore default links?"
+          message={`Archives every current link in "${activeTab?.label}" and puts the built-in defaults back. Your links stay restorable from Show archived.`}
+          confirmLabel="Restore defaults"
+          onConfirm={handleRestoreDefaults}
+          onCancel={() => setConfirmRestore(false)}
+        />
+      )}
+      {history && (
+        <ContentHistoryDialog
+          entity={isCats ? "categories" : "nav_items"}
+          onClose={() => setHistory(false)}
         />
       )}
     </AdminPage>

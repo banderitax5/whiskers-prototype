@@ -1,6 +1,17 @@
 // @vitest-environment jsdom
 import { describe, test, expect, beforeEach, vi, afterEach } from 'vitest'
-import { fetchSiteContent, resetSiteContentCache, applyCategoryOverrides } from './siteContent'
+import {
+  fetchSiteContent,
+  resetSiteContentCache,
+  applyCategoryOverrides,
+  consumePreviewParam,
+  isPreviewMode,
+  exitPreview,
+} from './siteContent'
+
+vi.mock('./supabase', () => ({
+  default: { auth: { getSession: async () => ({ data: { session: { access_token: 'test-token' } } }) } },
+}))
 
 const payload = { seeded: true, banners: [], announcement: [], promo_strip: [], category_top: [], sections: [], nav: {}, promos: [], categories: [] }
 
@@ -75,5 +86,62 @@ describe('applyCategoryOverrides', () => {
 
   test('handles a missing base list gracefully', () => {
     expect(applyCategoryOverrides(undefined, [])).toEqual([])
+  })
+})
+
+describe('preview mode (5g)', () => {
+  beforeEach(() => {
+    resetSiteContentCache()
+    exitPreview()
+    sessionStorage.clear()
+    window.history.replaceState({}, '', '/')
+    globalThis.fetch = vi.fn(async (url) => ({
+      ok: true,
+      json: async () => (String(url).includes('preview=1') ? { ...payload, preview: true } : payload),
+    }))
+  })
+  afterEach(() => {
+    vi.clearAllMocks()
+    exitPreview()
+    sessionStorage.clear()
+    window.history.replaceState({}, '', '/')
+  })
+
+  test('?scPreview=1 arms preview for the tab and is stripped from the URL', () => {
+    window.history.replaceState({}, '', '/?scPreview=1&utm_source=x')
+    expect(consumePreviewParam()).toBe(true)
+    expect(isPreviewMode()).toBe(true)
+    expect(window.location.search).toBe('?utm_source=x')
+    expect(Number(sessionStorage.getItem('scPreviewUntil'))).toBeGreaterThan(Date.now())
+  })
+
+  test('expired flag is ignored', () => {
+    sessionStorage.setItem('scPreviewUntil', String(Date.now() - 1000))
+    expect(consumePreviewParam()).toBe(false)
+    expect(isPreviewMode()).toBe(false)
+  })
+
+  test('preview fetch sends the token and ?preview=1', async () => {
+    window.history.replaceState({}, '', '/?scPreview=1')
+    consumePreviewParam()
+    const data = await fetchSiteContent()
+    expect(data.preview).toBe(true)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    const [url, opts] = fetch.mock.calls[0]
+    expect(url).toContain('site-content?preview=1')
+    expect(opts.headers.Authorization).toBe('Bearer test-token')
+  })
+
+  test('exit preview returns to the public payload with no auth header', async () => {
+    window.history.replaceState({}, '', '/?scPreview=1')
+    consumePreviewParam()
+    await fetchSiteContent()
+    exitPreview()
+    expect(isPreviewMode()).toBe(false)
+    const data = await fetchSiteContent()
+    expect(data).toBe(payload)
+    const [url, opts] = fetch.mock.calls[1]
+    expect(url).not.toContain('preview=1')
+    expect(opts.headers.Authorization).toBeUndefined()
   })
 })

@@ -12,6 +12,8 @@ import {
   contentSections,
   resolveRowProducts,
   trackBannerEvent,
+  isPreviewMode,
+  exitPreview,
 } from '../lib/siteContent.js'
 import { contentPromos, saleFor } from '../lib/promoDisplay.js'
 
@@ -247,6 +249,20 @@ function Home() {
 
   return (
     <div className={SHELL}>
+      {isPreviewMode() && (
+        <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-300 bg-blue-50 px-4 py-2 dark:border-blue-700 dark:bg-blue-950/40">
+          <p className="text-xs sm:text-sm font-semibold text-blue-900 dark:text-blue-200">
+            Preview mode - draft and scheduled content is visible. Shoppers still see the published site.
+          </p>
+          <button
+            type="button"
+            onClick={() => { exitPreview(); window.location.reload() }}
+            className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border border-blue-400 text-blue-800 dark:border-blue-600 dark:text-blue-200 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition"
+          >
+            Exit preview
+          </button>
+        </div>
+      )}
       {heroSlides.length > 0 && (
       <section className="pt-2">
         <div

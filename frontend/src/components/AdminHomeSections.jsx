@@ -1,8 +1,9 @@
 ﻿import React, { useCallback, useEffect, useState } from "react"
 import supabase from "../lib/supabase"
 import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from "../lib/api.js"
-import { AdminPage, StatusPill, EmptyState, btnPrimary, ConfirmDialog } from "./adminTheme.jsx"
+import { AdminPage, StatusPill, EmptyState, btnPrimary, btnGhost, ConfirmDialog } from "./adminTheme.jsx"
 import ProductPicker from "./ProductPicker.jsx"
+import ContentHistoryDialog from "./ContentHistoryDialog.jsx"
 
 // Label registry for section cards. Only types with renders:true are offered
 // in the create dialog; the home page currently renders product_row only.
@@ -242,6 +243,8 @@ function AdminHomeSections() {
   const [error, setError] = useState("")
   const [dialog, setDialog] = useState(null)
   const [confirm, setConfirm] = useState(null)
+  const [confirmRestore, setConfirmRestore] = useState(false)
+  const [history, setHistory] = useState(false)
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState("")
 
@@ -305,14 +308,32 @@ function AdminHomeSections() {
     } catch (err) { setToast(err.message) } finally { setBusy(false) }
   }
 
+  async function handleRestoreDefaults() {
+    setBusy(true)
+    try {
+      const token = await sessionToken()
+      const res = await apiPostAuth("/admin/content/restore-defaults", { scope: "home_sections" }, token)
+      setConfirmRestore(false)
+      setToast(`Restored ${res.restored} default row${res.restored === 1 ? "" : "s"} (${res.archived} previous archived)`)
+      await load()
+    } catch (err) { setConfirmRestore(false); setToast(err.message) } finally { setBusy(false) }
+  }
+
   return (
     <AdminPage title="Home Sections" subtitle="Product rows on the home page, in order. The hero, brand tiles, promo strip and announcement are managed under Banners. New rows start as drafts.">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 dark:text-slate-300">
-          <input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} className="rounded border-gray-300" />
-          Show archived
-        </label>
-        <button type="button" onClick={() => setDialog({ mode: "create" })} className={`${btnPrimary} whitespace-nowrap`}>New section</button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => window.open("/?scPreview=1", "_blank")} className={btnGhost}>Preview storefront</button>
+          <button type="button" onClick={() => setHistory(true)} className={btnGhost}>History</button>
+          <button type="button" onClick={() => setConfirmRestore(true)} disabled={busy} className={`${btnGhost} border-amber-300 text-amber-700 dark:border-amber-600 dark:text-amber-300 disabled:opacity-50`}>
+            Restore default rows
+          </button>
+          <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 dark:text-slate-300">
+            <input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} className="rounded border-gray-300" />
+            Show archived
+          </label>
+          <button type="button" onClick={() => setDialog({ mode: "create" })} className={`${btnPrimary} whitespace-nowrap`}>New section</button>
+        </div>
       </div>
 
       {toast && <div role="status" className="mb-4 rounded-lg border border-[#F28C28]/40 bg-[#F28C28]/10 px-4 py-2 text-sm font-semibold text-[#a35b0c] dark:text-[#F9B671]">{toast}</div>}
@@ -372,6 +393,19 @@ function AdminHomeSections() {
           onCancel={() => setConfirm(null)}
         />
       )}
+      {confirmRestore && (
+        <ConfirmDialog
+          open
+          danger
+          busy={busy}
+          title="Restore default rows?"
+          message="Archives every home row and puts the six built-in draft placeholders back. Your rows stay restorable from Show archived, and nothing is deleted."
+          confirmLabel="Restore defaults"
+          onConfirm={handleRestoreDefaults}
+          onCancel={() => setConfirmRestore(false)}
+        />
+      )}
+      {history && <ContentHistoryDialog entity="sections" onClose={() => setHistory(false)} />}
     </AdminPage>
   )
 }

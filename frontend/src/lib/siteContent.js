@@ -2,17 +2,112 @@
 // load. When the endpoint is unreachable or not seeded yet, every getter
 // returns null so each component keeps using its built-in defaults and the
 // site never loses content.
+//
+// Preview mode (Phase 5g): an admin clicks "Preview storefront", which opens
+// the site with ?scPreview=1. That param arms a 10-minute preview flag in
+// sessionStorage; every fetch then goes out with the admin's own session
+// token and ?preview=1 so drafts and scheduled-out rows are served. The flag
+// dies with the tab (or on Exit preview), and shoppers without it always get
+// the public payload - the backend ignores preview for anyone but admins.
+//
+// The supabase client is imported lazily (only when a preview fetch needs a
+// token) so this module stays importable in non-browser test environments
+// that only use the pure helpers.
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
+const PREVIEW_FLAG = 'scPreviewUntil'
+const PREVIEW_TTL_MS = 10 * 60 * 1000
+
 let cache = null
 let inflight = null
+let previewActive = false
+let previewCache = null
+let previewInflight = null
+
+// Runs once when this module loads (before any component fetches) so the
+// flag is armed before the first request, even when several components race
+// to call fetchSiteContent on mount. Exported for tests and re-arming.
+export function consumePreviewParam() {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('scPreview') === '1') {
+      sessionStorage.setItem(PREVIEW_FLAG, String(Date.now() + PREVIEW_TTL_MS))
+      params.delete('scPreview')
+      const qs = params.toString()
+      window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash)
+    }
+    const until = Number(sessionStorage.getItem(PREVIEW_FLAG) || 0)
+    previewActive = Date.now() < until
+    if (!previewActive) {
+      previewCache = null
+      previewInflight = null
+    }
+  } catch {
+    previewActive = false
+  }
+  return previewActive
+}
+
+consumePreviewParam()
+
+export function isPreviewMode() {
+  return previewActive
+}
+
+export function exitPreview() {
+  try {
+    sessionStorage.removeItem(PREVIEW_FLAG)
+  } catch {
+    /* private mode: flag just dies with the tab */
+  }
+  previewActive = false
+  previewCache = null
+  previewInflight = null
+}
+
+async function previewToken() {
+  try {
+    const { default: supabase } = await import('./supabase')
+    const { data } = await supabase.auth.getSession()
+    return data?.session?.access_token || null
+  } catch {
+    return null
+  }
+}
 
 // force=true drops any cached snapshot first - used by components that
 // remount on navigation (home, nav links) so an admin edit shows up on the
 // next visit instead of only after a hard refresh. Concurrent callers still
-// share one in-flight request.
+// share one in-flight request. Preview responses are cached separately so a
+// draft payload can never be served to a public request.
 export async function fetchSiteContent(force = false) {
+  if (previewActive) {
+    if (force) previewCache = null
+    if (previewCache) return previewCache
+    if (previewInflight) return previewInflight
+    const token = await previewToken()
+    if (!token) {
+      // session expired mid-preview: fall through to the public payload
+      // rather than showing built-in fallbacks
+      previewActive = false
+    } else {
+      previewInflight = fetch(`${API_BASE}/site-content?preview=1`, {
+        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          previewCache = data && data.seeded ? data : null
+          previewInflight = null
+          return previewCache
+        })
+        .catch(() => {
+          previewInflight = null
+          return null
+        })
+      return previewInflight
+    }
+  }
   if (force) cache = null
   if (cache) return cache
   if (inflight) return inflight
@@ -33,6 +128,8 @@ export async function fetchSiteContent(force = false) {
 export function resetSiteContentCache() {
   cache = null
   inflight = null
+  previewCache = null
+  previewInflight = null
 }
 
 // returns the published banners for a placement, or null when unavailable
