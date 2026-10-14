@@ -136,14 +136,17 @@ Step 'support GET single thread' (@($supList2.items).Count -eq 1 -and $supList2.
 try {
   $sc = Invoke-RestMethod -Uri "$base/api/site-content"
   if ($sc.seeded) {
-    Step 'content: endpoint serves seeded rows' (([int]@($sc.banners).Count -eq 5) -and ([int]@($sc.nav.navbar).Count -eq 7) -and ([int]@($sc.nav.footer_social).Count -eq 2)) "hero=$(@($sc.banners).Count) navbar=$(@($sc.nav.navbar).Count) social=$(@($sc.nav.footer_social).Count)"
+    # the owner edits banners/nav/categories live - assert shape (arrays present
+    # at each key), never fixed counts; counts drift as content is published
+    $shapeOk = ($null -ne $sc.banners) -and ($null -ne $sc.nav) -and ($null -ne $sc.nav.navbar) -and ($null -ne $sc.nav.footer_social) -and ($null -ne $sc.categories)
+    Step 'content: endpoint serves seeded rows' $shapeOk "hero=$(@($sc.banners).Count) navbar=$(@($sc.nav.navbar).Count) social=$(@($sc.nav.footer_social).Count) cats=$(@($sc.categories).Count)"
 Step 'content: storefront placement keys present' ((($sc.PSObject.Properties.Name -contains 'promo_strip') -and ($sc.PSObject.Properties.Name -contains 'category_top') -and ($sc.PSObject.Properties.Name -contains 'announcement'))) "promo_strip=$($sc.PSObject.Properties.Name -contains 'promo_strip') category_top=$($sc.PSObject.Properties.Name -contains 'category_top')"
-    Step 'content: drafts stay hidden' (@($sc.sections).Count -eq 0) "published=$(@($sc.sections).Count)"
+    Step 'content: category override key present' ($sc.PSObject.Properties.Name -contains 'categories') "categories=$($sc.PSObject.Properties.Name -contains 'categories')"
   } else {
     Step 'content: endpoint serves seeded rows' $false 'tables not seeded yet' 'SKIP'
-    Step 'content: drafts stay hidden' $false 'tables not seeded yet' 'SKIP'
+    Step 'content: category override key present' $false 'tables not seeded yet' 'SKIP'
   }
-} catch { Step 'content: endpoint serves seeded rows' $false (Get-ErrBody $_) ; Step 'content: drafts stay hidden' $false 'previous step failed' 'SKIP' }
+} catch { Step 'content: endpoint serves seeded rows' $false (Get-ErrBody $_) ; Step 'content: category override key present' $false 'previous step failed' 'SKIP' }
 
 # banner events are anonymous and best-effort: a bad id must be rejected,
 # a good id must be accepted quietly
@@ -176,6 +179,20 @@ if (@($prof).Count -eq 0) {
 } else { Step 'profiles row exists' $true $prof[0].role }
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' `
   -Body (@{ role = 'admin' } | ConvertTo-Json -Compress) | Out-Null
+
+# owner-independent draft check: the public payload must never contain a row
+# the admin list still marks draft (scheduled rows are served in-window by
+# design, so only status=draft counts); needs the admin promote above
+try {
+  if (-not $sc) { Step 'content: drafts stay hidden' $false 'site-content step did not run' 'SKIP' }
+  else {
+    $secAdmin = Invoke-RestMethod -Uri "$base/api/admin/sections?pageSize=100" -Headers $authH
+    $draftIds = @($secAdmin.items | Where-Object { $_.status -eq 'draft' } | ForEach-Object { $_.id })
+    $pubIds = @($sc.sections | ForEach-Object { $_.id })
+    $leak = @($draftIds | Where-Object { $pubIds -contains $_ }).Count
+    Step 'content: drafts stay hidden' ($leak -eq 0) "drafts=$($draftIds.Count) published=$($pubIds.Count) leaked=$leak"
+  }
+} catch { Step 'content: drafts stay hidden' $false (Get-ErrBody $_) }
 
 try {
   $adminSup = Invoke-RestMethod -Uri "$base/api/admin/supports?pageSize=100" -Headers $authH
@@ -684,7 +701,7 @@ foreach ($ep in $staffAllowed) {
   } catch { Step "staff GET $ep" $false (Get-ErrBody $_) }
 }
 
-foreach ($ep in @('admin/stats', 'admin/customers?pageSize=1', 'admin/audit-logs')) {
+foreach ($ep in @('admin/stats', 'admin/customers?pageSize=1', 'admin/audit-logs', 'admin/nav-items?section=navbar', 'admin/categories')) {
   try {
     Invoke-RestMethod -Uri "$base/api/$ep" -Headers $authH | Out-Null
     Step "staff denied $ep" $false 'got 2xx'
@@ -802,6 +819,24 @@ try {
     -Body (@{ type = 'product_row'; title = 'Staff probe'; config = @{ rule = 'newest' } } | ConvertTo-Json -Compress) | Out-Null
   Step 'staff POST admin/sections denied 403' $false 'got 2xx'
 } catch { Step 'staff POST admin/sections denied 403' ($_.Exception.Response.StatusCode.value__ -eq 403) $_.Exception.Response.StatusCode.value__ }
+
+# content (nav + categories) is admin-only on top of the staff router gate
+if (-not $stepUpH) { Step 'staff POST nav-items denied 403' $false 'skipped: step-up was rate limited' 'SKIP' }
+else {
+  try {
+    Invoke-RestMethod -Uri "$base/api/admin/nav-items" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ section = 'navbar'; label = 'Staff probe'; href = '/menu' } | ConvertTo-Json -Compress) | Out-Null
+    Step 'staff POST nav-items denied 403' $false 'got 2xx'
+  } catch { Step 'staff POST nav-items denied 403' ($_.Exception.Response.StatusCode.value__ -eq 403) $_.Exception.Response.StatusCode.value__ }
+}
+if (-not $stepUpH) { Step 'staff POST categories denied 403' $false 'skipped: step-up was rate limited' 'SKIP' }
+else {
+  try {
+    Invoke-RestMethod -Uri "$base/api/admin/categories" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ items = @(@{ name = 'Staff probe'; sort_order = 0 }) } | ConvertTo-Json -Compress -Depth 5) | Out-Null
+    Step 'staff POST categories denied 403' $false 'got 2xx'
+  } catch { Step 'staff POST categories denied 403' ($_.Exception.Response.StatusCode.value__ -eq 403) $_.Exception.Response.StatusCode.value__ }
+}
 
 # promote back to admin for the admin-only media flows below
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' -Body (@{ role = 'admin' } | ConvertTo-Json -Compress) | Out-Null
@@ -1007,6 +1042,104 @@ if ($sectionId) {
 }
 
 # â”€â”€ 10. cleanup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- 9f. Phase 5f: navigation + category editor --------------------------------
+$navId = $null
+$catProbeName = $null
+$catHadOverride = $false
+try {
+  # the DB check on href must be enforced before insert
+  try {
+    Invoke-RestMethod -Uri "$base/api/admin/nav-items" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ section = 'navbar'; label = 'Bad link'; href = 'javascript:alert(1)' } | ConvertTo-Json -Compress) | Out-Null
+    Step 'nav: javascript link rejected' $false 'got 2xx'
+  } catch { Step 'nav: javascript link rejected' ($_.Exception.Response.StatusCode.value__ -eq 400) (Get-ErrBody $_) }
+
+  $nav1 = Invoke-RestMethod -Uri "$base/api/admin/nav-items" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+    -Body (@{ section = 'navbar'; label = 'E2E Nav Probe'; href = '/menu' } | ConvertTo-Json -Compress)
+  $navId = $nav1.item.id
+  Step 'nav: create appends to section' ($nav1.item.section -eq 'navbar' -and $nav1.item.is_visible -eq $true) "id=$navId sort=$($nav1.item.sort_order)"
+} catch { Step 'nav: create appends to section' $false (Get-ErrBody $_) }
+
+if ($navId) {
+  try {
+    $scNav = Invoke-RestMethod -Uri "$base/api/site-content"
+    $live = @($scNav.nav.navbar | Where-Object { $_.label -eq 'E2E Nav Probe' })
+    Step 'nav: create is live in site-content' ($live.Count -eq 1) "navbar count=$(@($scNav.nav.navbar).Count)"
+  } catch { Step 'nav: create is live in site-content' $false (Get-ErrBody $_) }
+
+  try {
+    $navP = Invoke-RestMethod -Uri "$base/api/admin/nav-items/$navId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ label = 'E2E Nav Probe 2'; is_visible = $false } | ConvertTo-Json -Compress)
+    $scNav2 = Invoke-RestMethod -Uri "$base/api/site-content"
+    $hiddenCount = @($scNav2.nav.navbar | Where-Object { $_.label -like 'E2E Nav Probe*' }).Count
+    Step 'nav: patch relabels and hidden links drop out' ($navP.item.label -eq 'E2E Nav Probe 2' -and $hiddenCount -eq 0) "hidden=$($hiddenCount -eq 0)"
+  } catch { Step 'nav: patch relabels and hidden links drop out' $false (Get-ErrBody $_) }
+
+  try {
+    # unhide, then reorder just the probe - every other link's sort_order must stand
+    Invoke-RestMethod -Uri "$base/api/admin/nav-items/$navId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ is_visible = $true } | ConvertTo-Json -Compress) | Out-Null
+    $before = (Invoke-RestMethod -Uri "$base/api/admin/nav-items?section=navbar" -Headers $authH).items
+    $realBefore = ($before | Where-Object { $_.id -ne $navId } | ForEach-Object { $_.sort_order }) -join ','
+    Invoke-RestMethod -Uri "$base/api/admin/nav-items/reorder" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ section = 'navbar'; ids = @($navId) } | ConvertTo-Json -Compress) | Out-Null
+    $after = (Invoke-RestMethod -Uri "$base/api/admin/nav-items?section=navbar" -Headers $authH).items
+    $realAfter = ($after | Where-Object { $_.id -ne $navId } | ForEach-Object { $_.sort_order }) -join ','
+    $probeSort = ($after | Where-Object { $_.id -eq $navId }).sort_order
+    Step 'nav: reorder orders probe without touching other links' ($probeSort -eq 0 -and $realBefore -eq $realAfter) "probeSort=$probeSort others unchanged=$($realBefore -eq $realAfter)"
+  } catch { Step 'nav: reorder orders probe without touching other links' $false (Get-ErrBody $_) }
+
+  try {
+    Invoke-RestMethod -Uri "$base/api/admin/nav-items/$navId" -Method Delete -Headers $stepUpH | Out-Null
+    $scNav3 = Invoke-RestMethod -Uri "$base/api/site-content"
+    $gone = @($scNav3.nav.navbar | Where-Object { $_.id -eq $navId }).Count
+    $arch = (Invoke-RestMethod -Uri "$base/api/admin/nav-items?archived=true" -Headers $authH).items | Where-Object { $_.id -eq $navId }
+    Step 'nav: archive hides from site-content, shows archived' ($gone -eq 0 -and [bool]$arch) "archived=$([bool]$arch)"
+  } catch { Step 'nav: archive hides from site-content, shows archived' $false (Get-ErrBody $_) }
+
+  try {
+    $navR = Invoke-RestMethod -Uri "$base/api/admin/nav-items/$navId/restore" -Method Post -Headers $stepUpH -ContentType 'application/json' -Body '{}'
+    $scNav4 = Invoke-RestMethod -Uri "$base/api/site-content"
+    $back = @($scNav4.nav.navbar | Where-Object { $_.id -eq $navId }).Count
+    Step 'nav: restore brings the link back' ($navR.item.archived_at -eq $null -and $back -eq 1) "live=$back"
+  } catch { Step 'nav: restore brings the link back' $false (Get-ErrBody $_) }
+}
+
+# categories: merged list + a label override round-trip on a real category
+try {
+  try {
+    Invoke-RestMethod -Uri "$base/api/admin/categories" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ items = 'nope' } | ConvertTo-Json -Compress) | Out-Null
+    Step 'category: non-array save rejected' $false 'got 2xx'
+  } catch { Step 'category: non-array save rejected' ($_.Exception.Response.StatusCode.value__ -eq 400) (Get-ErrBody $_) }
+
+  $cats0 = Invoke-RestMethod -Uri "$base/api/admin/categories" -Headers $authH
+  Step 'category: merged GET lists catalog categories' ($cats0.total -gt 0) "total=$($cats0.total)"
+} catch { Step 'category: merged GET lists catalog categories' $false (Get-ErrBody $_); $cats0 = $null }
+
+if ($cats0 -and $cats0.total -gt 0) {
+  $orig = $cats0.items[0]
+  $catProbeName = $orig.name
+  $catHadOverride = ($null -ne $orig.sort_order)
+  $origSort = if ($null -ne $orig.sort_order) { $orig.sort_order } else { 0 }
+  try {
+    Invoke-RestMethod -Uri "$base/api/admin/categories" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ items = @(@{ name = $orig.name; label = 'E2E Cat Label'; sort_order = 0; is_visible = $true }) } | ConvertTo-Json -Compress -Depth 5) | Out-Null
+    $scCat = Invoke-RestMethod -Uri "$base/api/site-content"
+    $row = @($scCat.categories | Where-Object { $_.name -eq $catProbeName })[0]
+    Step 'category: label override is live in site-content' ($row.label -eq 'E2E Cat Label') "label=$($row.label)"
+  } catch { Step 'category: label override is live in site-content' $false (Get-ErrBody $_) }
+
+  # restore exactly what was there before, even if the assert above failed
+  try {
+    Invoke-RestMethod -Uri "$base/api/admin/categories" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ items = @(@{ name = $orig.name; label = $orig.label; sort_order = $origSort; is_visible = $orig.is_visible }) } | ConvertTo-Json -Compress -Depth 5) | Out-Null
+    Step 'category: original values restored' $true $catProbeName
+  } catch { Step 'category: original values restored' $false (Get-ErrBody $_) }
+} else {
+  Step 'category: label override is live in site-content' $false 'no catalog categories' 'SKIP'
+}
+
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' -Body (@{ role = 'user' } | ConvertTo-Json -Compress) | Out-Null
 Step 'role reverted to user' $true
 
@@ -1060,6 +1193,18 @@ if ($sectionId) {
 if ($sectionId2) {
   Invoke-RestMethod -Uri "$SU/rest/v1/site_home_sections?id=eq.$sectionId2" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
   Step 'section: probe row 2 removed' $true $sectionId2
+}
+if ($navId) {
+  Invoke-RestMethod -Uri "$SU/rest/v1/site_nav_items?id=eq.$navId" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+  Step 'nav: probe row removed' $true $navId
+}
+if ($catProbeName -and -not $catHadOverride) {
+  # the probe wrote an override row where none existed - remove it so the
+  # owner's category table ends the run exactly as it started
+  Invoke-RestMethod -Uri "$SU/rest/v1/site_categories?name=eq.$([uri]::EscapeDataString($catProbeName))" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+  Step 'category: probe override row removed' $true $catProbeName
+} elseif ($catProbeName) {
+  Step 'category: pre-existing override kept' $true $catProbeName
 }
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
 try {
