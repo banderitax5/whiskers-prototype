@@ -18,6 +18,7 @@ import { isUuid } from '../utils/uuid.js'
 import { sanitizeAltText, mediaPageParams, buildUsageIndex } from '../utils/mediaRules.js'
 import { sanitizeBanner, PLACEMENTS } from '../utils/bannerRules.js'
 import { sanitizeSection } from '../utils/sectionRules.js'
+import { sanitizeNavItem, sanitizeCategoryBatch, NAV_SECTIONS } from '../utils/navRules.js'
 import { missingColumnOf, isSchemaPendingError } from '../utils/pgErrors.js'
 import { effectiveUnitPrice, lineMargin } from '../utils/orderCosting.js'
 import logger from '../utils/logger.js'
@@ -1746,7 +1747,228 @@ router.post('/sections/reorder', requireAdmin, async (req, res) => {
   }
 })
 
-// ── Promo CRUD (admin only) ────────────────────────────────────────────────────
+// ─── Navigation links + category editor (admin only) ─────────────────────────
+// Nav links: soft-archive + reorder, same shape as sections. Categories:
+// site_categories is an override layer (label / order / visibility) on top of
+// the catalog's distinct categories - see utils/navRules.js for the contract.
+
+const NAV_COLUMNS = 'id, section, label, href, image_url, alt_text, sort_order, is_visible, created_at, updated_at, archived_at'
+
+// GET /api/admin/nav-items?section=navbar&archived=true
+router.get('/nav-items', requireAdmin, async (req, res) => {
+  try {
+    if (req.query.section !== undefined && !NAV_SECTIONS.includes(String(req.query.section))) {
+      return res.status(400).json({ error: `Section must be one of: ${NAV_SECTIONS.join(', ')}` })
+    }
+    let query = supabaseAdmin.from('site_nav_items').select(NAV_COLUMNS, { count: 'exact' })
+    if (String(req.query.archived) === 'true') query = query.not('archived_at', 'is', null)
+    else query = query.is('archived_at', null)
+    if (req.query.section !== undefined) query = query.eq('section', String(req.query.section))
+    const { data, error, count } = await query.order('sort_order')
+    if (error) {
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      throw error
+    }
+    res.json({ items: data || [], total: count ?? 0 })
+  } catch (err) {
+    logger.error({ err }, 'Nav items list error')
+    res.status(500).json({ error: 'Failed to load navigation links' })
+  }
+})
+
+// POST /api/admin/nav-items
+router.post('/nav-items', requireAdmin, async (req, res) => {
+  try {
+    const clean = sanitizeNavItem(req.body)
+    if (!clean.ok) return res.status(400).json({ error: clean.error })
+    const { data: last } = await supabaseAdmin
+      .from('site_nav_items')
+      .select('sort_order')
+      .eq('section', clean.values.section)
+      .is('archived_at', null)
+      .order('sort_order', { ascending: false })
+      .limit(1)
+    const { data, error } = await supabaseAdmin
+      .from('site_nav_items')
+      .insert({ ...clean.values, sort_order: (last?.[0]?.sort_order ?? -1) + 1 })
+      .select(NAV_COLUMNS)
+      .single()
+    if (error) {
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      throw error
+    }
+    invalidateContentCache()
+    res.status(201).json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'nav_create', target: data.id, details: `${data.section} "${data.label}"` })
+  } catch (err) {
+    logger.error({ err }, 'Nav item create error')
+    res.status(500).json({ error: 'Failed to create navigation link' })
+  }
+})
+
+// PATCH /api/admin/nav-items/:id
+router.patch('/nav-items/:id', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const { data: before } = await supabaseAdmin.from('site_nav_items').select(NAV_COLUMNS).eq('id', req.params.id).single()
+    if (!before || before.archived_at) return res.status(404).json({ error: 'Link not found' })
+    const clean = sanitizeNavItem(req.body, { partial: true })
+    if (!clean.ok) return res.status(400).json({ error: clean.error })
+    const { data, error } = await supabaseAdmin
+      .from('site_nav_items')
+      .update({ ...clean.values, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select(NAV_COLUMNS)
+      .single()
+    if (error) throw error
+    invalidateContentCache()
+    res.json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'nav_update', target: req.params.id, details: `changed: ${Object.keys(clean.values).join(', ')}` })
+  } catch (err) {
+    logger.error({ err }, 'Nav item update error')
+    res.status(500).json({ error: 'Failed to update navigation link' })
+  }
+})
+
+// DELETE /api/admin/nav-items/:id - soft archive; the link stops rendering
+// immediately (site-content filters archived rows) and can be restored
+router.delete('/nav-items/:id', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const { data: before } = await supabaseAdmin.from('site_nav_items').select('id, section, label').eq('id', req.params.id).single()
+    if (!before) return res.status(404).json({ error: 'Link not found' })
+    const { error } = await supabaseAdmin
+      .from('site_nav_items')
+      .update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+    if (error) throw error
+    invalidateContentCache()
+    res.json({ success: true })
+    logAudit({ adminEmail: req.userEmail, action: 'nav_archive', target: req.params.id, details: `${before.section} "${before.label}"` })
+  } catch (err) {
+    logger.error({ err }, 'Nav item archive error')
+    res.status(500).json({ error: 'Failed to archive navigation link' })
+  }
+})
+
+// POST /api/admin/nav-items/:id/restore
+router.post('/nav-items/:id/restore', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('site_nav_items')
+      .update({ archived_at: null, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select(NAV_COLUMNS)
+      .single()
+    if (error) {
+      if (isNoRowError(error)) return res.status(404).json({ error: 'Link not found' })
+      throw error
+    }
+    invalidateContentCache()
+    res.json({ item: data })
+    logAudit({ adminEmail: req.userEmail, action: 'nav_restore', target: data.id, details: `${data.section} "${data.label}"` })
+  } catch (err) {
+    logger.error({ err }, 'Nav item restore error')
+    res.status(500).json({ error: 'Failed to restore navigation link' })
+  }
+})
+
+// POST /api/admin/nav-items/reorder - body { section, ids }; sort_order is
+// per section, and every id is pinned to the section so a cross-section list
+// can never renumber another group
+router.post('/nav-items/reorder', requireAdmin, async (req, res) => {
+  try {
+    const { section, ids } = req.body ?? {}
+    if (!NAV_SECTIONS.includes(section)) return res.status(400).json({ error: `Section must be one of: ${NAV_SECTIONS.join(', ')}` })
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'Provide a non-empty ids list' })
+    if (ids.length > 500) return res.status(400).json({ error: 'Too many ids' })
+    if (ids.some((id) => !isUuid(id))) return res.status(400).json({ error: 'ids must be uuids' })
+    for (let i = 0; i < ids.length; i++) {
+      const { error } = await supabaseAdmin
+        .from('site_nav_items')
+        .update({ sort_order: i, updated_at: new Date().toISOString() })
+        .eq('id', ids[i])
+        .eq('section', section)
+      if (error) throw error
+    }
+    invalidateContentCache()
+    res.json({ success: true, count: ids.length })
+    logAudit({ adminEmail: req.userEmail, action: 'nav_reorder', target: 'site_nav_items', details: `${section}: ${ids.length} links reordered` })
+  } catch (err) {
+    logger.error({ err }, 'Nav item reorder error')
+    res.status(500).json({ error: 'Failed to reorder navigation links' })
+  }
+})
+
+// GET /api/admin/categories - the merged editor list: catalog categories
+// (same query + order as the public /products/categories, so the editor shows
+// exactly what shoppers get) plus any override rows. Overrides for categories
+// no longer in the catalog are ignored here (they never render; a category
+// that comes back later simply inherits its saved preferences again).
+router.get('/categories', requireAdmin, async (req, res) => {
+  try {
+    const [catRes, ovRes] = await Promise.all([
+      supabaseAdmin.from('product').select('category').eq('is_active', true),
+      supabaseAdmin.from('site_categories').select('name, label, sort_order, is_visible'),
+    ])
+    if (catRes.error) throw catRes.error
+    if (ovRes.error) {
+      if (isSchemaPendingError(ovRes.error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      throw ovRes.error
+    }
+    const baseNames = [...new Set((catRes.data || []).map((r) => r.category).filter(Boolean))].sort()
+    const overrides = new Map((ovRes.data || []).map((r) => [r.name, r]))
+    const baseIndex = new Map(baseNames.map((name, i) => [name, i]))
+    const rows = baseNames.map((name) => ({ name, override: overrides.get(name) }))
+    // saved categories first by sort_order, then unsaved in catalog order -
+    // mirrors the storefront merge in frontend/lib/siteContent.js
+    rows.sort((a, b) => {
+      const sa = Number.isInteger(a.override?.sort_order) ? a.override.sort_order : Infinity
+      const sb = Number.isInteger(b.override?.sort_order) ? b.override.sort_order : Infinity
+      if (sa !== sb) return sa - sb
+      return (baseIndex.get(a.name) ?? 0) - (baseIndex.get(b.name) ?? 0)
+    })
+    res.json({
+      items: rows.map(({ name, override }) => ({
+        name,
+        label: override?.label ?? null,
+        sort_order: override?.sort_order ?? null,
+        is_visible: override?.is_visible ?? true,
+        has_override: Boolean(override),
+      })),
+      total: rows.length,
+    })
+  } catch (err) {
+    logger.error({ err }, 'Categories merge error')
+    res.status(500).json({ error: 'Failed to load categories' })
+  }
+})
+
+// POST /api/admin/categories - batch save { items: [...] }; upserts only
+// (never deletes), so categories that vanish from the catalog keep their
+// preferences for the day they return. One request per save = one step-up.
+router.post('/categories', requireAdmin, async (req, res) => {
+  try {
+    const clean = sanitizeCategoryBatch(req.body?.items)
+    if (!clean.ok) return res.status(400).json({ error: clean.error })
+    const now = new Date().toISOString()
+    const rows = clean.values.map((v) => ({ ...v, updated_at: now }))
+    const { error } = await supabaseAdmin.from('site_categories').upsert(rows, { onConflict: 'name' })
+    if (error) {
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      throw error
+    }
+    invalidateContentCache()
+    res.json({ success: true, count: clean.values.length })
+    logAudit({ adminEmail: req.userEmail, action: 'category_batch_save', target: 'site_categories', details: `${clean.values.length} categories saved` })
+  } catch (err) {
+    logger.error({ err }, 'Category batch save error')
+    res.status(500).json({ error: 'Failed to save categories' })
+  }
+})
+
+// ─── Promo CRUD (admin only) ─────────────────────────────────────────────────
 
 // GET /api/admin/promos — list all promos
 router.get('/promos', requireAdmin, async (req, res) => {

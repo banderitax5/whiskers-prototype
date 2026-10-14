@@ -17,8 +17,9 @@ const router = Router()
 const CACHE_TTL_MS = 30_000
 let cache = { at: 0, payload: null }
 
-// Admin writes (banners, sections, promos) call this so an edit is live on
-// the next storefront request instead of waiting out the TTL.
+// Admin writes (banners, sections, nav links, categories, promos) call this
+// so an edit is live on the next storefront request instead of waiting out
+// the TTL.
 export function invalidateContentCache() {
   cache = { at: 0, payload: null }
 }
@@ -47,7 +48,7 @@ function navGroup(rows, section) {
 }
 
 async function loadContent() {
-  const [bannersRes, sectionsRes, navRes, promosRes] = await Promise.all([
+  const [bannersRes, sectionsRes, navRes, promosRes, catsRes] = await Promise.all([
     supabaseAdmin.from('site_banners').select('*').is('archived_at', null),
     supabaseAdmin.from('site_home_sections').select('*').is('archived_at', null),
     supabaseAdmin.from('site_nav_items').select('*').is('archived_at', null),
@@ -57,8 +58,11 @@ async function loadContent() {
       .eq('is_active', true)
       .lte('starts_at', new Date().toISOString())
       .or(`ends_at.is.null,ends_at.gt.${new Date().toISOString()}`),
+    // category overrides ship in full (hidden rows included) - the storefront
+    // needs the hidden names to drop them from its own derived list
+    supabaseAdmin.from('site_categories').select('name, label, sort_order, is_visible'),
   ])
-  const schemaError = bannersRes.error || sectionsRes.error || navRes.error
+  const schemaError = bannersRes.error || sectionsRes.error || navRes.error || catsRes.error
   if (schemaError) throw schemaError
   // a database without the Phase 4 promos table still serves content; the
   // storefront just has nothing to put on sale
@@ -77,6 +81,7 @@ async function loadContent() {
     announcement: bannersFor('announcement_bar', bannerRows, now).map((b) => pick(b, BANNER_FIELDS)),
     sections: visibleSections(sectionsRes.data || [], now).map((s) => pick(s, SECTION_FIELDS)),
     promos: promoRows.map((p) => pick(p, PROMO_FIELDS)),
+    categories: (catsRes.data || []).map((c) => pick(c, ['name', 'label', 'sort_order', 'is_visible'])),
     nav: {
       navbar: navGroup(navRows, 'navbar'),
       footer_shop: navGroup(navRows, 'footer_shop'),
