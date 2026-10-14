@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import { fetchSiteContent, contentNav } from "../lib/siteContent.js"
+import { fetchSiteContent, contentNav, contentSettings } from "../lib/siteContent.js"
 
 const LINK_CLASS = "text-gray-600 hover:text-[#0b2e59] dark:text-gray-400 dark:hover:text-white transition-colors duration-200 cursor-pointer"
 
@@ -31,10 +31,20 @@ function Footer() {
     { id: "facebook", label: "Facebook", href: "https://facebook.com/profile.php?id=61561539844519" },
   ]
 
+  // contact block from site settings (Phase 6); the built-in values match
+  // what this footer showed before the settings existed
+  const settings = contentSettings(content)
+  const contactRows = [
+    settings.contact_phone && { id: "phone", label: settings.contact_phone, href: `tel:${settings.contact_phone.replace(/[^+\d]/g, "")}` },
+    settings.contact_email && { id: "email", label: settings.contact_email, href: `mailto:${settings.contact_email}` },
+    settings.contact_address && { id: "address", label: settings.contact_address },
+    settings.store_hours && { id: "hours", label: settings.store_hours },
+  ].filter(Boolean)
+
   return (
     <footer className="bg-gray-100 dark:bg-[#031730] py-8 sm:py-10">
       <div className="px-3 sm:px-4 lg:mx-auto lg:max-w-7xl">
-        <div className="grid grid-cols-1 gap-8 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
           <nav>
             <h6 className="mb-3 text-sm font-bold uppercase tracking-wider text-gray-800 dark:text-white">
               Start Shopping
@@ -53,6 +63,25 @@ function Footer() {
             <ul className="space-y-2 text-sm">
               {accountLinks.map((item) => (
                 <li key={item.id || item.label}><Link to={item.href} className={LINK_CLASS}>{item.label}</Link></li>
+              ))}
+            </ul>
+          </nav>
+
+          <nav>
+            <h6 className="mb-3 text-sm font-bold uppercase tracking-wider text-gray-800 dark:text-white">
+              Visit Us
+            </h6>
+            <ul className="space-y-2 text-sm">
+              {contactRows.length === 0 ? (
+                <li className={LINK_CLASS}>{settings.store_name}</li>
+              ) : contactRows.map((row) => (
+                <li key={row.id}>
+                  {row.href ? (
+                    <a href={row.href} className={LINK_CLASS}>{row.label}</a>
+                  ) : (
+                    <span className={LINK_CLASS}>{row.label}</span>
+                  )}
+                </li>
               ))}
             </ul>
           </nav>
@@ -92,7 +121,7 @@ function Footer() {
         </div>
 
         <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 text-center text-xs text-gray-500 dark:text-gray-500">
-          &copy; {new Date().getFullYear()} Whiskers Pet Shop. All rights reserved.
+          &copy; {new Date().getFullYear()} {settings.store_name}. All rights reserved.
         </div>
       </div>
     </footer>

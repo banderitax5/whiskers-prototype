@@ -14,6 +14,7 @@ const Cart = lazy(() => import('./pages/Cart.jsx'))
 const Checkout = lazy(() => import('./pages/Checkout.jsx'))
 const UserOrders = lazy(() => import('./pages/UserOrders.jsx'))
 const Support = lazy(() => import('./pages/Support.jsx'))
+const PolicyPage = lazy(() => import('./pages/PolicyPage.jsx'))
 const OrderConfirmation = lazy(() => import('./pages/OrderConfirmation.jsx'))
 const OfficialReceipt = lazy(() => import('./pages/OfficialReceipt.jsx'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword.jsx'))
@@ -33,6 +34,7 @@ const AdminMedia = lazy(() => import('./components/AdminMedia.jsx'))
 const AdminBanners = lazy(() => import('./components/AdminBanners.jsx'))
 const AdminHomeSections = lazy(() => import('./components/AdminHomeSections.jsx'))
 const AdminNavigation = lazy(() => import('./components/AdminNavigation.jsx'))
+const AdminSettings = lazy(() => import('./components/AdminSettings.jsx'))
 
 import supabase from './lib/supabase'
 
@@ -192,6 +194,7 @@ const router = createBrowserRouter([
         ),
       },
       { path: 'about', element: <About /> },
+      { path: 'policies/:slug', element: <PolicyPage /> },
       {
         path: 'pets',
         element: (
@@ -241,6 +244,7 @@ const router = createBrowserRouter([
       { path: 'banners', element: <RequireRole role="admin" fallback="/admin/orders"><AdminBanners /></RequireRole> },
       { path: 'home-sections', element: <RequireRole role="admin" fallback="/admin/orders"><AdminHomeSections /></RequireRole> },
       { path: 'navigation', element: <RequireRole role="admin" fallback="/admin/orders"><AdminNavigation /></RequireRole> },
+      { path: 'settings', element: <RequireRole role="admin" fallback="/admin/orders"><AdminSettings /></RequireRole> },
       { path: 'support', element: <AdminSupports /> },
       { path: 'audit-logs', element: <RequireRole role="admin" fallback="/admin/orders"><AdminAuditLogs /></RequireRole> },
     ],

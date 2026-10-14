@@ -8,7 +8,6 @@ import { philippinesData } from '../data/philippinesData.js'
 import { paymentMethodLabel } from '../lib/orderDoc.js'
 import supabase from '../lib/supabase'
 import {
-  SHIPPING_FEE_PHP,
   cartTotals,
   effectiveItems,
   isPurchasableStatus,
@@ -16,8 +15,16 @@ import {
   formatPesos,
   toCentavos,
 } from '../lib/cartLogic.js'
+import { fetchSiteContent, contentSettings } from '../lib/siteContent.js'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
+
+// built-in payment options (fallback until site settings are saved)
+const DEFAULT_PAYMENT_OPTIONS = [
+  { id: 'gcash', label: 'GCash', enabled: true, instructions: '', qr_url: null },
+  { id: 'paymaya', label: 'PayMaya', enabled: true, instructions: '', qr_url: null },
+  { id: 'cod', label: 'Cash on Delivery', enabled: true, instructions: '', qr_url: null },
+]
 const SELECTION_KEY = 'whiskers.cart.selectedIds'
 
 const FIELD_ORDER = ['fullName', 'phone', 'addressLine1', 'city', 'province', 'postalCode']
@@ -95,7 +102,30 @@ function Checkout() {
     )
   }, [selectedIds, pricedItems, availability])
 
-  const totals = useMemo(() => cartTotals(checkoutItems, availability), [checkoutItems, availability])
+  // site settings (Phase 6): payment methods on/off + labels/instructions,
+  // shipping fee + free-shipping threshold. Falls back to the built-in
+  // methods and flat fee until the owner saves settings.
+  const [shopSettings, setShopSettings] = useState(null)
+  const [shippingOpts, setShippingOpts] = useState(null)
+  const paymentOptions = useMemo(() => {
+    const raw = shopSettings?.payment_methods
+    const list = Array.isArray(raw) && raw.length > 0 ? raw : DEFAULT_PAYMENT_OPTIONS
+    const enabled = list.filter((m) => m && m.enabled !== false)
+    return enabled.length > 0 ? enabled : DEFAULT_PAYMENT_OPTIONS
+  }, [shopSettings])
+
+  const totals = useMemo(() => cartTotals(checkoutItems, availability, shippingOpts), [checkoutItems, availability, shippingOpts])
+
+  useEffect(() => {
+    let cancelled = false
+    fetchSiteContent().then((content) => {
+      if (cancelled) return
+      const s = contentSettings(content)
+      setShopSettings(s)
+      setShippingOpts({ fee: s.shipping_fee, freeThreshold: s.free_shipping_threshold })
+    })
+    return () => { cancelled = true }
+  }, [])
 
   const [form, setForm] = useState({
     fullName: '',
@@ -108,6 +138,18 @@ function Checkout() {
     paymentMethod: 'gcash',
     promoCode: '',
   })
+  const selectedPayment = useMemo(
+    () => paymentOptions.find((m) => m.id === form.paymentMethod) || null,
+    [paymentOptions, form.paymentMethod]
+  )
+  // if the stored method was disabled in settings, fall back to the first one
+  // (effects run after render, so onChange below is initialized by then)
+  useEffect(() => {
+    if (!paymentOptions.some((m) => m.id === form.paymentMethod)) {
+      onChange('paymentMethod', paymentOptions[0].id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentOptions])
   const [submitting, setSubmitting] = useState(false)
   const [fieldErrors, setFieldErrors] = useState({})
   const [verifyProblems, setVerifyProblems] = useState([])
@@ -521,22 +563,27 @@ function Checkout() {
 
           <h2 className="mb-3 mt-5 text-lg font-semibold text-gray-800 dark:text-gray-100">Payment Method</h2>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Payment method">
-            {[
-              { value: 'gcash', label: 'GCash' },
-              { value: 'paymaya', label: 'PayMaya' },
-              { value: 'cod', label: 'Cash on Delivery' },
-            ].map((option) => (
-              <label key={option.value} className="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-md border border-gray-200 px-3 py-2 has-[:checked]:border-[#0b2e59] has-[:checked]:bg-[#0b2e59]/5 dark:border-gray-600">
-                <input type="radio" name="paymentMethod" value={option.value} checked={form.paymentMethod === option.value} onChange={(e) => onChange('paymentMethod', e.target.value)} />
+            {paymentOptions.map((option) => (
+              <label key={option.id} className="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-md border border-gray-200 px-3 py-2 has-[:checked]:border-[#0b2e59] has-[:checked]:bg-[#0b2e59]/5 dark:border-gray-600">
+                <input type="radio" name="paymentMethod" value={option.id} checked={form.paymentMethod === option.id} onChange={(e) => onChange('paymentMethod', e.target.value)} />
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{option.label}</span>
               </label>
             ))}
           </div>
           <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            {form.paymentMethod === 'cod'
-              ? 'Pay in cash when your order arrives.'
-              : `You will receive payment instructions for ${paymentMethodLabel(form.paymentMethod)} after placing the order.`}
+            {selectedPayment?.instructions
+              ? selectedPayment.instructions
+              : form.paymentMethod === 'cod'
+                ? 'Pay in cash when your order arrives.'
+                : `You will receive payment instructions for ${paymentMethodLabel(form.paymentMethod)} after placing the order.`}
           </p>
+          {selectedPayment?.qr_url && (
+            <img
+              src={selectedPayment.qr_url}
+              alt={`${selectedPayment.label} QR code`}
+              className="mt-3 h-28 w-28 rounded-md border border-gray-200 dark:border-gray-600 object-contain bg-white p-1"
+            />
+          )}
 
           {/* review summary before placing the order */}
           <div className="mt-5 rounded-md border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/40 p-3">
@@ -544,7 +591,7 @@ function Checkout() {
             <dl className="space-y-1 text-sm text-gray-700 dark:text-gray-300">
               <div className="flex justify-between gap-3"><dt>Deliver to</dt><dd className="font-medium text-right truncate">{form.fullName || '—'}{form.city ? `, ${form.city}` : ''}{form.province ? `, ${form.province}` : ''}</dd></div>
               <div className="flex justify-between gap-3"><dt>Phone</dt><dd className="font-medium">{form.phone || '—'}</dd></div>
-              <div className="flex justify-between gap-3"><dt>Payment</dt><dd className="font-medium">{paymentMethodLabel(form.paymentMethod)}</dd></div>
+              <div className="flex justify-between gap-3"><dt>Payment</dt><dd className="font-medium">{selectedPayment?.label || paymentMethodLabel(form.paymentMethod)}</dd></div>
               <div className="flex justify-between gap-3">
                 <dt>Items</dt>
                 <dd className="font-medium">
@@ -630,8 +677,19 @@ function Checkout() {
             <div className="flex justify-between"><span>Subtotal</span><span>PHP {formatPesos(totals.subtotalCents / 100)}</span></div>
             <div className="flex justify-between">
               <span>Shipping</span>
-              <span>{checkoutItems.length > 0 ? `PHP ${formatPesos(SHIPPING_FEE_PHP)}` : '—'}</span>
+              <span>
+                {checkoutItems.length === 0
+                  ? '—'
+                  : totals.shippingCents === 0
+                    ? 'Free'
+                    : `PHP ${formatPesos(totals.shippingCents / 100)}`}
+              </span>
             </div>
+            {shippingOpts?.freeThreshold != null && totals.subtotalCents > 0 && totals.subtotalCents < toCentavos(shippingOpts.freeThreshold) && (
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Add PHP {formatPesos(shippingOpts.freeThreshold - totals.subtotalCents / 100)} more for free shipping.
+              </p>
+            )}
             {promoDiscount > 0 && (
               <div className="flex justify-between text-green-700 dark:text-green-300">
                 <span>Promo discount{appliedPromo ? ` (${appliedPromo})` : ''}</span>

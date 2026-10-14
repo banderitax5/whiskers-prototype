@@ -19,6 +19,7 @@ export const ADMIN_NAV = [
   { to: '/admin/banners', label: 'Banners', iconKey: 'cardImage', roles: ['admin'] },
   { to: '/admin/home-sections', label: 'Home Sections', iconKey: 'grid', roles: ['admin'] },
   { to: '/admin/navigation', label: 'Navigation', iconKey: 'listUl', roles: ['admin'] },
+  { to: '/admin/settings', label: 'Site Settings', iconKey: 'gear', roles: ['admin'] },
   { to: '/admin/support', label: 'Customer Support', iconKey: 'chatDots', roles: ['admin', 'staff'] },
   { to: '/admin/audit-logs', label: 'Audit Logs', iconKey: 'clockHistory', roles: ['admin'] },
 ]

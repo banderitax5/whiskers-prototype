@@ -5,7 +5,6 @@ import useLiveProductRows from '../hooks/useLiveProductRows.js'
 import ProductThumb from '../components/ProductThumb.jsx'
 import CartRecommendations from '../components/CartRecommendations.jsx'
 import {
-  SHIPPING_FEE_PHP,
   LOW_STOCK_THRESHOLD,
   isUuid,
   clampQuantity,
@@ -18,6 +17,7 @@ import {
   toCentavos,
   lineTotalCents,
 } from '../lib/cartLogic.js'
+import { fetchSiteContent } from '../lib/siteContent.js'
 
 // selection survives a trip to /checkout and back
 const SELECTION_KEY = 'whiskers.cart.selectedIds'
@@ -70,8 +70,23 @@ function Cart() {
   const [drafts, setDrafts] = useState({})
   const [qtyErrors, setQtyErrors] = useState({})
   const [announce, setAnnounce] = useState('')
+  // shipping rules from site settings (Phase 6); null until loaded, in which
+  // case cartTotals falls back to the built-in flat fee
+  const [shippingOpts, setShippingOpts] = useState(null)
   const initializedRef = useRef(false)
   const storedSelection = useMemo(readStoredSelection, [])
+
+  useEffect(() => {
+    let cancelled = false
+    fetchSiteContent().then((content) => {
+      if (cancelled || !content?.settings) return
+      setShippingOpts({
+        fee: content.settings.shipping_fee,
+        freeThreshold: content.settings.free_shipping_threshold,
+      })
+    })
+    return () => { cancelled = true }
+  }, [])
 
   // live product rows for the price/stock check (U6) — read-only
   const { liveById, checkedIds, availability } = useLiveProductRows(cartItems)
@@ -125,7 +140,7 @@ function Cart() {
     [selectedIds, displayItems, availability]
   )
 
-  const totals = useMemo(() => cartTotals(selectedItems, availability), [selectedItems, availability])
+  const totals = useMemo(() => cartTotals(selectedItems, availability, shippingOpts), [selectedItems, availability, shippingOpts])
   const cartUnitCount = useMemo(
     () => cartItems.reduce((sum, item) => sum + (Math.floor(Number(item.quantity) || 0)), 0),
     [cartItems]
@@ -452,8 +467,15 @@ function Cart() {
                   </div>
                   <div className="flex justify-between text-gray-600 dark:text-gray-400">
                     <span>Shipping</span>
-                    <span className="font-semibold text-gray-800 dark:text-gray-200">PHP {formatPesos(SHIPPING_FEE_PHP)}</span>
+                    <span className="font-semibold text-gray-800 dark:text-gray-200">
+                      {totals.shippingCents === 0 ? 'Free' : `PHP ${formatPesos(totals.shippingCents / 100)}`}
+                    </span>
                   </div>
+                  {shippingOpts?.freeThreshold != null && totals.subtotalCents > 0 && totals.subtotalCents < toCentavos(shippingOpts.freeThreshold) && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Add PHP {formatPesos(shippingOpts.freeThreshold - totals.subtotalCents / 100)} more for free shipping.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -494,7 +516,7 @@ function Cart() {
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 {selectedIds.length === 0
                   ? 'Select items to check out'
-                  : `${selectedIds.length} product${selectedIds.length === 1 ? '' : 's'} · shipping PHP ${formatPesos(SHIPPING_FEE_PHP)}`}
+                  : `${selectedIds.length} product${selectedIds.length === 1 ? '' : 's'} · shipping ${totals.shippingCents === 0 ? 'free' : `PHP ${formatPesos(totals.shippingCents / 100)}`}`}
               </p>
               <p className="text-base font-bold text-[#0b2e59] dark:text-yellow-300">
                 {selectedIds.length === 0 ? '—' : `PHP ${formatPesos(totals.totalCents / 100)}`}

@@ -1,9 +1,23 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { BsChatDotsFill, BsX, BsInstagram, BsFacebook, BsTelephone, BsEnvelope } from 'react-icons/bs'
+import { fetchSiteContent, contentSettings } from '../lib/siteContent.js'
 
 export default function FloatingContact() {
   const [open, setOpen] = useState(false)
+  const [phone, setPhone] = useState('+63 912 345 6789')
+
+  // phone number comes from site settings once saved; the built-in value
+  // matches what this button showed before Phase 6
+  useEffect(() => {
+    let cancelled = false
+    fetchSiteContent().then((content) => {
+      if (cancelled) return
+      const p = contentSettings(content).contact_phone
+      if (p) setPhone(p)
+    })
+    return () => { cancelled = true }
+  }, [])
 
   return (
     <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-[9997]">
@@ -43,11 +57,11 @@ export default function FloatingContact() {
               Instagram
             </a>
             <a
-              href="tel:+639123456789"
+              href={`tel:${phone.replace(/[^+\d]/g, '')}`}
               className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 hover:text-[#0b2e59] dark:hover:text-yellow-300 transition p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
             >
               <BsTelephone className="h-4 w-4 text-green-500" />
-              +63 912 345 6789
+              {phone}
             </a>
           </div>
         </div>

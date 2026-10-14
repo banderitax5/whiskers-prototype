@@ -7,6 +7,10 @@ import {
   consumePreviewParam,
   isPreviewMode,
   exitPreview,
+  contentSettings,
+  contentFaqs,
+  contentPolicies,
+  CLIENT_DEFAULT_SETTINGS,
 } from './siteContent'
 
 vi.mock('./supabase', () => ({
@@ -143,5 +147,38 @@ describe('preview mode (5g)', () => {
     const [url, opts] = fetch.mock.calls[1]
     expect(url).not.toContain('preview=1')
     expect(opts.headers.Authorization).toBeUndefined()
+  })
+})
+
+describe('settings, faqs, policies (Phase 6)', () => {
+  test('contentSettings falls back to the built-in defaults', () => {
+    expect(contentSettings(null)).toEqual(CLIENT_DEFAULT_SETTINGS)
+    expect(contentSettings({})).toEqual(CLIENT_DEFAULT_SETTINGS)
+    expect(contentSettings({ settings: null }).store_name).toBe('Whiskers Pet Shop')
+  })
+
+  test('contentSettings merges saved values over the defaults', () => {
+    const merged = contentSettings({
+      settings: { store_name: 'Happy Paws', shipping_fee: 40, free_shipping_threshold: 999 },
+    })
+    expect(merged.store_name).toBe('Happy Paws')
+    expect(merged.shipping_fee).toBe(40)
+    expect(merged.free_shipping_threshold).toBe(999)
+    // untouched defaults survive the merge
+    expect(merged.maintenance.enabled).toBe(false)
+    expect(merged.payment_methods).toHaveLength(3)
+  })
+
+  test('contentFaqs maps rows to q/a and returns null when empty', () => {
+    expect(contentFaqs({})).toBeNull()
+    expect(contentFaqs({ faqs: [] })).toBeNull()
+    const rows = contentFaqs({ faqs: [{ question: 'Q1?', answer: 'A1' }] })
+    expect(rows).toEqual([{ q: 'Q1?', a: 'A1' }])
+  })
+
+  test('contentPolicies returns rows or null', () => {
+    expect(contentPolicies({})).toBeNull()
+    const rows = [{ slug: 'shipping', title: 'Shipping', body: 'Body' }]
+    expect(contentPolicies({ policies: rows })).toBe(rows)
   })
 })

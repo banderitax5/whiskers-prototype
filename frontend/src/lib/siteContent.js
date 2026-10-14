@@ -159,6 +159,48 @@ export function contentNav(content, section) {
   return Array.isArray(rows) && rows.length > 0 ? rows : null
 }
 
+// ── Phase 6: settings, FAQs, policies ───────────────────────────────────────
+
+// built-in settings, mirroring backend DEFAULT_SETTINGS so a fresh install
+// (or a fetch failure) shows exactly what the site showed before Phase 6
+export const CLIENT_DEFAULT_SETTINGS = {
+  store_name: 'Whiskers Pet Shop',
+  tagline: '',
+  logo_url: null,
+  contact_phone: '+63 912 345 6789',
+  contact_email: '',
+  contact_address: '',
+  store_hours: 'Open daily 9:00 AM - 9:00 PM',
+  shipping_fee: 75,
+  free_shipping_threshold: null,
+  payment_methods: [
+    { id: 'gcash', label: 'GCash', enabled: true, instructions: '', qr_url: null },
+    { id: 'paymaya', label: 'PayMaya', enabled: true, instructions: '', qr_url: null },
+    { id: 'cod', label: 'COD (Cash on Delivery)', enabled: true, instructions: '', qr_url: null },
+  ],
+  maintenance: { enabled: false, message: '' },
+}
+
+// merged settings (server values over the built-in defaults). Never null -
+// callers can read fields directly.
+export function contentSettings(content) {
+  const s = content?.settings
+  if (!s || typeof s !== 'object') return { ...CLIENT_DEFAULT_SETTINGS }
+  return { ...CLIENT_DEFAULT_SETTINGS, ...s }
+}
+
+// owner-authored FAQs, or null so the About page keeps its built-in list
+export function contentFaqs(content) {
+  if (!Array.isArray(content?.faqs) || content.faqs.length === 0) return null
+  return content.faqs.map((f) => ({ q: f.question, a: f.answer }))
+}
+
+// policy pages from the content endpoint (visible rows only)
+export function contentPolicies(content) {
+  if (!Array.isArray(content?.policies) || content.policies.length === 0) return null
+  return content.policies
+}
+
 // merges the catalog's category names with the owner's category overrides:
 // hidden rows drop out of the list, labels replace the display text (the
 // filter value stays the raw category name), a saved sort_order wins, and

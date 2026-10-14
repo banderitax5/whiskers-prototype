@@ -126,21 +126,29 @@ export function effectiveItems(selectedIds, cartItems, availabilityById = null) 
 
 // ---------------------------------------------------------------------------
 // totals — products (distinct rows), units (matches the navbar badge),
-// subtotal/shipping/total in centavos
+// subtotal/shipping/total in centavos.
+// shippingOpts { fee, freeThreshold } comes from site settings when loaded
+// (Phase 6); without it the built-in flat fee applies at every order size.
 // ---------------------------------------------------------------------------
 
-export function cartTotals(items, availabilityById = null) {
+export function cartTotals(items, availabilityById = null, shippingOpts = null) {
   const list = items || []
   const priced = list.filter((item) => {
     if (!availabilityById) return true
     const info = availabilityById[item.id]
-    return !info || isPurchasableStatus(info.status)
+    if (!info) return true
+    return isPurchasableStatus(info.status)
   })
   const subtotalCents = priced.reduce(
     (sum, item) => sum + lineTotalCents(item.price, item.quantity),
     0
   )
-  const shippingCents = priced.length > 0 ? toCentavos(SHIPPING_FEE_PHP) : 0
+  const feeCents = toCentavos(shippingOpts?.fee ?? SHIPPING_FEE_PHP)
+  const thresholdCents = shippingOpts?.freeThreshold == null ? null : toCentavos(shippingOpts.freeThreshold)
+  let shippingCents = priced.length > 0 ? feeCents : 0
+  if (priced.length > 0 && thresholdCents !== null && subtotalCents >= thresholdCents) {
+    shippingCents = 0
+  }
   return {
     products: list.length,
     units: list.reduce((sum, item) => sum + (Math.floor(Number(item.quantity) || 0)), 0),

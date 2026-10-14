@@ -1,7 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { BsChevronDown } from 'react-icons/bs'
+import { fetchSiteContent, contentFaqs, contentPolicies } from '../lib/siteContent.js'
 
+// built-in FAQs render on a fresh install; the owner's FAQ list (Site
+// Settings) replaces them once any FAQ row is saved
 const FAQ_ITEMS = [
   {
     q: 'What is Whiskers?',
@@ -56,6 +59,19 @@ function FaqItem({ item }) {
 }
 
 function About() {
+  const [faqs, setFaqs] = useState(FAQ_ITEMS)
+  const [policies, setPolicies] = useState([])
+
+  useEffect(() => {
+    let cancelled = false
+    fetchSiteContent().then((content) => {
+      if (cancelled || !content) return
+      setFaqs(contentFaqs(content) || FAQ_ITEMS)
+      setPolicies(contentPolicies(content) || [])
+    })
+    return () => { cancelled = true }
+  }, [])
+
   return (
     <div className="space-y-8 lg:mx-auto lg:max-w-7xl">
       <div className="space-y-3">
@@ -78,7 +94,7 @@ function About() {
       <div className="space-y-4">
         <h2 className="text-lg sm:text-xl font-bold">Frequently Asked Questions</h2>
         <div className="space-y-2">
-          {FAQ_ITEMS.map((item, idx) => (
+          {faqs.map((item, idx) => (
             <FaqItem key={idx} item={item} />
           ))}
         </div>
@@ -90,6 +106,21 @@ function About() {
           .
         </p>
       </div>
+
+      {policies && policies.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-lg sm:text-xl font-bold">Policies</h2>
+          <ul className="space-y-1 text-sm">
+            {policies.map((p) => (
+              <li key={p.id || p.slug}>
+                <Link to={`/policies/${p.slug}`} className="font-semibold text-[#0b2e59] dark:text-yellow-300 hover:underline">
+                  {p.title}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }

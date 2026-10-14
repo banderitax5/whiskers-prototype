@@ -170,6 +170,25 @@ describe('cartTotals', () => {
     expect(t.products).toBe(2)
     expect(t.selectableProducts).toBe(1)
   })
+
+  it('applies a custom fee from site settings (Phase 6)', () => {
+    const t = cartTotals(cart, null, { fee: 99, freeThreshold: null })
+    expect(t.shippingCents).toBe(9900)
+    expect(t.totalCents).toBe(53030 + 9900)
+  })
+
+  it('waives shipping when the free-shipping threshold is met', () => {
+    const t = cartTotals(cart, null, { fee: 75, freeThreshold: 500 })
+    expect(t.subtotalCents).toBe(53030)
+    expect(t.shippingCents).toBe(0)
+    expect(t.totalCents).toBe(53030)
+  })
+
+  it('keeps the fee below the free-shipping threshold', () => {
+    const t = cartTotals([item('a', 10, 1)], null, { fee: 75, freeThreshold: 500 })
+    expect(t.subtotalCents).toBe(1000)
+    expect(t.shippingCents).toBe(7500)
+  })
 })
 
 describe('isUuid', () => {
