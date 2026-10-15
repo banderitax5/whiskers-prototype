@@ -61,7 +61,7 @@ function StepUpModal() {
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-3 sm:p-4 z-[10050]">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-3 sm:p-4 z-[10100]">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-md p-6 sm:p-8 relative animate-in fade-in duration-300" role="dialog" aria-modal="true" aria-labelledby="stepup-title">
         <button
           type="button"
@@ -80,7 +80,7 @@ function StepUpModal() {
             Confirm it&apos;s you
           </h2>
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Changing user roles is a sensitive action. Re-enter your password to continue.
+            This is a sensitive action. Re-enter your password to continue.
           </p>
         </div>
 

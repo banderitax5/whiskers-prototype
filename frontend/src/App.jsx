@@ -2,6 +2,7 @@ import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom'
 import { useState, useEffect, useRef, Suspense, lazy, useContext } from 'react'
 import Layout from './components/Layout.jsx'
 import { RoleContext } from './context/RoleContext.js'
+import { useShop } from './context/ShopContext.jsx'
 
 // USER PAGES (lazy loaded — chunks split per page)
 const Home = lazy(() => import('./pages/Home.jsx'))
@@ -40,9 +41,11 @@ import supabase from './lib/supabase'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
-// redirects to home if the user is not logged in
-function RequireAuth({ children }) {
+// redirects to home if the user is not logged in, with a toast explaining
+// why (no silent fallback - guests always learn they need to sign in)
+function RequireAuth({ children, message }) {
   const [session, setSession] = useState(undefined)
+  const { pushNotification } = useShop()
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s))
@@ -52,6 +55,16 @@ function RequireAuth({ children }) {
 
     return () => subscription.unsubscribe()
   }, [])
+
+  // one toast per rejected visit, fired from an effect (never during render)
+  const notifiedRef = useRef(false)
+  useEffect(() => {
+    if (session === null && !notifiedRef.current) {
+      notifiedRef.current = true
+      pushNotification(message || 'Please sign in to view this page.', 'info')
+    }
+    if (session) notifiedRef.current = false
+  }, [session, message, pushNotification])
 
   if (session === undefined) return null
   if (!session) return <Navigate to="/" replace />
@@ -213,11 +226,7 @@ const router = createBrowserRouter([
       },
       {
         path: 'support',
-        element: (
-          <RequireAuth>
-            <Support />
-          </RequireAuth>
-        ),
+        element: <Support />,
       },
       { path: 'reset', element: <ResetPassword /> },
     ],

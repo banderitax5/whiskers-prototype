@@ -13,7 +13,7 @@ function formatDate(ts) {
 }
 
 function Support() {
-  const { session, pushNotification } = useShop()
+  const { session, pushNotification, openLogin } = useShop()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -39,6 +39,33 @@ function Support() {
     load()
     return () => { cancelled = true }
   }, [session, reloadKey])
+
+  // guests can read this page but need an account to send or read messages -
+  // show a clear sign-in prompt instead of an empty or broken thread
+  if (!session) {
+    return (
+      <div className="lg:mx-auto lg:max-w-4xl py-5 sm:py-6">
+        <h1 className="mb-1 text-2xl font-bold text-[#0b2e59] dark:text-white">Support</h1>
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 text-center shadow-sm">
+          <p className="text-sm text-gray-600 dark:text-gray-300 mb-1 font-semibold">
+            Sign in to contact our support team
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Messages and replies are tied to your account, so we can follow up with you here.
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={openLogin}
+              className="inline-flex items-center justify-center min-h-[44px] px-6 rounded-lg bg-[#0b2e59] dark:bg-yellow-400 text-white dark:text-gray-900 text-xs font-black uppercase tracking-widest hover:bg-[#15407a] dark:hover:bg-yellow-300 transition"
+            >
+              Sign in
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   async function submit(e) {
     e.preventDefault()

@@ -368,7 +368,7 @@ useEffect(() => {
 
       {showForm && (
         <dialog open className="modal modal-open" aria-label={editing ? 'Edit promo' : 'New promo'}>
-          <div className="modal-box max-w-2xl rounded-2xl bg-white dark:bg-[#0f2137]">
+          <div className="modal-box max-w-2xl max-h-[85dvh] overflow-y-auto rounded-2xl bg-white dark:bg-[#0f2137]">
             <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-4">
               {editing ? `Edit ${editing.code}` : 'New Promo Code'}
             </h3>
@@ -476,11 +476,11 @@ useEffect(() => {
                 <button
                   type="button"
                   onClick={() => { setShowForm(false); setEditing(null); }}
-                  className="min-h-[40px] rounded-lg border border-gray-300 dark:border-[#1e3a5f] px-4 text-xs font-black uppercase tracking-widest text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#162d4a] transition"
+                  className="min-h-[44px] px-4 rounded-lg border border-gray-300 dark:border-[#1e3a5f] text-xs font-black uppercase tracking-widest text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#162d4a] transition"
                 >
                   Cancel
                 </button>
-                <button type="submit" disabled={submitting} className={`${btnPrimary} disabled:opacity-50`}>
+                <button type="submit" disabled={submitting} className="min-h-[44px] px-4 rounded-lg bg-[#0b2e59] dark:bg-yellow-400 text-white dark:text-gray-900 text-xs font-black uppercase tracking-widest hover:bg-[#15407a] dark:hover:bg-yellow-300 transition disabled:opacity-50">
                   {submitting ? 'Saving...' : editing ? 'Save Changes' : 'Create Promo'}
                 </button>
               </div>
