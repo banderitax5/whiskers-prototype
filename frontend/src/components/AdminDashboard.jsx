@@ -266,12 +266,14 @@ function AdminDashboard() {
                   <p className="text-xs text-gray-400 dark:text-slate-500 py-6 text-center">No payments recorded in this period.</p>
                 ) : (
                   <>
-                    <div className="flex items-end gap-px h-28">
+                    <div className="flex gap-px h-28">
                       {revenue.map((d) => {
                         const max = Math.max(...revenue.map(x => x.amount), 1)
                         const h = Math.max(2, (d.amount / max) * 100)
                         return (
-                          <div key={d.date} className="flex-1 flex flex-col items-center gap-0.5" title={`${d.date}: PHP ${formatPesos(d.amount)}`}>
+                          // wrapper stretches to the fixed h-28 track; the bar's
+                          // % height then resolves against that definite height
+                          <div key={d.date} className="flex-1 flex items-end" title={`${d.date}: PHP ${formatPesos(d.amount)}`}>
                             <div className="w-full bg-emerald-500 dark:bg-emerald-400 rounded-t" style={{ height: `${h}%` }} />
                           </div>
                         )
@@ -389,12 +391,12 @@ function AdminDashboard() {
               {analytics.dailyViews.length > 0 && (
                 <div className={`lg:col-span-2 ${PANEL}`}>
                   <h3 className={PANEL_TITLE}>Daily Page Views (30d)</h3>
-                  <div className="flex items-end gap-px h-24">
+                  <div className="flex gap-px h-24">
                     {analytics.dailyViews.map((d) => {
                       const max = Math.max(...analytics.dailyViews.map(x => x.count), 1)
                       const h = Math.max(2, (d.count / max) * 100)
                       return (
-                        <div key={d.date} className="flex-1 flex flex-col items-center gap-0.5" title={`${d.date}: ${d.count}`}>
+                        <div key={d.date} className="flex-1 flex items-end" title={`${d.date}: ${d.count}`}>
                           <div className="w-full bg-[#0b2e59] dark:bg-yellow-400 rounded-t" style={{ height: `${h}%` }} />
                         </div>
                       )

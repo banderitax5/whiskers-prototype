@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom"
+import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom"
 import { useState, useEffect } from "react"
 import supabase from "../lib/supabase"
 import RecoveryGate from "./RecoveryGate.jsx"
@@ -50,9 +50,13 @@ const NAV_ICONS = {
 // the main content area renders whatever admin sub-page is active via Outlet
 function AdminLayout() {
   const navigate = useNavigate()
+  const { pathname } = useLocation()
   const [user, setUser] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const role = useRole()
+
+  // top-bar title follows the active route (single source: ADMIN_NAV labels)
+  const currentNav = ADMIN_NAV.find((n) => (n.end ? pathname === n.to : pathname.startsWith(n.to)))
 
   useThemeDetection()
 
@@ -181,7 +185,7 @@ function AdminLayout() {
           </button>
 
           <h1 className="text-lg sm:text-xl font-semibold text-gray-800 dark:text-slate-100">
-            {role === 'staff' ? 'Staff Dashboard' : 'Admin Dashboard'}
+            {currentNav ? currentNav.label : role === 'staff' ? 'Staff Dashboard' : 'Admin Dashboard'}
           </h1>
         </div>
 

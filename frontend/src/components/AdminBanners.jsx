@@ -595,7 +595,7 @@ function AdminBanners() {
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-gray-500 dark:text-slate-400">{placementMeta?.hint}</p>
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <button type="button" onClick={() => window.open("/?scPreview=1", "_blank")} className={btnGhost}>Preview storefront</button>
             <button type="button" onClick={() => setHistory(true)} className={btnGhost}>History</button>
             {hasDefaults && (

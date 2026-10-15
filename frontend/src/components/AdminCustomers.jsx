@@ -224,6 +224,32 @@ const AdminCustomers = () => {
               {u.totalSpent > 0 && <span className="ml-1.5">· PHP {formatPesos(Number(u.totalSpent))}</span>}
               {u.feedback && <span className="ml-1.5">· Has feedback</span>}
             </div>
+            {/* role + remove actions — the mobile card previously omitted these,
+                leaving phone-width admins unable to manage customers */}
+            <div className="flex items-center gap-2 pt-1.5 mt-1.5 border-t border-gray-50 dark:border-[#1e3a5f]/40" onClick={(e) => e.stopPropagation()}>
+              <span className="mr-auto text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-slate-500">Role</span>
+              <AdminRowDropdown
+                open={openDropdown === u.id}
+                onToggle={() => setOpenDropdown(openDropdown === u.id ? null : u.id)}
+                onClose={() => setOpenDropdown(null)}
+                value={u.role}
+                options={ROLES}
+                disabled={savingId === u.id}
+                onSelect={(r) => changeRole(u, r)}
+              />
+              {u.id !== currentUserId && (
+                <button
+                  type="button"
+                  disabled={savingId === u.id}
+                  onClick={(e) => { e.stopPropagation(); setOpenDropdown(null); setDeleteTarget(u); }}
+                  className="w-7 h-7 shrink-0 flex items-center justify-center rounded bg-red-500 hover:bg-red-600 text-white disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-red-300"
+                  title="Remove customer"
+                  aria-label={`Remove ${u.firstName || u.lastName || 'customer'}`}
+                >
+                  <BsTrash className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
         )}
         empty={
