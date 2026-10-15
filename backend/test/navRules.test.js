@@ -1,6 +1,6 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { sanitizeNavItem, sanitizeCategoryBatch, NAV_SECTIONS } from '../src/utils/navRules.js'
+import { sanitizeNavItem, sanitizeCategoryBatch, sanitizeCategoryRemoval, NAV_SECTIONS } from '../src/utils/navRules.js'
 
 const base = { section: 'navbar', label: 'About us', href: '/about' }
 
@@ -92,6 +92,26 @@ describe('sanitizeCategoryBatch', () => {
     assert.match(sanitizeCategoryBatch([row('Dogs'), { name: 'Cats' }]).error, /whole number/)
     assert.match(sanitizeCategoryBatch([{ ...row('Dogs'), sort_order: -1 }]).error, /whole number/)
     assert.match(sanitizeCategoryBatch([{ ...row('Dogs'), sort_order: 1.5 }]).error, /whole number/)
+  })
+})
+
+describe('sanitizeCategoryRemoval', () => {
+  test('treats missing removal as empty and trims names', () => {
+    assert.deepEqual(sanitizeCategoryRemoval(undefined), { ok: true, values: [] })
+    assert.deepEqual(sanitizeCategoryRemoval(null), { ok: true, values: [] })
+    assert.deepEqual(sanitizeCategoryRemoval(['  Toys  ', 'Grooming']), { ok: true, values: ['Toys', 'Grooming'] })
+  })
+
+  test('rejects non-arrays, non-strings and blanks', () => {
+    assert.match(sanitizeCategoryRemoval('Toys').error, /removal list/)
+    assert.match(sanitizeCategoryRemoval([42]).error, /must be text/)
+    assert.match(sanitizeCategoryRemoval(['   ']).error, /cannot be empty/)
+    assert.match(sanitizeCategoryRemoval(['x'.repeat(121)]).error, /120 characters or fewer/)
+  })
+
+  test('caps the list size like the save batch', () => {
+    const many = Array.from({ length: 201 }, (_, i) => `c${i}`)
+    assert.match(sanitizeCategoryRemoval(many).error, /At most 200/)
   })
 })
 

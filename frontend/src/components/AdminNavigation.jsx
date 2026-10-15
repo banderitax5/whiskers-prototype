@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useState } from "react"
 import supabase from "../lib/supabase"
-import { apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from "../lib/api.js"
+import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from "../lib/api.js"
+import { fetchSiteContent, contentPolicies } from "../lib/siteContent.js"
 import { AdminPage, StatusPill, EmptyState, btnPrimary, btnGhost, ConfirmDialog } from "./adminTheme.jsx"
 import ImagePicker from "./ImagePicker.jsx"
+import ProductPicker from "./ProductPicker.jsx"
 import ContentHistoryDialog from "./ContentHistoryDialog.jsx"
 
 // One page for everything the owner can edit about category links and
@@ -17,17 +19,82 @@ const TABS = [
   { key: "categories", label: "Categories", hint: "The category filter list on the Menu page. Rename what shoppers see, reorder the list, or hide a category from the filter - hidden categories stay searchable and keep their product pages." },
 ]
 
+// where a link can go - the picker composes the plain href the table stores,
+// so the owner never types addresses or query strings (same idea as the
+// banner dialog's link picker, adapted to nav rows which only store href)
+const DEST_TYPES = [
+  { value: "page", label: "A page on this site" },
+  { value: "category", label: "A category" },
+  { value: "brand", label: "A brand" },
+  { value: "promo", label: "A promotion" },
+  { value: "product", label: "A product" },
+  { value: "website", label: "Another website" },
+  { value: "custom", label: "Something else (advanced)" },
+]
+
+// shopper-facing pages; policy pages append once content loads
+const SHOPPER_PAGES = [
+  { href: "/", label: "Home page" },
+  { href: "/menu", label: "Shop all products" },
+  { href: "/cart", label: "Shopping cart" },
+  { href: "/checkout", label: "Checkout" },
+  { href: "/orders", label: "My orders (asks to sign in)" },
+  { href: "/pets", label: "Pet recommendation (asks to sign in)" },
+  { href: "/profile", label: "My profile (asks to sign in)" },
+  { href: "/about", label: "About us" },
+  { href: "/support", label: "Customer support" },
+]
+
+// stored href -> picker state; anything the pickers cannot represent opens as
+// the advanced raw field instead of blocking the save
+function inferDest(href) {
+  const h = (href || "").trim()
+  if (!h) return { type: "page", value: "", raw: "" }
+  const prod = h.match(/^\/products\/([0-9a-f-]{36})$/i)
+  if (prod) return { type: "product", value: prod[1], raw: "" }
+  let m = h.match(/^\/menu\?category=(.+)$/)
+  if (m) return { type: "category", value: decodeURIComponent(m[1]), raw: "" }
+  m = h.match(/^\/menu\?brand=(.+)$/)
+  if (m) return { type: "brand", value: decodeURIComponent(m[1]), raw: "" }
+  m = h.match(/^\/menu\?promo=(.+)$/)
+  if (m) return { type: "promo", value: decodeURIComponent(m[1]), raw: "" }
+  if (SHOPPER_PAGES.some((p) => p.href === h)) return { type: "page", value: h, raw: "" }
+  if (/^https?:\/\//.test(h)) return { type: "website", value: "", raw: h }
+  return { type: "custom", value: "", raw: h }
+}
+
+const REQUIRED_PICK_MSG = {
+  page: "Choose a page, or pick another link type",
+  category: "Choose a category, or pick another link type",
+  brand: "Choose a brand, or pick another link type",
+  promo: "Choose a promotion, or pick another link type",
+  product: "Pick a product, or pick another link type",
+}
+
 function LinkDialog({ section, initial, onClose, onSubmit }) {
-  const [form, setForm] = useState({
-    label: initial?.label || "",
-    href: initial?.href || "",
-    is_visible: initial?.is_visible ?? true,
-    image_url: initial?.image_url || "",
-    alt_text: initial?.alt_text || "",
+  const [form, setForm] = useState(() => {
+    const d = inferDest(initial?.href)
+    return {
+      label: initial?.label || "",
+      is_visible: initial?.is_visible ?? true,
+      image_url: initial?.image_url || "",
+      alt_text: initial?.alt_text || "",
+      destType: d.type,
+      destValue: d.value,
+      raw: d.raw,
+    }
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
   const isSocial = section === "footer_social"
+  const sessionToken = useCallback(async () => (await supabase.auth.getSession()).data.session?.access_token, [])
+
+  // real data for the pickers, loaded once when the dialog opens;
+  // every source fails independently - a stale dropdown beats a broken dialog
+  const [categories, setCategories] = useState([])
+  const [brands, setBrands] = useState([])
+  const [promos, setPromos] = useState([])
+  const [policyPages, setPolicyPages] = useState([])
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose() }
@@ -35,15 +102,79 @@ function LinkDialog({ section, initial, onClose, onSubmit }) {
     return () => document.removeEventListener("keydown", onKey)
   }, [onClose])
 
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const cats = await apiGet("/products/categories")
+        if (!cancelled) setCategories(cats.items || [])
+      } catch { /* dropdown shows the current value only */ }
+      try {
+        const br = await apiGet("/products/brands")
+        if (!cancelled) setBrands(br.items || [])
+      } catch { /* same */ }
+      try {
+        const token = await sessionToken()
+        const pr = await apiGetAuth("/admin/promos", token)
+        if (!cancelled) setPromos(pr.items || [])
+      } catch { /* same */ }
+      try {
+        const content = await fetchSiteContent()
+        const rows = contentPolicies(content)
+        if (!cancelled) setPolicyPages((rows || []).map((p) => ({ href: `/policies/${p.slug}`, label: p.title || p.slug })))
+      } catch { /* page dropdown simply lacks the policy pages */ }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [sessionToken])
+
+  // a saved /policies/... link shows as "A page on this site" once the
+  // policy pages have loaded (they are not in the static list above)
+  useEffect(() => {
+    if (form.destType !== "custom") return
+    const known = [...SHOPPER_PAGES, ...policyPages].find((p) => p.href === form.raw.trim())
+    if (!known) return
+    setForm((f) => (f.destType === "custom" && f.raw.trim() === known.href
+      ? { ...f, destType: "page", destValue: known.href, raw: "" }
+      : f))
+  }, [form.destType, form.raw, policyPages])
+
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
+  const pick = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
+  const changeType = (e) => setForm((f) => ({ ...f, destType: e.target.value, destValue: "", raw: "" }))
+  const pageOptions = [...SHOPPER_PAGES, ...policyPages]
+  const promoMeta = (code) => {
+    const p = promos.find((x) => x.code === code)
+    if (!p) return code
+    const off = p.type === "percent" ? `${p.value}% off` : p.type === "fixed" ? `₱${p.value} off` : "free shipping"
+    return `${p.code} — ${off}`
+  }
+
+  // the plain href the table stores, composed from whatever the picker holds
+  function composeHref() {
+    const t = form.destType
+    const v = form.destValue
+    if (t === "page") return v
+    if (t === "category") return v ? `/menu?category=${encodeURIComponent(v)}` : ""
+    if (t === "brand") return v ? `/menu?brand=${encodeURIComponent(v)}` : ""
+    if (t === "promo") return v ? `/menu?promo=${encodeURIComponent(v)}` : ""
+    if (t === "product") return v ? `/products/${v}` : ""
+    return form.raw.trim() // website | custom
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError("")
     const label = form.label.trim()
-    const href = form.href.trim()
+    const href = composeHref()
     if (!label) { setError("Label is required (it is the text shoppers see)"); return }
-    if (href.startsWith("//") || (!href.startsWith("/") && !/^https?:\/\//.test(href))) {
+    if (!href) { setError(REQUIRED_PICK_MSG[form.destType] || "Choose where this link goes"); return }
+    if (href.length > 500) { setError("The link is too long (500 characters at most)"); return }
+    if (form.destType === "website" && !/^https?:\/\//.test(href)) {
+      setError("Website links need to start with https://")
+      return
+    }
+    if (form.destType === "custom" && (href.startsWith("//") || (!href.startsWith("/") && !/^https?:\/\//.test(href)))) {
       setError("Start the link with / (a page on this site) or https:// (an external site)")
       return
     }
@@ -62,35 +193,106 @@ function LinkDialog({ section, initial, onClose, onSubmit }) {
     }
   }
 
+  const selectCls = "mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100"
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label={initial ? "Edit link" : "New link"}>
       <button type="button" aria-label="Close dialog" className="absolute inset-0 w-full h-full cursor-default" onClick={onClose} />
       <div className="relative w-full max-w-xl rounded-2xl bg-white dark:bg-[#16283f] shadow-2xl p-5 sm:p-6 max-h-[90vh] overflow-y-auto">
         <form onSubmit={handleSubmit} noValidate>
           <h2 className="text-base sm:text-lg font-black text-gray-900 dark:text-slate-100 tracking-tight">{initial ? "Edit link" : "New link"}</h2>
-          <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Links starting with / stay inside the site (for example /menu or /about); https:// links open an external site in a new tab.</p>
+          <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Pick where this link goes from the list - no need to type addresses. The advanced option is only for special links.</p>
           <div className="mt-4 grid gap-4">
             <div>
               <label htmlFor="nav-label" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">
                 Label <span className="text-red-500">*</span>
               </label>
               <input id="nav-label" type="text" required maxLength={60} value={form.label} onChange={set("label")} aria-required="true" placeholder="What shoppers see, e.g. About us"
-                className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100" />
+                className={selectCls} />
             </div>
             <div>
-              <label htmlFor="nav-href" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">
-                Link <span className="text-red-500">*</span>
+              <label htmlFor="nav-dest" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">
+                Where should this link go? <span className="text-red-500">*</span>
               </label>
-              <input id="nav-href" type="text" required maxLength={500} value={form.href} onChange={set("href")} aria-required="true" placeholder="/about or https://…"
-                className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100" />
+              <select id="nav-dest" value={form.destType} onChange={changeType} aria-required="true" className={selectCls}>
+                {DEST_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
             </div>
+            {form.destType === "page" && (
+              <div>
+                <label htmlFor="nav-page" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Which page?</label>
+                <select id="nav-page" required value={form.destValue} onChange={pick("destValue")} aria-required="true" className={selectCls}>
+                  <option value="">Choose a page…</option>
+                  {pageOptions.map((p) => <option key={p.href} value={p.href}>{p.label}</option>)}
+                </select>
+              </div>
+            )}
+            {form.destType === "category" && (
+              <div>
+                <label htmlFor="nav-category" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Which category?</label>
+                <select id="nav-category" required value={form.destValue} onChange={pick("destValue")} aria-required="true" className={selectCls}>
+                  <option value="">Choose a category…</option>
+                  {!categories.includes(form.destValue) && form.destValue && <option value={form.destValue}>{form.destValue} (saved)</option>}
+                  {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Shoppers will land on the shop page filtered to this category.</p>
+              </div>
+            )}
+            {form.destType === "brand" && (
+              <div>
+                <label htmlFor="nav-brand" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Which brand?</label>
+                <select id="nav-brand" required value={form.destValue} onChange={pick("destValue")} aria-required="true" className={selectCls}>
+                  <option value="">Choose a brand…</option>
+                  {!brands.includes(form.destValue) && form.destValue && <option value={form.destValue}>{form.destValue} (saved)</option>}
+                  {brands.map((b) => <option key={b} value={b}>{b}</option>)}
+                </select>
+                <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Shoppers will land on the shop page filtered to this brand.</p>
+              </div>
+            )}
+            {form.destType === "promo" && (
+              <div>
+                <label htmlFor="nav-promo" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Which promotion?</label>
+                <select id="nav-promo" required value={form.destValue} onChange={pick("destValue")} aria-required="true" className={selectCls}>
+                  <option value="">Choose a promotion…</option>
+                  {!promos.some((p) => p.code === form.destValue) && form.destValue && <option value={form.destValue}>{promoMeta(form.destValue)} (saved)</option>}
+                  {promos.map((p) => <option key={p.code} value={p.code}>{promoMeta(p.code)}{p.is_active ? "" : " (inactive)"}</option>)}
+                </select>
+              </div>
+            )}
+            {form.destType === "product" && (
+              <ProductPicker
+                selected={form.destValue ? [form.destValue] : []}
+                max={1}
+                onToggle={(id) => setForm((f) => ({ ...f, destValue: f.destValue === id ? "" : id }))}
+              />
+            )}
+            {form.destType === "website" && (
+              <div>
+                <label htmlFor="nav-href" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">
+                  Website address <span className="text-red-500">*</span>
+                </label>
+                <input id="nav-href" type="url" required maxLength={500} value={form.raw} onChange={pick("raw")} aria-required="true" placeholder="https://…"
+                  className={selectCls} />
+                <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Opens in a new tab on the site.</p>
+              </div>
+            )}
+            {form.destType === "custom" && (
+              <div>
+                <label htmlFor="nav-href" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">
+                  Link (advanced) <span className="text-red-500">*</span>
+                </label>
+                <input id="nav-href" type="text" required maxLength={500} value={form.raw} onChange={pick("raw")} aria-required="true" placeholder="/menu?promo=SUMMER or https://…"
+                  className={selectCls} />
+                <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Start with / (a page on this site) or https:// (an external site).</p>
+              </div>
+            )}
             {isSocial && (
               <>
                 <ImagePicker label="Icon image (optional)" value={form.image_url} onChange={(url) => setForm((f) => ({ ...f, image_url: url }))} />
                 <div>
                   <label htmlFor="nav-alt" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Icon alt text</label>
                   <input id="nav-alt" type="text" maxLength={120} value={form.alt_text} onChange={set("alt_text")} placeholder="Describes the icon for screen readers"
-                    className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100" />
+                    className={selectCls} />
                 </div>
               </>
             )}
@@ -102,7 +304,7 @@ function LinkDialog({ section, initial, onClose, onSubmit }) {
           {error && <p role="alert" className="mt-3 text-sm font-semibold text-red-600 dark:text-red-400">{error}</p>}
           <div className="mt-5 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition">Cancel</button>
-            <button type="submit" disabled={saving} className={`${btnPrimary} disabled:opacity-60`}>{saving ? "Saving..." : initial ? "Save changes" : "Create link"}</button>
+            <button type="submit" disabled={saving} className={`${btnPrimary} disabled:opacity-60 min-h-[44px]`}>{saving ? "Saving..." : initial ? "Save changes" : "Create link"}</button>
           </div>
         </form>
       </div>
@@ -151,6 +353,12 @@ function AdminNavigation() {
   const [catLoading, setCatLoading] = useState(false)
   const [catError, setCatError] = useState("")
   const [catSaving, setCatSaving] = useState(false)
+  // adding a category now, before any product uses the name; removals ride
+  // along with the next batch save so one save = one step-up
+  const [catRemoved, setCatRemoved] = useState([])
+  const [addingCat, setAddingCat] = useState(false)
+  const [newCatName, setNewCatName] = useState("")
+  const [catAddError, setCatAddError] = useState("")
 
   const isCats = tab === "categories"
   const activeTab = TABS.find((t) => t.key === tab)
@@ -176,6 +384,7 @@ function AdminNavigation() {
       const rows = data.items || []
       setCatRows(rows)
       setCatOriginal(JSON.stringify(rows))
+      setCatRemoved([])
     } catch (err) {
       setCatError(err.message || "Failed to load categories")
     } finally { setCatLoading(false) }
@@ -191,7 +400,8 @@ function AdminNavigation() {
 
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(""), 4000); return () => clearTimeout(t) }, [toast])
 
-  const catDirty = isCats && catRows !== null && catOriginal !== null && JSON.stringify(catRows) !== catOriginal
+  const catDirty = isCats && catRows !== null && catOriginal !== null
+    && (JSON.stringify(catRows) !== catOriginal || catRemoved.length > 0)
 
   async function handleSubmitLink(payload) {
     const token = await sessionToken()
@@ -262,6 +472,31 @@ function AdminNavigation() {
     setCatRows((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)))
   }
 
+  function handleAddCat(e) {
+    e.preventDefault()
+    const name = newCatName.trim()
+    setCatAddError("")
+    if (!name) { setCatAddError("Type a category name first"); return }
+    if (name.length > 120) { setCatAddError("Keep the name to 120 characters or fewer"); return }
+    if ((catRows || []).some((r) => r.name.toLowerCase() === name.toLowerCase())) {
+      setCatAddError(`"${name}" is already in the list`)
+      return
+    }
+    setCatRows((rows) => [...rows, { name, label: null, sort_order: rows.length, is_visible: true, has_override: false, in_catalog: false }])
+    setNewCatName("")
+    setAddingCat(false)
+    setToast("Category added - press Save changes to keep it")
+  }
+
+  function removeCat(index) {
+    const r = catRows?.[index]
+    if (!r) return
+    // only names that already exist in site_categories need a server delete;
+    // a row added-but-not-saved just disappears from the list
+    if (r.has_override) setCatRemoved((prev) => (prev.includes(r.name) ? prev : [...prev, r.name]))
+    setCatRows((rows) => rows.filter((_, j) => j !== index))
+  }
+
   async function saveCats() {
     setCatSaving(true); setCatError("")
     try {
@@ -272,8 +507,9 @@ function AdminNavigation() {
         sort_order: i,
         is_visible: r.is_visible !== false,
       }))
-      await apiPostAuth("/admin/categories", { items }, token)
-      setToast("Categories saved")
+      const payload = { items, ...(catRemoved.length ? { removed: [...catRemoved] } : {}) }
+      await apiPostAuth("/admin/categories", payload, token)
+      setToast(catRemoved.length ? "Categories saved (removed)" : "Categories saved")
       await loadCats()
     } catch (err) {
       setCatError(err.message || "Save failed")
@@ -307,13 +543,16 @@ function AdminNavigation() {
         <>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs font-semibold text-gray-500 dark:text-slate-400">
-              {catRows ? `${catRows.length} categories from your active products` : "Loading categories..."}
+              {catRows
+                ? `${catRows.length} categories${catRows.some((r) => r.in_catalog === false) ? ` (${catRows.filter((r) => r.in_catalog === false).length} waiting for a product)` : ""}`
+                : "Loading categories..."}
             </p>
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={() => window.open("/?scPreview=1", "_blank")} className={btnGhost}>Preview storefront</button>
               <button type="button" onClick={() => setHistory(true)} className={btnGhost}>History</button>
+              <button type="button" onClick={() => { setAddingCat(true); setCatAddError("") }} className={btnGhost}>+ Add category</button>
               {catDirty && (
-                <button type="button" disabled={catSaving} onClick={() => { setCatRows(JSON.parse(catOriginal)); setCatError("") }} className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-60">
+                <button type="button" disabled={catSaving} onClick={() => { setCatRows(JSON.parse(catOriginal)); setCatRemoved([]); setCatError(""); setAddingCat(false); setNewCatName(""); setCatAddError("") }} className="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-60">
                   Discard changes
                 </button>
               )}
@@ -322,6 +561,30 @@ function AdminNavigation() {
               </button>
             </div>
           </div>
+          {addingCat && (
+            <form onSubmit={handleAddCat} className="mb-4 rounded-2xl border border-[#F28C28]/40 bg-[#F28C28]/5 p-3 flex flex-col sm:flex-row sm:items-end gap-3">
+              <div className="flex-1 min-w-[200px]">
+                <label htmlFor="cat-new" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">New category name</label>
+                <input
+                  id="cat-new"
+                  type="text"
+                  maxLength={120}
+                  value={newCatName}
+                  onChange={(e) => { setNewCatName(e.target.value); setCatAddError("") }}
+                  onKeyDown={(e) => { if (e.key === "Escape") { setAddingCat(false); setCatAddError("") } }}
+                  placeholder="e.g. Birds"
+                  autoFocus
+                  className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">It appears on the Menu filter as soon as a product uses this name.</p>
+                {catAddError && <p role="alert" className="mt-1 text-xs font-semibold text-red-600 dark:text-red-400">{catAddError}</p>}
+              </div>
+              <div className="flex gap-2">
+                <button type="submit" disabled={!newCatName.trim()} className={`${btnPrimary} disabled:opacity-50`}>Add</button>
+                <button type="button" onClick={() => { setAddingCat(false); setCatAddError("") }} className="px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition">Cancel</button>
+              </div>
+            </form>
+          )}
           {catError && (
             <div role="alert" className="mb-4 rounded-lg border border-red-300 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 px-4 py-3">
               <p className="text-sm font-semibold text-red-700 dark:text-red-300">{catError}</p>
@@ -333,7 +596,7 @@ function AdminNavigation() {
             </div>
           ) : !catRows ? null : catRows.length === 0 ? (
             catError ? null : (
-              <EmptyState title="No categories found" message="Categories appear here once your products have category names." />
+              <EmptyState title="No categories found" message="Categories appear here once your products have category names - or add one now and assign products to it later." />
             )
           ) : (
             <div className="space-y-2">
@@ -343,6 +606,7 @@ function AdminNavigation() {
                     <button type="button" onClick={() => moveCat(i, -1)} disabled={i === 0} aria-label={`Move ${r.name} up`} className="px-2 py-1 rounded-lg text-[10px] font-bold text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-40">↑</button>
                     <button type="button" onClick={() => moveCat(i, 1)} disabled={i === catRows.length - 1} aria-label={`Move ${r.name} down`} className="px-2 py-1 rounded-lg text-[10px] font-bold text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-40">↓</button>
                     <span className="ml-1 text-xs font-bold text-gray-700 dark:text-slate-200">{r.name}</span>
+                    {r.in_catalog === false && <StatusPill kind="info">No products yet</StatusPill>}
                   </div>
                   <div className="flex-1 min-w-0">
                     <label className="sr-only" htmlFor={`cat-label-${i}`}>Display name for {r.name}</label>
@@ -356,15 +620,20 @@ function AdminNavigation() {
                       className="w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] px-2 py-1.5 text-sm text-gray-900 dark:text-slate-100"
                     />
                   </div>
-                  <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 dark:text-slate-300 shrink-0">
-                    <input
-                      type="checkbox"
-                      checked={r.is_visible !== false}
-                      onChange={(e) => editCat(i, { is_visible: e.target.checked })}
-                      className="rounded border-gray-300"
-                    />
-                    In filter list
-                  </label>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 dark:text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={r.is_visible !== false}
+                        onChange={(e) => editCat(i, { is_visible: e.target.checked })}
+                        className="rounded border-gray-300"
+                      />
+                      In filter list
+                    </label>
+                    {r.in_catalog === false && (
+                      <button type="button" onClick={() => removeCat(i)} aria-label={`Remove ${r.name} from this list`} className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/40 transition">Remove</button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

@@ -1140,6 +1140,57 @@ if ($cats0 -and $cats0.total -gt 0) {
   Step 'category: label override is live in site-content' $false 'no catalog categories' 'SKIP'
 }
 
+# waiting-for-product categories (added before any product uses the name):
+# they must surface in the admin list marked in_catalog=false, and the batch
+# endpoint must delete them on request - without touching any other row
+if ($cats0 -and $cats0.total -gt 0 -and $stepUpH) {
+  $orphanName = 'E2E Waiting Cat'
+  $orphanCreated = $false
+  try {
+    Invoke-RestMethod -Uri "$SU/rest/v1/site_categories" -Method Post `
+      -Headers @{ apikey = $SK; Authorization = "Bearer $SK"; 'Content-Type' = 'application/json' } `
+      -Body (@{ name = $orphanName; label = $null; sort_order = 9999; is_visible = $true; updated_at = (Get-Date).ToUniversalTime().ToString('o') } | ConvertTo-Json -Compress) | Out-Null
+    $orphanCreated = $true
+    $orph1 = Invoke-RestMethod -Uri "$base/api/admin/categories" -Headers $authH
+    $orow = @($orph1.items | Where-Object { $_.name -eq $orphanName })
+    Step 'category: waiting-for-product row surfaces' ($orow.Count -eq 1 -and $orow[0].in_catalog -eq $false) "found=$($orow.Count) in_catalog=$($orow[0].in_catalog)"
+  } catch { Step 'category: waiting-for-product row surfaces' $false (Get-ErrBody $_) }
+
+  try {
+    # same single-row save payload the block above uses - a no-op for $orig
+    $rm = Invoke-RestMethod -Uri "$base/api/admin/categories" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ items = @(@{ name = $orig.name; label = $orig.label; sort_order = $origSort; is_visible = $orig.is_visible }); removed = @($orphanName) } | ConvertTo-Json -Compress -Depth 5)
+    Step 'category: remove deletes the waiting row' ($rm.removed -eq 1) "removed=$($rm.removed) count=$($rm.count)"
+  } catch { Step 'category: remove deletes the waiting row' $false (Get-ErrBody $_) }
+  try {
+    $orph2 = Invoke-RestMethod -Uri "$base/api/admin/categories" -Headers $authH
+    Step 'category: waiting row gone after remove' (@($orph2.items | Where-Object { $_.name -eq $orphanName }).Count -eq 0) "total=$($orph2.total)"
+  } catch { Step 'category: waiting row gone after remove' $false (Get-ErrBody $_) }
+
+  # a name cannot be saved and removed in the same request (UI never sends it)
+  if ($orphanCreated) {
+    try {
+      Invoke-RestMethod -Uri "$SU/rest/v1/site_categories" -Method Post `
+        -Headers @{ apikey = $SK; Authorization = "Bearer $SK"; 'Content-Type' = 'application/json' } `
+        -Body (@{ name = $orphanName; label = $null; sort_order = 9999; is_visible = $true; updated_at = (Get-Date).ToUniversalTime().ToString('o') } | ConvertTo-Json -Compress) | Out-Null
+      Invoke-RestMethod -Uri "$base/api/admin/categories" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+        -Body (@{ items = @(@{ name = $orphanName; label = $null; sort_order = 0; is_visible = $true }); removed = @($orphanName) } | ConvertTo-Json -Compress -Depth 5) | Out-Null
+      Step 'category: save+remove clash rejected' $false 'got 2xx'
+    } catch { Step 'category: save+remove clash rejected' ($_.Exception.Response.StatusCode.value__ -eq 400) (Get-ErrBody $_) }
+    try {
+      Invoke-RestMethod -Uri "$SU/rest/v1/site_categories?name=eq.$([uri]::EscapeDataString($orphanName))" -Method Delete `
+        -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+      Step 'category: waiting-row probe cleaned up' $true $orphanName
+    } catch { Step 'category: waiting-row probe cleaned up' $false (Get-ErrBody $_) }
+  }
+} else {
+  Step 'category: waiting-for-product row surfaces' $false 'no merged list or step-up token' 'SKIP'
+  Step 'category: remove deletes the waiting row' $false 'previous step skipped' 'SKIP'
+  Step 'category: waiting row gone after remove' $false 'previous step skipped' 'SKIP'
+  Step 'category: save+remove clash rejected' $false 'previous step skipped' 'SKIP'
+  Step 'category: waiting-row probe cleaned up' $false 'previous step skipped' 'SKIP'
+}
+
 # content history + admin preview (5g) - the nav probe above already wrote
 # history rows; the draft-section probe verifies preview never widens access
 try {
@@ -1413,6 +1464,11 @@ if ($catProbeName -and -not $catHadOverride) {
   Step 'category: probe override row removed' $true $catProbeName
 } elseif ($catProbeName) {
   Step 'category: pre-existing override kept' $true $catProbeName
+}
+if ($orphanName) {
+  # belt-and-braces: if an earlier orphan step died before its own cleanup,
+  # the waiting-row probe still must not outlive the run
+  Invoke-RestMethod -Uri "$SU/rest/v1/site_categories?name=eq.$([uri]::EscapeDataString($orphanName))" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
 }
 if ($prevSecId) {
   Invoke-RestMethod -Uri "$SU/rest/v1/site_home_sections?id=eq.$prevSecId" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null

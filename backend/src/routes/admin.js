@@ -18,7 +18,7 @@ import { isUuid } from '../utils/uuid.js'
 import { sanitizeAltText, mediaPageParams, buildUsageIndex } from '../utils/mediaRules.js'
 import { sanitizeBanner, PLACEMENTS } from '../utils/bannerRules.js'
 import { sanitizeSection } from '../utils/sectionRules.js'
-import { sanitizeNavItem, sanitizeCategoryBatch, NAV_SECTIONS } from '../utils/navRules.js'
+import { sanitizeNavItem, sanitizeCategoryBatch, sanitizeCategoryRemoval, NAV_SECTIONS } from '../utils/navRules.js'
 import { sanitizeSettings, sanitizeFaq, sanitizePolicy, mergeSettings } from '../utils/siteSettingsRules.js'
 import { invalidateSettingsCache } from '../utils/shopSettings.js'
 import { missingColumnOf, isSchemaPendingError } from '../utils/pgErrors.js'
@@ -1972,7 +1972,13 @@ router.get('/categories', requireAdmin, async (req, res) => {
     const baseNames = [...new Set((catRes.data || []).map((r) => r.category).filter(Boolean))].sort()
     const overrides = new Map((ovRes.data || []).map((r) => [r.name, r]))
     const baseIndex = new Map(baseNames.map((name, i) => [name, i]))
-    const rows = baseNames.map((name) => ({ name, override: overrides.get(name) }))
+    const inCatalog = new Set(baseNames)
+    // override rows for names with no active product ("created, waiting for
+    // a product") - the editor must show them or they are invisible forever;
+    // the storefront merge ignores them because it starts from baseNames
+    const orphanNames = [...overrides.keys()].filter((n) => !inCatalog.has(n)).sort()
+    orphanNames.forEach((n, k) => baseIndex.set(n, baseNames.length + k))
+    const rows = [...baseNames, ...orphanNames].map((name) => ({ name, override: overrides.get(name) }))
     // saved categories first by sort_order, then unsaved in catalog order -
     // mirrors the storefront merge in frontend/lib/siteContent.js
     rows.sort((a, b) => {
@@ -1988,6 +1994,7 @@ router.get('/categories', requireAdmin, async (req, res) => {
         sort_order: override?.sort_order ?? null,
         is_visible: override?.is_visible ?? true,
         has_override: Boolean(override),
+        in_catalog: inCatalog.has(name),
       })),
       total: rows.length,
     })
@@ -1997,13 +2004,39 @@ router.get('/categories', requireAdmin, async (req, res) => {
   }
 })
 
-// POST /api/admin/categories - batch save { items: [...] }; upserts only
-// (never deletes), so categories that vanish from the catalog keep their
-// preferences for the day they return. One request per save = one step-up.
+// POST /api/admin/categories - batch save { items: [...], removed?: [...] };
+// upserts items (so categories that vanish from the catalog keep their
+// preferences), and removes override rows named in `removed` - but only when
+// the name has no active product (deleting a live category's preferences by
+// accident would be silently confusing). One request per save = one step-up.
 router.post('/categories', requireAdmin, async (req, res) => {
   try {
     const clean = sanitizeCategoryBatch(req.body?.items)
     if (!clean.ok) return res.status(400).json({ error: clean.error })
+    const removal = sanitizeCategoryRemoval(req.body?.removed)
+    if (!removal.ok) return res.status(400).json({ error: removal.error })
+    const saveNames = new Set(clean.values.map((v) => v.name))
+    const clash = removal.values.find((n) => saveNames.has(n))
+    if (clash) return res.status(400).json({ error: `"${clash}" cannot be saved and removed in one request` })
+    // capture previous values BEFORE any mutation, or the history diff is a lie
+    const { data: prevRows, error: prevErr } = await supabaseAdmin
+      .from('site_categories')
+      .select('name, label, sort_order, is_visible')
+      .in('name', [...saveNames])
+    if (prevErr) throw prevErr
+    let removedCount = 0
+    if (removal.values.length > 0) {
+      const { data: activeCats, error: catErr } = await supabaseAdmin
+        .from('product').select('category').eq('is_active', true)
+      if (catErr) throw catErr
+      const active = new Set((activeCats || []).map((r) => r.category).filter(Boolean))
+      const killable = removal.values.filter((n) => !active.has(n))
+      if (killable.length > 0) {
+        const { error } = await supabaseAdmin.from('site_categories').delete().in('name', killable)
+        if (error) throw error
+        removedCount = killable.length
+      }
+    }
     const now = new Date().toISOString()
     const rows = clean.values.map((v) => ({ ...v, updated_at: now }))
     const { error } = await supabaseAdmin.from('site_categories').upsert(rows, { onConflict: 'name' })
@@ -2012,14 +2045,10 @@ router.post('/categories', requireAdmin, async (req, res) => {
       throw error
     }
     invalidateContentCache()
-    res.json({ success: true, count: clean.values.length })
-    logAudit({ adminEmail: req.userEmail, action: 'category_batch_save', target: 'site_categories', details: `${clean.values.length} categories saved` })
+    res.json({ success: true, count: clean.values.length, removed: removedCount })
+    logAudit({ adminEmail: req.userEmail, action: 'category_batch_save', target: 'site_categories', details: `${clean.values.length} categories saved${removedCount ? `, ${removedCount} removed` : ''}` })
     // per-category previous vs new values, so the entry reads
     // "Dogs · label: Pet dogs -> Dogs" instead of a jsonb dump
-    const { data: prevRows } = await supabaseAdmin
-      .from('site_categories')
-      .select('name, label, sort_order, is_visible')
-      .in('name', clean.values.map((v) => v.name))
     const prevByName = new Map((prevRows || []).map((r) => [r.name, r]))
     const changes = {}
     for (const row of clean.values) {
@@ -2029,6 +2058,9 @@ router.post('/categories', requireAdmin, async (req, res) => {
         const to = row[field] ?? null
         if (JSON.stringify(from) !== JSON.stringify(to)) changes[`${row.name} · ${field}`] = { from, to }
       }
+    }
+    for (const name of removal.values.filter((n) => !saveNames.has(n))) {
+      if (prevByName.has(name)) changes[`${name} · row`] = { from: 'Live', to: 'Removed' }
     }
     recordContentHistory('categories', 'site_categories', 'save', { name: 'Menu categories', changes }, req.userEmail)
   } catch (err) {

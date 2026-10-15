@@ -91,7 +91,7 @@ function AdminLayout() {
   const navLinks = ADMIN_NAV.filter((link) => canSeeNav(link, role))
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-[#0b1929]">
+    <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-[#0b1929]">
       <RecoveryGate />
       <StepUpModal />
 
@@ -107,7 +107,7 @@ function AdminLayout() {
       {/* sidebar navigation panel */}
       {/* on mobile it slides in from the left, on desktop it's always there */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#0b2e59] text-white flex flex-col p-5 transition-transform duration-300 md:static md:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#0b2e59] text-white flex flex-col p-5 overflow-y-auto transition-transform duration-300 md:static md:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
         {/* x button to close the sidebar, only visible on mobile */}
         <button

@@ -134,3 +134,21 @@ export function sanitizeCategoryBatch(items) {
   }
   return { ok: true, values }
 }
+
+// names to drop from site_categories (removing a newly added category that
+// never got a product). Unknown names are fine - delete is idempotent.
+export function sanitizeCategoryRemoval(names) {
+  const fail = (error) => ({ ok: false, error })
+  if (names === undefined || names === null) return { ok: true, values: [] }
+  if (!Array.isArray(names)) return fail('Provide a removal list')
+  if (names.length > MAX_CATEGORIES) return fail(`At most ${MAX_CATEGORIES} categories can be removed at once`)
+  const values = []
+  for (const raw of names) {
+    if (typeof raw !== 'string') return fail('Each removed category must be text')
+    const name = raw.trim()
+    if (!name) return fail('Removed category names cannot be empty')
+    if (name.length > MAX_NAME) return fail(`Name "${name.slice(0, 30)}..." must be ${MAX_NAME} characters or fewer`)
+    values.push(name)
+  }
+  return { ok: true, values }
+}
