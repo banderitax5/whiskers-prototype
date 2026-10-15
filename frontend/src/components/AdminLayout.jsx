@@ -170,7 +170,10 @@ function AdminLayout() {
       </aside>
 
       {/* main content area where the active admin page renders */}
-      <main className="flex-1 p-4 sm:p-6 overflow-y-auto dark:bg-[#0b1929]">
+        {/* relative: gives sr-only (absolute) labels inside the page a
+            containing block here — otherwise they escape this overflow-y-auto
+            and extend the whole document, producing a second (window) scrollbar */}
+        <main className="relative flex-1 p-4 sm:p-6 overflow-y-auto dark:bg-[#0b1929]">
 
         {/* top bar with hamburger menu (mobile) and title */}
         <div className="flex items-center gap-3 mb-6">
