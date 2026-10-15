@@ -23,7 +23,7 @@ import { sanitizeSettings, sanitizeFaq, sanitizePolicy, mergeSettings } from '..
 import { invalidateSettingsCache } from '../utils/shopSettings.js'
 import { missingColumnOf, isSchemaPendingError } from '../utils/pgErrors.js'
 import { effectiveUnitPrice, lineMargin } from '../utils/orderCosting.js'
-import { recordContentHistory } from '../utils/contentHistory.js'
+import { recordContentHistory, diffChanges, historyLabel } from '../utils/contentHistory.js'
 import { defaultRowsFor, RESTORE_SCOPES } from '../utils/siteContentDefaults.js'
 import logger from '../utils/logger.js'
 
@@ -1385,7 +1385,7 @@ router.patch('/media/:id', requireAdmin, async (req, res) => {
     if (error) throw error
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'media_update', target: req.params.id, details: `alt: '${before.alt_text}' -> '${alt.value}'` })
-    recordContentHistory('media', req.params.id, 'update', data, req.userEmail)
+    recordContentHistory('media', req.params.id, 'update', { name: historyLabel(before, 'alt_text', 'url') || 'Image', changes: diffChanges(before, data, ['alt_text']) }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Media update error')
     res.status(500).json({ error: 'Failed to update media' })
@@ -1414,7 +1414,7 @@ router.delete('/media/:id', requireAdmin, async (req, res) => {
     if (error) throw error
     res.json({ success: true })
     logAudit({ adminEmail: req.userEmail, action: 'media_archive', target: media.storage_path || req.params.id, details: usedIn.length ? `forced, used by: ${usedIn.map((u) => u.label).join(', ')}` : 'unused' })
-    recordContentHistory('media', req.params.id, 'archive', media, req.userEmail)
+    recordContentHistory('media', req.params.id, 'archive', { name: historyLabel(media, 'alt_text', 'url') || 'Image', changes: { status: { from: media.archived_at ? 'Archived' : 'Live', to: 'Archived' } } }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Media archive error')
     res.status(500).json({ error: 'Failed to archive media' })
@@ -1425,6 +1425,8 @@ router.delete('/media/:id', requireAdmin, async (req, res) => {
 router.post('/media/:id/restore', requireAdmin, async (req, res) => {
   if (!requireUuidParam(req, res)) return
   try {
+    const { data: before } = await supabaseAdmin.from('site_media').select(MEDIA_COLUMNS).eq('id', req.params.id).single()
+    if (!before) return res.status(404).json({ error: 'Media not found' })
     const { data, error } = await supabaseAdmin
       .from('site_media')
       .update({ archived_at: null, updated_at: new Date().toISOString() })
@@ -1435,7 +1437,7 @@ router.post('/media/:id/restore', requireAdmin, async (req, res) => {
     if (!data) return res.status(404).json({ error: 'Media not found' })
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'media_restore', target: data.storage_path || req.params.id })
-    recordContentHistory('media', data.id, 'restore', data, req.userEmail)
+    recordContentHistory('media', data.id, 'restore', { name: historyLabel(before, 'alt_text', 'url') || 'Image', changes: { status: { from: before.archived_at ? 'Archived' : 'Live', to: 'Live' } } }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Media restore error')
     res.status(500).json({ error: 'Failed to restore media' })
@@ -1543,7 +1545,7 @@ router.patch('/banners/:id', requireAdmin, async (req, res) => {
     res.json({ item: data })
     const changed = Object.keys(clean.values).join(', ')
     logAudit({ adminEmail: req.userEmail, action: 'banner_update', target: req.params.id, details: `changed: ${changed}` })
-    recordContentHistory('banners', req.params.id, 'update', data, req.userEmail)
+    recordContentHistory('banners', req.params.id, 'update', { name: historyLabel(before, 'title', 'alt') || 'Banner', changes: diffChanges(before, data, Object.keys(clean.values)) }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Banner update error')
     res.status(500).json({ error: 'Failed to update banner' })
@@ -1565,7 +1567,7 @@ router.delete('/banners/:id', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ success: true })
     logAudit({ adminEmail: req.userEmail, action: 'banner_archive', target: req.params.id, details: `${before.placement} "${before.alt}"` })
-    recordContentHistory('banners', req.params.id, 'archive', before, req.userEmail)
+    recordContentHistory('banners', req.params.id, 'archive', { name: historyLabel(before, 'title', 'alt') || 'Banner', changes: { status: { from: before.archived_at ? 'Archived' : 'Live', to: 'Archived' } } }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Banner archive error')
     res.status(500).json({ error: 'Failed to archive banner' })
@@ -1576,6 +1578,8 @@ router.delete('/banners/:id', requireAdmin, async (req, res) => {
 router.post('/banners/:id/restore', requireAdmin, async (req, res) => {
   if (!requireUuidParam(req, res)) return
   try {
+    const { data: before } = await supabaseAdmin.from('site_banners').select(BANNER_COLUMNS).eq('id', req.params.id).single()
+    if (!before) return res.status(404).json({ error: 'Banner not found' })
     const { data, error } = await supabaseAdmin
       .from('site_banners')
       .update({ archived_at: null, updated_at: new Date().toISOString() })
@@ -1587,7 +1591,7 @@ router.post('/banners/:id/restore', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'banner_restore', target: data.id, details: data.placement })
-    recordContentHistory('banners', data.id, 'restore', data, req.userEmail)
+    recordContentHistory('banners', data.id, 'restore', { name: historyLabel(before, 'title', 'alt') || 'Banner', changes: { status: { from: before.archived_at ? 'Archived' : 'Live', to: 'Live' } } }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Banner restore error')
     res.status(500).json({ error: 'Failed to restore banner' })
@@ -1604,6 +1608,7 @@ router.post('/banners/reorder', requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Provide placement and a non-empty ids list' })
     }
     if (ids.some((id) => !isUuid(id))) return res.status(400).json({ error: 'ids must be uuids' })
+    const { data: beforeRows } = await supabaseAdmin.from('site_banners').select('id, title, alt, sort_order').in('id', ids)
     for (let i = 0; i < ids.length; i++) {
       const { error } = await supabaseAdmin
         .from('site_banners')
@@ -1615,7 +1620,13 @@ router.post('/banners/reorder', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ success: true, count: ids.length })
     logAudit({ adminEmail: req.userEmail, action: 'banner_reorder', target: placement, details: `${ids.length} banners reordered` })
-    recordContentHistory('banners', placement, 'reorder', { ids }, req.userEmail)
+    const rows = beforeRows || []
+    const labelOf = (r) => r?.title || r?.alt || 'Untitled'
+    recordContentHistory('banners', placement, 'reorder', {
+      name: placement,
+      previous: [...rows].sort((a, b) => (b.sort_order ?? 0) - (a.sort_order ?? 0)).map(labelOf),
+      next: ids.map((id) => labelOf(rows.find((r) => r.id === id))),
+    }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Banner reorder error')
     res.status(500).json({ error: 'Failed to reorder banners' })
@@ -1690,7 +1701,7 @@ router.patch('/sections/:id', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'section_update', target: req.params.id, details: `changed: ${Object.keys(clean.values).join(', ')}` })
-    recordContentHistory('sections', req.params.id, 'update', data, req.userEmail)
+    recordContentHistory('sections', req.params.id, 'update', { name: historyLabel(before, 'title') || 'Section', changes: diffChanges(before, data, Object.keys(clean.values)) }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Section update error')
     res.status(500).json({ error: 'Failed to update section' })
@@ -1712,7 +1723,7 @@ router.delete('/sections/:id', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ success: true })
     logAudit({ adminEmail: req.userEmail, action: 'section_archive', target: req.params.id, details: `${before.type} "${before.title}"` })
-    recordContentHistory('sections', req.params.id, 'archive', before, req.userEmail)
+    recordContentHistory('sections', req.params.id, 'archive', { name: historyLabel(before, 'title') || 'Section', changes: { status: { from: before.archived_at ? 'Archived' : 'Live', to: 'Archived' } } }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Section archive error')
     res.status(500).json({ error: 'Failed to archive section' })
@@ -1723,6 +1734,8 @@ router.delete('/sections/:id', requireAdmin, async (req, res) => {
 router.post('/sections/:id/restore', requireAdmin, async (req, res) => {
   if (!requireUuidParam(req, res)) return
   try {
+    const { data: before } = await supabaseAdmin.from('site_home_sections').select(SECTION_COLUMNS).eq('id', req.params.id).single()
+    if (!before) return res.status(404).json({ error: 'Section not found' })
     const { data, error } = await supabaseAdmin
       .from('site_home_sections')
       .update({ archived_at: null, updated_at: new Date().toISOString() })
@@ -1734,7 +1747,7 @@ router.post('/sections/:id/restore', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'section_restore', target: data.id, details: data.type })
-    recordContentHistory('sections', data.id, 'restore', data, req.userEmail)
+    recordContentHistory('sections', data.id, 'restore', { name: historyLabel(before, 'title') || 'Section', changes: { status: { from: before.archived_at ? 'Archived' : 'Live', to: 'Live' } } }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Section restore error')
     res.status(500).json({ error: 'Failed to restore section' })
@@ -1748,6 +1761,7 @@ router.post('/sections/reorder', requireAdmin, async (req, res) => {
     const { ids } = req.body ?? {}
     if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'Provide a non-empty ids list' })
     if (ids.some((id) => !isUuid(id))) return res.status(400).json({ error: 'ids must be uuids' })
+    const { data: beforeRows } = await supabaseAdmin.from('site_home_sections').select('id, title, sort_order').in('id', ids)
     for (let i = 0; i < ids.length; i++) {
       const { error } = await supabaseAdmin
         .from('site_home_sections')
@@ -1758,7 +1772,13 @@ router.post('/sections/reorder', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ success: true, count: ids.length })
     logAudit({ adminEmail: req.userEmail, action: 'section_reorder', target: 'site_home_sections', details: `${ids.length} sections reordered` })
-    recordContentHistory('sections', 'site_home_sections', 'reorder', { ids }, req.userEmail)
+    const rows = beforeRows || []
+    const labelOf = (r) => r?.title || 'Untitled'
+    recordContentHistory('sections', 'site_home_sections', 'reorder', {
+      name: 'Home sections',
+      previous: [...rows].sort((a, b) => (b.sort_order ?? 0) - (a.sort_order ?? 0)).map(labelOf),
+      next: ids.map((id) => labelOf(rows.find((r) => r.id === id))),
+    }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Section reorder error')
     res.status(500).json({ error: 'Failed to reorder sections' })
@@ -1843,7 +1863,7 @@ router.patch('/nav-items/:id', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'nav_update', target: req.params.id, details: `changed: ${Object.keys(clean.values).join(', ')}` })
-    recordContentHistory('nav_items', req.params.id, 'update', data, req.userEmail)
+    recordContentHistory('nav_items', req.params.id, 'update', { name: historyLabel(before, 'label') || 'Link', changes: diffChanges(before, data, Object.keys(clean.values)) }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Nav item update error')
     res.status(500).json({ error: 'Failed to update navigation link' })
@@ -1865,7 +1885,7 @@ router.delete('/nav-items/:id', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ success: true })
     logAudit({ adminEmail: req.userEmail, action: 'nav_archive', target: req.params.id, details: `${before.section} "${before.label}"` })
-    recordContentHistory('nav_items', req.params.id, 'archive', before, req.userEmail)
+    recordContentHistory('nav_items', req.params.id, 'archive', { name: historyLabel(before, 'label') || 'Link', changes: { status: { from: before.archived_at ? 'Archived' : 'Live', to: 'Archived' } } }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Nav item archive error')
     res.status(500).json({ error: 'Failed to archive navigation link' })
@@ -1876,6 +1896,8 @@ router.delete('/nav-items/:id', requireAdmin, async (req, res) => {
 router.post('/nav-items/:id/restore', requireAdmin, async (req, res) => {
   if (!requireUuidParam(req, res)) return
   try {
+    const { data: before } = await supabaseAdmin.from('site_nav_items').select(NAV_COLUMNS).eq('id', req.params.id).single()
+    if (!before) return res.status(404).json({ error: 'Link not found' })
     const { data, error } = await supabaseAdmin
       .from('site_nav_items')
       .update({ archived_at: null, updated_at: new Date().toISOString() })
@@ -1889,7 +1911,7 @@ router.post('/nav-items/:id/restore', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'nav_restore', target: data.id, details: `${data.section} "${data.label}"` })
-    recordContentHistory('nav_items', data.id, 'restore', data, req.userEmail)
+    recordContentHistory('nav_items', data.id, 'restore', { name: historyLabel(before, 'label') || 'Link', changes: { status: { from: before.archived_at ? 'Archived' : 'Live', to: 'Live' } } }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Nav item restore error')
     res.status(500).json({ error: 'Failed to restore navigation link' })
@@ -1906,6 +1928,7 @@ router.post('/nav-items/reorder', requireAdmin, async (req, res) => {
     if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'Provide a non-empty ids list' })
     if (ids.length > 500) return res.status(400).json({ error: 'Too many ids' })
     if (ids.some((id) => !isUuid(id))) return res.status(400).json({ error: 'ids must be uuids' })
+    const { data: beforeRows } = await supabaseAdmin.from('site_nav_items').select('id, label, sort_order').eq('section', section).in('id', ids)
     for (let i = 0; i < ids.length; i++) {
       const { error } = await supabaseAdmin
         .from('site_nav_items')
@@ -1917,7 +1940,13 @@ router.post('/nav-items/reorder', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ success: true, count: ids.length })
     logAudit({ adminEmail: req.userEmail, action: 'nav_reorder', target: 'site_nav_items', details: `${section}: ${ids.length} links reordered` })
-    recordContentHistory('nav_items', section, 'reorder', { ids }, req.userEmail)
+    const rows = beforeRows || []
+    const labelOf = (r) => r?.label || 'Untitled'
+    recordContentHistory('nav_items', section, 'reorder', {
+      name: section,
+      previous: [...rows].sort((a, b) => (b.sort_order ?? 0) - (a.sort_order ?? 0)).map(labelOf),
+      next: ids.map((id) => labelOf(rows.find((r) => r.id === id))),
+    }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Nav item reorder error')
     res.status(500).json({ error: 'Failed to reorder navigation links' })
@@ -1985,7 +2014,23 @@ router.post('/categories', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ success: true, count: clean.values.length })
     logAudit({ adminEmail: req.userEmail, action: 'category_batch_save', target: 'site_categories', details: `${clean.values.length} categories saved` })
-    recordContentHistory('categories', 'site_categories', 'save', { items: clean.values }, req.userEmail)
+    // per-category previous vs new values, so the entry reads
+    // "Dogs · label: Pet dogs -> Dogs" instead of a jsonb dump
+    const { data: prevRows } = await supabaseAdmin
+      .from('site_categories')
+      .select('name, label, sort_order, is_visible')
+      .in('name', clean.values.map((v) => v.name))
+    const prevByName = new Map((prevRows || []).map((r) => [r.name, r]))
+    const changes = {}
+    for (const row of clean.values) {
+      const prev = prevByName.get(row.name)
+      for (const field of ['label', 'sort_order', 'is_visible']) {
+        const from = prev ? (prev[field] ?? null) : '(not set)'
+        const to = row[field] ?? null
+        if (JSON.stringify(from) !== JSON.stringify(to)) changes[`${row.name} · ${field}`] = { from, to }
+      }
+    }
+    recordContentHistory('categories', 'site_categories', 'save', { name: 'Menu categories', changes }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Category batch save error')
     res.status(500).json({ error: 'Failed to save categories' })
@@ -2068,7 +2113,14 @@ router.post('/content/restore-defaults', requireAdmin, async (req, res) => {
       def.table.replace('site_', ''),
       `scope:${scope}`,
       'reset',
-      { archivedIds: (archivedRows || []).map((r) => r.id), restored: inserted || [] },
+      {
+        name: scope,
+        archived: archivedCount,
+        restored: restoredCount,
+        names: (inserted || [])
+          .map((r) => historyLabel(r, 'title', 'alt', 'label', 'question', 'slug'))
+          .filter(Boolean),
+      },
       req.userEmail,
     )
   } catch (err) {
@@ -2138,7 +2190,10 @@ router.patch('/settings', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ settings: mergeSettings(saved.data || {}, {}), updated_at: saved.updated_at, seeded: true })
     logAudit({ adminEmail: req.userEmail, action: 'settings_update', target: 'site_settings', details: `updated: ${Object.keys(clean.values).join(', ')}` })
-    recordContentHistory('site_settings', 'site_settings', 'update', { keys: Object.keys(clean.values) }, req.userEmail)
+    recordContentHistory('site_settings', 'site_settings', 'update', {
+      name: 'Store settings',
+      changes: diffChanges(current?.data || {}, merged, Object.keys(clean.values)),
+    }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Settings update error')
     res.status(500).json({ error: 'Failed to save settings' })
@@ -2215,7 +2270,7 @@ router.patch('/faqs/:id', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'faq_update', target: req.params.id, details: `changed: ${Object.keys(clean.values).join(', ')}` })
-    recordContentHistory('faqs', req.params.id, 'update', data, req.userEmail)
+    recordContentHistory('faqs', req.params.id, 'update', { name: historyLabel(before, 'question') || 'FAQ', changes: diffChanges(before, data, Object.keys(clean.values)) }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'FAQ update error')
     res.status(500).json({ error: 'Failed to update FAQ' })
@@ -2236,7 +2291,7 @@ router.delete('/faqs/:id', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ success: true })
     logAudit({ adminEmail: req.userEmail, action: 'faq_archive', target: req.params.id, details: before.question })
-    recordContentHistory('faqs', req.params.id, 'archive', before, req.userEmail)
+    recordContentHistory('faqs', req.params.id, 'archive', { name: historyLabel(before, 'question') || 'FAQ', changes: { status: { from: before.archived_at ? 'Archived' : 'Live', to: 'Archived' } } }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'FAQ archive error')
     res.status(500).json({ error: 'Failed to archive FAQ' })
@@ -2247,6 +2302,8 @@ router.delete('/faqs/:id', requireAdmin, async (req, res) => {
 router.post('/faqs/:id/restore', requireAdmin, async (req, res) => {
   if (!requireUuidParam(req, res)) return
   try {
+    const { data: before } = await supabaseAdmin.from('site_faqs').select(FAQ_COLUMNS).eq('id', req.params.id).single()
+    if (!before) return res.status(404).json({ error: 'FAQ not found' })
     const { data, error } = await supabaseAdmin
       .from('site_faqs')
       .update({ archived_at: null, updated_at: new Date().toISOString() })
@@ -2260,7 +2317,7 @@ router.post('/faqs/:id/restore', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'faq_restore', target: data.id, details: data.question })
-    recordContentHistory('faqs', data.id, 'restore', data, req.userEmail)
+    recordContentHistory('faqs', data.id, 'restore', { name: historyLabel(before, 'question') || 'FAQ', changes: { status: { from: before.archived_at ? 'Archived' : 'Live', to: 'Live' } } }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'FAQ restore error')
     res.status(500).json({ error: 'Failed to restore FAQ' })
@@ -2274,6 +2331,7 @@ router.post('/faqs/reorder', requireAdmin, async (req, res) => {
     if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'Provide a non-empty ids list' })
     if (ids.length > 500) return res.status(400).json({ error: 'Too many ids' })
     if (ids.some((id) => !isUuid(id))) return res.status(400).json({ error: 'ids must be uuids' })
+    const { data: beforeRows } = await supabaseAdmin.from('site_faqs').select('id, question, sort_order').in('id', ids)
     for (let i = 0; i < ids.length; i++) {
       const { error } = await supabaseAdmin
         .from('site_faqs')
@@ -2284,7 +2342,13 @@ router.post('/faqs/reorder', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ success: true, count: ids.length })
     logAudit({ adminEmail: req.userEmail, action: 'faq_reorder', target: 'site_faqs', details: `${ids.length} FAQs reordered` })
-    recordContentHistory('faqs', 'site_faqs', 'reorder', { ids }, req.userEmail)
+    const rows = beforeRows || []
+    const labelOf = (r) => r?.question || 'Untitled'
+    recordContentHistory('faqs', 'site_faqs', 'reorder', {
+      name: 'FAQs',
+      previous: [...rows].sort((a, b) => (b.sort_order ?? 0) - (a.sort_order ?? 0)).map(labelOf),
+      next: ids.map((id) => labelOf(rows.find((r) => r.id === id))),
+    }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'FAQ reorder error')
     res.status(500).json({ error: 'Failed to reorder FAQs' })
@@ -2356,7 +2420,7 @@ router.patch('/policies/:id', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'policy_update', target: req.params.id, details: `changed: ${Object.keys(clean.values).join(', ')}` })
-    recordContentHistory('policies', req.params.id, 'update', data, req.userEmail)
+    recordContentHistory('policies', req.params.id, 'update', { name: historyLabel(before, 'title') || 'Policy', changes: diffChanges(before, data, Object.keys(clean.values)) }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Policy update error')
     res.status(500).json({ error: 'Failed to update policy' })
@@ -2377,7 +2441,7 @@ router.delete('/policies/:id', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ success: true })
     logAudit({ adminEmail: req.userEmail, action: 'policy_archive', target: req.params.id, details: `${before.slug} "${before.title}"` })
-    recordContentHistory('policies', req.params.id, 'archive', before, req.userEmail)
+    recordContentHistory('policies', req.params.id, 'archive', { name: historyLabel(before, 'title') || 'Policy', changes: { status: { from: before.archived_at ? 'Archived' : 'Live', to: 'Archived' } } }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Policy archive error')
     res.status(500).json({ error: 'Failed to archive policy' })
@@ -2388,6 +2452,8 @@ router.delete('/policies/:id', requireAdmin, async (req, res) => {
 router.post('/policies/:id/restore', requireAdmin, async (req, res) => {
   if (!requireUuidParam(req, res)) return
   try {
+    const { data: before } = await supabaseAdmin.from('site_policies').select(POLICY_COLUMNS).eq('id', req.params.id).single()
+    if (!before) return res.status(404).json({ error: 'Policy not found' })
     const { data, error } = await supabaseAdmin
       .from('site_policies')
       .update({ archived_at: null, updated_at: new Date().toISOString() })
@@ -2401,7 +2467,7 @@ router.post('/policies/:id/restore', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'policy_restore', target: data.id, details: `${data.slug} "${data.title}"` })
-    recordContentHistory('policies', data.id, 'restore', data, req.userEmail)
+    recordContentHistory('policies', data.id, 'restore', { name: historyLabel(before, 'title') || 'Policy', changes: { status: { from: before.archived_at ? 'Archived' : 'Live', to: 'Live' } } }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Policy restore error')
     res.status(500).json({ error: 'Failed to restore policy' })
