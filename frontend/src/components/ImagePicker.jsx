@@ -59,6 +59,16 @@ export default function ImagePicker({ label, value, onChange, required }) {
           >
             Paste link
           </button>
+          {value ? (
+            <button
+              type="button"
+              onClick={() => onChange("")}
+              title="Remove this image"
+              className="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition text-red-600 dark:text-red-400 border border-red-300 dark:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/30"
+            >
+              Remove
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -104,7 +114,7 @@ export default function ImagePicker({ label, value, onChange, required }) {
                     type="button"
                     role="option"
                     aria-selected={on}
-                    onClick={() => onChange(m.url)}
+                    onClick={() => onChange(on ? "" : m.url)}
                     title={m.alt_text || m.url}
                     className={`relative aspect-video rounded overflow-hidden border-2 transition ${on ? "border-[#F28C28] ring-1 ring-[#F28C28]" : "border-transparent hover:border-gray-300 dark:hover:border-[#2c4a6f]"}`}
                   >
