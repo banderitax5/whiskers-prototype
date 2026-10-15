@@ -335,13 +335,13 @@ function Checkout() {
         throw new Error(data.error || 'Failed to place order')
       }
 
-      const { order_id } = await res.json()
+      const { order_id, receipt_email_sent: receiptEmailed } = await res.json()
       placedRef.current = true
       clearCart(orderedIds, { immediate: true })
       try { sessionStorage.removeItem(SELECTION_KEY) } catch { /* ignore */ }
       pushNotification('Order placed successfully!')
       trackEvent('checkout_complete', { order_id, total: totals.totalCents / 100, items: checkoutItems.length })
-      navigate(`/orders/${order_id}`)
+      navigate(`/orders/${order_id}`, { state: { receiptEmailed: Boolean(receiptEmailed) } })
     } catch (err) {
       pushNotification(err.message, 'error')
     } finally {

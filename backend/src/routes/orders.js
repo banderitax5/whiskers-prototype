@@ -3,6 +3,7 @@ import { authMiddleware } from '../middleware/auth.js'
 import { orderLimiter } from '../middleware/rateLimiter.js'
 import { supabaseAdmin } from '../config/supabase.js'
 import { getShippingRules } from '../utils/shopSettings.js'
+import { sendOrderReceipt, maskEmail } from '../utils/mailer.js'
 import { isSchemaPendingError } from '../utils/pgErrors.js'
 import { validatePromo, buildDiscountAmounts, pickBestPromo } from '../utils/promoEngine.js'
 import logger from '../utils/logger.js'
@@ -328,7 +329,36 @@ router.post('/', orderLimiter, async (req, res) => {
         .in('product_id', productIds)
     }
 
-    res.status(201).json({ order_id: orderId, status: 'Pending', total_amount: totalAmount })
+    // receipt email (owner-requested extension - not in the paper): the order
+    // is fully committed at this point, so the mail is pure bonus. It never
+    // blocks or fails the response; without BREVO_API_KEY it is a no-op.
+    const receipt = await sendOrderReceipt(req.userEmail, {
+      orderId,
+      createdAt: new Date().toISOString(),
+      items: validatedItems.map((i) => ({
+        name: productMap.get(i.productId)?.prod_name || 'Item',
+        quantity: i.quantity,
+        unitPrice: i.price,
+        subtotal: i.subtotal,
+      })),
+      discountTotal: promoResult?.discountAmount || 0,
+      shippingFee: shipping,
+      total: totalAmount,
+      paymentMethod,
+      customerName,
+      address,
+    })
+    logger.info(
+      { orderId, receiptSent: receipt.sent, reason: receipt.reason, to: maskEmail(req.userEmail) },
+      receipt.sent ? 'Order receipt emailed' : 'Order receipt not emailed'
+    )
+
+    res.status(201).json({
+      order_id: orderId,
+      status: 'Pending',
+      total_amount: totalAmount,
+      receipt_email_sent: Boolean(receipt.sent),
+    })
   } catch (err) {
     if (err.stockConflict) {
       return res.status(409).json({ error: 'Some items just sold out. Please review your cart and try again.' })

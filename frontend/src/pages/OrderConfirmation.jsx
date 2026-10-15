@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useLocation } from 'react-router-dom'
 import { useShop } from '../context/ShopContext.jsx'
 import { extractSizeLabel, getBaseName } from '../lib/productUtils.js'
 import {
@@ -56,7 +56,12 @@ function Skeleton() {
 
 function OrderConfirmation() {
   const { orderId } = useParams()
+  const location = useLocation()
   const { session, pushNotification } = useShop()
+  // only the checkout that just placed the order passes this flag; the line
+  // below never appears on a refresh or a later visit, so the page can never
+  // claim a receipt was emailed when it was not
+  const receiptEmailed = Boolean(location.state?.receiptEmailed)
   const [order, setOrder] = useState(null)
   const [state, setState] = useState('loading')
   const [error, setError] = useState('')
@@ -123,6 +128,12 @@ function OrderConfirmation() {
         <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
           Thank you for shopping with Whiskers! Your order has been placed and is currently being processed.
         </p>
+        {receiptEmailed && (
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 px-3 py-2.5 text-sm text-emerald-800 dark:text-emerald-300" role="status">
+            <BsCheckLg className="mt-0.5 shrink-0" />
+            <span>A payment receipt has been emailed to your email address. You can also print or download the receipt below.</span>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">

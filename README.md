@@ -38,10 +38,20 @@ copy frontend\.env.example frontend\.env
 
 Then fill in:
 
-- **Backend** — `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_ANON_KEY`, `ENCRYPTION_KEY` (generate one with the command printed in the template), optional `TRUST_PROXY` and step-up settings
+- **Backend** — `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_ANON_KEY`, `ENCRYPTION_KEY` (generate one with the command printed in the template), optional `TRUST_PROXY`, step-up settings, and email settings (`BREVO_API_KEY`, `MAIL_FROM_EMAIL`, `MAIL_FROM_NAME`)
 - **Frontend** — `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, optional `VITE_API_BASE` and `VITE_PROXY_TARGET`
 
 Never commit the real `.env` files.
+
+### Email receipts (optional)
+
+Order confirmations email the customer a receipt through Brevo. The feature
+switches on the moment `BREVO_API_KEY` + `MAIL_FROM_EMAIL` are set in
+`backend/.env`; without them checkout behaves exactly as before (receipt
+skipped, logged). Brevo's free tier (300 emails/day) covers a shop this
+size, and the sender can be a verified Gmail address — no domain purchase
+needed. Password-reset emails are handled separately by Supabase and need
+no setup.
 
 ## Run for development
 
