@@ -23,6 +23,7 @@ import { sanitizeSettings, sanitizeFaq, sanitizePolicy, mergeSettings } from '..
 import { invalidateSettingsCache } from '../utils/shopSettings.js'
 import { missingColumnOf, isSchemaPendingError } from '../utils/pgErrors.js'
 import { effectiveUnitPrice, lineMargin } from '../utils/orderCosting.js'
+import { sendOrderStatusEmail, sendSupportReplyEmail, maskEmail } from '../utils/mailer.js'
 import { recordContentHistory, diffChanges, historyLabel } from '../utils/contentHistory.js'
 import { defaultRowsFor, RESTORE_SCOPES } from '../utils/siteContentDefaults.js'
 import logger from '../utils/logger.js'
@@ -95,6 +96,36 @@ async function recordPriceHistory(prodId, oldPrice, newPrice, changedBy) {
     if (error) throw error
   } catch (err) {
     logger.error({ err, prodId }, 'price history insert failed')
+  }
+}
+
+// the auth account's email for a user id (GoTrue admin). Returns null on any
+// failure - customer mail is best-effort, so no lookup, no email.
+async function authUserEmail(userId) {
+  if (!userId) return null
+  try {
+    const { data, error } = await supabaseAuth.auth.admin.getUserById(userId)
+    if (error) return null
+    return data?.user?.email || null
+  } catch {
+    return null
+  }
+}
+
+// Sends a customer notification (order status, support reply). Every failure
+// path means "no email", never a failed business action - the caller has
+// already responded. `what` only labels the log line.
+async function notifyCustomer(userId, send, what) {
+  try {
+    const to = await authUserEmail(userId)
+    if (!to) return
+    const res = await send(to)
+    logger.info(
+      { to: maskEmail(to), sent: res.sent, reason: res.reason },
+      res.sent ? `${what} emailed` : `${what} not emailed`
+    )
+  } catch (err) {
+    logger.warn({ err }, `failed to notify customer about ${what}`)
   }
 }
 
@@ -863,6 +894,7 @@ router.get('/orders', async (req, res) => {
 // PATCH /api/admin/orders/:id
 // body: { status }
 // updates the order's lifecycle status (Pending -> Shipped -> Delivered etc)
+// and emails the customer when the status actually changes
 router.patch('/orders/:id', async (req, res) => {
   if (!requireUuidParam(req, res)) return
   const { status } = req.body ?? {}
@@ -873,6 +905,18 @@ router.patch('/orders/:id', async (req, res) => {
     return res.status(400).json({ error: `status must be one of: ${ORDER_STATUSES.join(', ')}` })
   }
   try {
+    // read the row first: the notification needs the buyer's user id and the
+    // previous status, and we only email when something actually changed
+    const { data: current, error: readErr } = await supabaseAdmin
+      .from('orders')
+      .select('order_id, id, status')
+      .eq('order_id', req.params.id)
+      .maybeSingle()
+    if (readErr) throw readErr
+    if (!current) {
+      return res.status(404).json({ error: 'Order not found' })
+    }
+
     const { data, error } = await supabaseAdmin
       .from('orders')
       .update({ status })
@@ -887,6 +931,23 @@ router.patch('/orders/:id', async (req, res) => {
     }
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'status', target: `order:${req.params.id}`, details: `status -> ${status}` })
+
+    if (current.status !== status) {
+      const { count } = await supabaseAdmin
+        .from('order_details')
+        .select('order_id', { count: 'exact', head: true })
+        .eq('order_id', req.params.id)
+      await notifyCustomer(
+        current.id,
+        (to) => sendOrderStatusEmail(to, {
+          orderId: req.params.id,
+          status,
+          previousStatus: current.status,
+          itemsCount: count ?? 0,
+        }),
+        'order status update'
+      )
+    }
   } catch (err) {
     logger.error({ err }, 'Admin order update error')
     res.status(500).json({ error: 'Server error' })
@@ -977,7 +1038,7 @@ router.get('/supports', async (req, res) => {
 })
 
 // PATCH /api/admin/supports/:id
-// body: { response } — replies to a support case
+// body: { response } — replies to a support case and emails the customer
 router.patch('/supports/:id', async (req, res) => {
   if (!requireUuidParam(req, res)) return
   const response = String(req.body?.response ?? '').trim()
@@ -985,6 +1046,18 @@ router.patch('/supports/:id', async (req, res) => {
     return res.status(400).json({ error: 'response must be between 1 and 2000 characters' })
   }
   try {
+    // read the row first: the reply email must quote the customer's original
+    // message and needs the owner (support id) to look up the recipient
+    const { data: current, error: readErr } = await supabaseAdmin
+      .from('supports')
+      .select('support_id, id, message')
+      .eq('support_id', req.params.id)
+      .maybeSingle()
+    if (readErr) throw readErr
+    if (!current) {
+      return res.status(404).json({ error: 'Support case not found' })
+    }
+
     const { data, error } = await supabaseAdmin
       .from('supports')
       .update({ response })
@@ -999,6 +1072,28 @@ router.patch('/supports/:id', async (req, res) => {
     }
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'status', target: `support:${req.params.id}`, details: 'support reply sent' })
+
+    // first name for the greeting; profiles store it encrypted, and a lookup
+    // failure just falls back to a neutral greeting
+    let firstName = null
+    try {
+      const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('first_name')
+        .eq('id', current.id)
+        .maybeSingle()
+      if (profile?.first_name) firstName = decryptText(profile.first_name)
+    } catch { /* no name is fine */ }
+
+    await notifyCustomer(
+      current.id,
+      (to) => sendSupportReplyEmail(to, {
+        customerName: firstName,
+        message: current.message,
+        reply: response,
+      }),
+      'support reply'
+    )
   } catch (err) {
     logger.error({ err }, 'Admin support reply error')
     res.status(500).json({ error: 'Server error' })
