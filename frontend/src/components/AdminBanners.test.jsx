@@ -15,7 +15,7 @@ vi.mock('../lib/api', () => ({
 }))
 
 import AdminBanners from './AdminBanners.jsx'
-import { apiGet, apiGetAuth } from '../lib/api'
+import { apiGet, apiGetAuth, apiPatchAuth } from '../lib/api'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -185,5 +185,31 @@ describe('AdminBanners page states', () => {
       brandSel.dispatchEvent(new Event('change', { bubbles: true }))
     })
     expect(dlg.textContent).toMatch(/filtered to this brand/)
+  })
+
+  it('bulk publish: select-all then one PATCH per banner', async () => {
+    const second = { ...sampleBanner, id: 'b2', alt: 'Second slide', sort_order: 1 }
+    apiGetAuth.mockResolvedValue({ items: [sampleBanner, second], total: 2 })
+    apiPatchAuth.mockResolvedValue({ item: {} })
+    const c = await render()
+    await flush()
+
+    const allLabel = [...c.querySelectorAll('label')].find((l) => /Select all/.test(l.textContent))
+    expect(allLabel).toBeTruthy()
+    await act(async () => { allLabel.querySelector('input').click() })
+    expect(c.textContent).toContain('2 selected')
+
+    const pubBtn = [...c.querySelectorAll('button')].find((b) => /Publish 2/.test(b.textContent))
+    expect(pubBtn).toBeTruthy()
+    await act(async () => { pubBtn.click() })
+    await flush()
+
+    expect(apiPatchAuth.mock.calls.map((a) => [a[0], a[1]])).toEqual([
+      ['/admin/banners/b1', { status: 'published' }],
+      ['/admin/banners/b2', { status: 'published' }],
+    ])
+    expect(c.textContent).toMatch(/Published 2 banners/)
+    // selection is cleared once the bulk action lands
+    expect(c.textContent).not.toContain('2 selected')
   })
 })

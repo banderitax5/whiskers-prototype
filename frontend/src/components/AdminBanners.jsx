@@ -5,6 +5,10 @@ import { AdminPage, StatusPill, EmptyState, btnPrimary, btnGhost, ConfirmDialog 
 import ImagePicker from "./ImagePicker.jsx"
 import ProductPicker from "./ProductPicker.jsx"
 import ContentHistoryDialog from "./ContentHistoryDialog.jsx"
+import {
+  useSelection, useLongPress, useReorderDrag, RowCheckBox, SelectionBar, SelectAllRow,
+  GripHandle, bulkApply, bulkSummary, barBtnAccent, barBtnDanger, barBtnPlain,
+} from "./adminBulk.jsx"
 
 const PLACEMENTS = [
   { id: "home_hero", label: "Hero carousel", hint: "Big slides at the top of the home page." },
@@ -367,11 +371,22 @@ function BannerDialog({ title, placement, initial, onClose, onSubmit }) {
   )
 }
 
-function BannerCard({ banner, index, total, onMove, onEdit, onArchive, busy }) {
+function BannerCard({ banner, index, total, onMove, onEdit, onArchive, busy, selected, onToggleSelect, dragHandleProps, dragging, dragOver }) {
   const [imgFailed, setImgFailed] = useState(false)
+  // long-press the card (not its buttons/inputs) to select it
+  const longPress = useLongPress(() => onToggleSelect())
   const ctr = banner.impressions > 0 ? `${Math.round((banner.clicks / banner.impressions) * 100)}%` : "—"
+  const ring = selected || dragging
+    ? "border-[#F28C28] ring-2 ring-[#F28C28]/70"
+    : dragOver
+      ? "border-[#F28C28] ring-2 ring-[#F28C28]/40"
+      : "border-gray-200 dark:border-[#2c4a6f]"
   return (
-    <div className="rounded-2xl border border-gray-200 dark:border-[#2c4a6f] bg-white dark:bg-[#16283f] overflow-hidden flex flex-col sm:flex-row">
+    <div
+      {...longPress}
+      data-sort-index={index}
+      className={`rounded-2xl border bg-white dark:bg-[#16283f] overflow-hidden flex flex-col sm:flex-row transition ${ring} ${dragging ? "opacity-60" : ""}`}
+    >
       <div className="relative sm:w-48 shrink-0 aspect-video sm:aspect-auto bg-gray-100 dark:bg-[#0f2036]">
         {imgFailed ? (
           <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-red-500 dark:text-red-400">Failed to load</div>
@@ -381,6 +396,7 @@ function BannerCard({ banner, index, total, onMove, onEdit, onArchive, busy }) {
       </div>
       <div className="p-4 flex-1 flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
+          <RowCheckBox checked={selected} onChange={onToggleSelect} label={`Select banner ${banner.alt}`} />
           <StatusPill kind={statusOf(banner).kind}>{statusOf(banner).label}</StatusPill>
           {banner.title && <span className="text-sm font-bold text-gray-900 dark:text-slate-100">{banner.title}</span>}
           <span className="text-xs text-gray-500 dark:text-slate-400">#{index + 1} of {total}</span>
@@ -394,7 +410,8 @@ function BannerCard({ banner, index, total, onMove, onEdit, onArchive, busy }) {
         <p className="text-xs text-gray-500 dark:text-slate-400">
           Views {banner.impressions ?? 0} · Clicks {banner.clicks ?? 0} · CTR {ctr}
         </p>
-        <div className="mt-auto flex flex-wrap gap-1.5 pt-1">
+        <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-1">
+          {dragHandleProps && <GripHandle handleProps={dragHandleProps} />}
           <button type="button" onClick={() => onMove(banner, -1)} disabled={busy || index === 0} aria-label={`Move ${banner.alt} up`} className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-40">↑</button>
           <button type="button" onClick={() => onMove(banner, 1)} disabled={busy || index === total - 1} aria-label={`Move ${banner.alt} down`} className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-40">↓</button>
           <button type="button" onClick={() => onEdit(banner)} className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition">Edit</button>
@@ -420,22 +437,43 @@ function AdminBanners() {
 
   const sessionToken = useCallback(async () => (await supabase.auth.getSession()).data.session?.access_token, [])
 
+  const sel = useSelection()
+  // stable callbacks from useSelection - plain identifiers for the hooks below
+  const pruneSelection = sel.prune
+  const clearSelection = sel.clear
+
   const load = useCallback(async () => {
     setLoading(true); setError("")
     try {
       const token = await sessionToken()
       const data = await apiGetAuth(`/admin/banners?placement=${placement}&archived=${archived}`, token)
-      setItems(data.items || [])
+      const rows = data.items || []
+      setItems(rows)
+      // drop ids that are no longer in this list (archived elsewhere, tab changed)
+      pruneSelection(rows.map((b) => b.id))
     } catch (err) {
       setError(err.message || "Failed to load banners")
     } finally { setLoading(false) }
-  }, [placement, archived, sessionToken])
+  }, [placement, archived, sessionToken, pruneSelection])
 
   useEffect(() => { load() }, [load])
+  // a different tab or view is a different list - never carry a selection across
+  useEffect(() => { clearSelection() }, [placement, archived, clearSelection])
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(""), 4000); return () => clearTimeout(t) }, [toast])
 
   const visible = useMemo(() => (archived ? [] : items), [items, archived])
+  const archivedRows = useMemo(() => items.filter((b) => b.archived_at), [items])
+  // the rows the current view shows (and therefore what select-all covers)
+  const listRows = archived ? archivedRows : visible
   const placementMeta = PLACEMENTS.find((p) => p.id === placement)
+
+  const allSelected = listRows.length > 0 && listRows.every((b) => sel.isSelected(b.id))
+  const someSelected = listRows.some((b) => sel.isSelected(b.id))
+  const onToggleAll = () => {
+    if (allSelected) sel.clear()
+    else sel.selectAll(listRows.map((b) => b.id))
+  }
+  const singleSelected = sel.count === 1 ? listRows.find((b) => sel.isSelected(b.id)) : null
 
   async function handleSubmitBanner(payload) {
     const token = await sessionToken()
@@ -449,18 +487,59 @@ function AdminBanners() {
     setDialog(null); await load()
   }
 
-  async function handleMove(banner, dir) {
+  async function moveBannerTo(from, to) {
+    if (from === to || to < 0 || to >= visible.length) return
     const ids = visible.map((b) => b.id)
-    const i = ids.indexOf(banner.id)
-    const j = i + dir
-    if (j < 0 || j >= ids.length) return
-    ids.splice(j, 0, ids.splice(i, 1)[0])
+    ids.splice(to, 0, ids.splice(from, 1)[0])
     setBusy(true)
     try {
       const token = await sessionToken()
       await apiPostAuth("/admin/banners/reorder", { placement, ids }, token)
       await load()
     } catch (err) { setToast(err.message) } finally { setBusy(false) }
+  }
+
+  async function handleMove(banner, dir) {
+    const i = visible.findIndex((b) => b.id === banner.id)
+    if (i < 0) return
+    return moveBannerTo(i, i + dir)
+  }
+
+  // drag-to-reorder over the current list (live view only - archived has no order)
+  const drag = useReorderDrag((from, to) => { moveBannerTo(from, to) })
+
+  async function bulkStatus(status, action) {
+    setBusy(true)
+    try {
+      const token = await sessionToken()
+      const res = await bulkApply([...sel.selected], (id) => apiPatchAuth(`/admin/banners/${id}`, { status }, token))
+      sel.clear()
+      setToast(bulkSummary(action, res, "banner"))
+      await load()
+    } catch (err) { setToast(err.message || "Update failed") } finally { setBusy(false) }
+  }
+
+  async function bulkArchive() {
+    setBusy(true)
+    try {
+      const token = await sessionToken()
+      const res = await bulkApply([...sel.selected], (id) => apiDeleteAuth(`/admin/banners/${id}`, token))
+      setConfirm(null)
+      sel.clear()
+      setToast(bulkSummary("Archived", res, "banner"))
+      await load()
+    } catch (err) { setConfirm(null); setToast(err.message || "Archive failed") } finally { setBusy(false) }
+  }
+
+  async function bulkRestore() {
+    setBusy(true)
+    try {
+      const token = await sessionToken()
+      const res = await bulkApply([...sel.selected], (id) => apiPostAuth(`/admin/banners/${id}/restore`, {}, token))
+      sel.clear()
+      setToast(bulkSummary("Restored", res, "banner"))
+      await load()
+    } catch (err) { setToast(err.message || "Restore failed") } finally { setBusy(false) }
   }
 
   async function handleArchive() {
@@ -541,6 +620,36 @@ function AdminBanners() {
         </div>
       )}
 
+      {!loading && items.length > 0 && (
+        <>
+          <SelectAllRow allSelected={allSelected} someSelected={someSelected} onToggle={onToggleAll} total={listRows.length} noun="banner" />
+          <SelectionBar count={sel.count} onClear={sel.clear}>
+            {archived ? (
+              <button type="button" onClick={bulkRestore} disabled={busy} className={`${barBtnAccent} min-h-[36px]`}>
+                Restore {sel.count}
+              </button>
+            ) : (
+              <>
+                {singleSelected && (
+                  <button type="button" onClick={() => setDialog({ mode: "edit", item: singleSelected })} className={`${barBtnPlain} min-h-[36px]`}>
+                    Edit
+                  </button>
+                )}
+                <button type="button" onClick={() => bulkStatus("published", "Published")} disabled={busy} className={`${barBtnAccent} min-h-[36px]`}>
+                  Publish {sel.count}
+                </button>
+                <button type="button" onClick={() => bulkStatus("draft", "Drafted")} disabled={busy} className={`${barBtnPlain} min-h-[36px]`}>
+                  Draft {sel.count}
+                </button>
+                <button type="button" onClick={() => setConfirm({ mode: "bulk" })} disabled={busy} className={`${barBtnDanger} min-h-[36px]`}>
+                  Archive {sel.count}
+                </button>
+              </>
+            )}
+          </SelectionBar>
+        </>
+      )}
+
       {loading ? (
         <div className="space-y-3" aria-busy="true">
           {[0, 1].map((i) => (
@@ -563,6 +672,11 @@ function AdminBanners() {
               index={i}
               total={visible.length}
               busy={busy}
+              selected={sel.isSelected(b.id)}
+              onToggleSelect={() => sel.toggle(b.id)}
+              dragHandleProps={archived ? null : drag.handleProps(i)}
+              dragging={drag.isDragging(i)}
+              dragOver={drag.isOver(i)}
               onMove={handleMove}
               onEdit={(item) => setDialog({ mode: "edit", item })}
               onArchive={(item) => setConfirm({ item })}
@@ -573,9 +687,12 @@ function AdminBanners() {
 
       {archived && items.length > 0 && (
         <div className="mt-4 space-y-2">
-          {items.filter((b) => b.archived_at).map((b) => (
-            <div key={b.id} className="flex items-center justify-between rounded-xl border border-dashed border-gray-300 dark:border-[#2c4a6f] px-4 py-2">
-              <span className="text-xs text-gray-500 dark:text-slate-400">{b.alt}</span>
+          {archivedRows.map((b) => (
+            <div key={b.id} className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-gray-300 dark:border-[#2c4a6f] px-4 py-2">
+              <label className="flex min-w-0 items-center gap-2 cursor-pointer">
+                <RowCheckBox checked={sel.isSelected(b.id)} onChange={() => sel.toggle(b.id)} label={`Select banner ${b.alt}`} />
+                <span className="text-xs text-gray-500 dark:text-slate-400 truncate">{b.alt}</span>
+              </label>
               <button type="button" onClick={() => handleRestore(b)} disabled={busy} className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-50">Restore</button>
             </div>
           ))}
@@ -596,10 +713,10 @@ function AdminBanners() {
           open
           danger
           busy={busy}
-          title="Archive banner?"
+          title={confirm.mode === "bulk" ? `Archive ${sel.count} banners?` : "Archive banner?"}
           message="It disappears from the storefront immediately. You can restore it from the archived view."
           confirmLabel="Archive"
-          onConfirm={handleArchive}
+          onConfirm={() => (confirm.mode === "bulk" ? bulkArchive() : handleArchive())}
           onCancel={() => setConfirm(null)}
         />
       )}

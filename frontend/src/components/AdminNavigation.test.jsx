@@ -15,7 +15,7 @@ vi.mock('../lib/api', () => ({
 }))
 
 import AdminNavigation from './AdminNavigation.jsx'
-import { apiGet, apiGetAuth, apiPostAuth } from '../lib/api'
+import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth } from '../lib/api'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -164,6 +164,47 @@ describe('AdminNavigation link tabs', () => {
     await flush()
     expect(c.querySelector('#nav-dest').value).toBe('page')
     expect(c.querySelector('#nav-page').value).toBe('/about')
+  })
+
+  it('bulk hide: select-all then one PATCH per link', async () => {
+    const second = { ...link, id: 'n2', label: 'Menu', href: '/menu', sort_order: 1 }
+    apiGetAuth.mockResolvedValue({ items: [link, second], total: 2 })
+    apiPatchAuth.mockResolvedValue({ item: {} })
+    const c = await render()
+    await flush()
+
+    const allLabel = [...c.querySelectorAll('label')].find((l) => /Select all/.test(l.textContent))
+    expect(allLabel).toBeTruthy()
+    await act(async () => { allLabel.querySelector('input').click() })
+    expect(c.textContent).toContain('2 selected')
+
+    const hideBtn = [...c.querySelectorAll('button')].find((b) => b.textContent === 'Hide 2')
+    expect(hideBtn).toBeTruthy()
+    await act(async () => { hideBtn.click() })
+    await flush()
+
+    expect(apiPatchAuth.mock.calls.map((a) => [a[0], a[1]])).toEqual([
+      ['/admin/nav-items/n1', { is_visible: false }],
+      ['/admin/nav-items/n2', { is_visible: false }],
+    ])
+    expect(c.textContent).toMatch(/Hidden 2 links/)
+    expect(c.textContent).not.toContain('2 selected')
+  })
+
+  it('archived view lists each link once, in the restore list', async () => {
+    const archivedLink = { ...link, archived_at: '2026-10-10T00:00:00Z' }
+    apiGetAuth.mockResolvedValue({ items: [archivedLink], total: 1 })
+    const c = await render()
+    await flush()
+
+    const showArchived = [...c.querySelectorAll('label')].find((l) => /Show archived/.test(l.textContent))
+    await act(async () => { showArchived.querySelector('input').click() })
+    await flush()
+
+    // the restore list owns archived links - not a second copy as reorder cards
+    expect((c.textContent.match(/About us/g) || []).length).toBe(1)
+    expect([...c.querySelectorAll('button')].filter((b) => b.textContent === 'Restore')).toHaveLength(1)
+    expect(c.querySelector('[data-sort-index]')).toBeNull()
   })
 })
 

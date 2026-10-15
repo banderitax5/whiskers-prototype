@@ -17,7 +17,7 @@ vi.mock('../lib/api', () => ({
 }))
 
 import AdminMedia from './AdminMedia.jsx'
-import { apiGetAuth } from '../lib/api'
+import { apiGetAuth, apiDeleteAuth } from '../lib/api'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -86,5 +86,37 @@ describe('AdminMedia page states', () => {
     const img = c.querySelector('img')
     expect(img?.getAttribute('alt')).toBe('Dog eating Nutri Chunks')
     expect(c.querySelector('img')?.getAttribute('src')).toBe('https://cdn.test/hero.jpg')
+  })
+
+  it('bulk archives: select-all, confirm dialog, one DELETE per id', async () => {
+    const row = (id, alt) => ({
+      id, url: `https://cdn.test/${id}.jpg`, storage_path: `${id}.jpg`,
+      alt_text: alt, size_bytes: 1, width: 1600, height: 600, is_broken: false,
+      used_in: [], archived_at: null, created_at: '2026-10-13T00:00:00Z',
+    })
+    apiGetAuth.mockResolvedValue({ items: [row('m1', 'First'), row('m2', 'Second')], total: 2 })
+    apiDeleteAuth.mockResolvedValue({ success: true })
+    const c = await render()
+    await flush()
+
+    const allLabel = [...c.querySelectorAll('label')].find((l) => /Select all/.test(l.textContent))
+    expect(allLabel).toBeTruthy()
+    await act(async () => { allLabel.querySelector('input').click() })
+    expect(c.textContent).toContain('2 selected')
+
+    const archiveBtn = [...c.querySelectorAll('button')].find((b) => /Archive 2/.test(b.textContent))
+    expect(archiveBtn).toBeTruthy()
+    await act(async () => { archiveBtn.click() })
+
+    const dialog = c.querySelector('[role="dialog"]')
+    expect(dialog?.textContent).toMatch(/Archive 2 images\?/)
+    const confirmBtn = [...dialog.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Archive')
+    expect(confirmBtn).toBeTruthy()
+    await act(async () => { confirmBtn.click() })
+    await flush()
+
+    expect(apiDeleteAuth.mock.calls.map((a) => a[0])).toEqual(['/admin/media/m1', '/admin/media/m2'])
+    expect(c.textContent).toMatch(/Archived 2 images/)
+    expect(c.textContent).not.toContain('2 selected')
   })
 })

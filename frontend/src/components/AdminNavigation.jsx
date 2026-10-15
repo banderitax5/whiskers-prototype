@@ -6,6 +6,10 @@ import { AdminPage, StatusPill, EmptyState, btnPrimary, btnGhost, ConfirmDialog 
 import ImagePicker from "./ImagePicker.jsx"
 import ProductPicker from "./ProductPicker.jsx"
 import ContentHistoryDialog from "./ContentHistoryDialog.jsx"
+import {
+  useSelection, useLongPress, useReorderDrag, RowCheckBox, SelectionBar, SelectAllRow,
+  GripHandle, bulkApply, bulkSummary, barBtnAccent, barBtnDanger, barBtnPlain,
+} from "./adminBulk.jsx"
 
 // One page for everything the owner can edit about category links and
 // footer/menu links. The four link groups mirror site_nav_items.section;
@@ -312,18 +316,31 @@ function LinkDialog({ section, initial, onClose, onSubmit }) {
   )
 }
 
-function LinkCard({ item, index, total, onMove, onEdit, onArchive, busy }) {
+function LinkCard({ item, index, total, onMove, onEdit, onArchive, busy, selected, onToggleSelect, dragHandleProps, dragging, dragOver }) {
+  // long-press the card (not its buttons/inputs) to select it
+  const longPress = useLongPress(() => onToggleSelect())
+  const ring = selected || dragging
+    ? "border-[#F28C28] ring-2 ring-[#F28C28]/70"
+    : dragOver
+      ? "border-[#F28C28] ring-2 ring-[#F28C28]/40"
+      : "border-gray-200 dark:border-[#2c4a6f]"
   return (
-    <div className="rounded-2xl border border-gray-200 dark:border-[#2c4a6f] bg-white dark:bg-[#16283f] p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+    <div
+      {...longPress}
+      data-sort-index={index}
+      className={`rounded-2xl border bg-white dark:bg-[#16283f] p-4 flex flex-col sm:flex-row sm:items-center gap-3 transition ${ring} ${dragging ? "opacity-60" : ""}`}
+    >
       <div className="flex-1 min-w-0">
         <div className="flex flex-wrap items-center gap-2">
+          <RowCheckBox checked={selected} onChange={onToggleSelect} label={`Select link ${item.label}`} />
           <StatusPill kind={item.is_visible ? "success" : "neutral"}>{item.is_visible ? "Visible" : "Hidden"}</StatusPill>
           <span className="text-sm font-bold text-gray-900 dark:text-slate-100 truncate">{item.label}</span>
           <span className="text-xs text-gray-500 dark:text-slate-400">#{index + 1} of {total}</span>
         </div>
         <p className="mt-1 text-xs text-gray-500 dark:text-slate-400 break-all">{item.href}</p>
       </div>
-      <div className="flex flex-wrap gap-1.5 shrink-0">
+      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+        {dragHandleProps && <GripHandle handleProps={dragHandleProps} />}
         <button type="button" onClick={() => onMove(item, -1)} disabled={busy || index === 0} aria-label={`Move ${item.label} up`} className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-40">↑</button>
         <button type="button" onClick={() => onMove(item, 1)} disabled={busy || index === total - 1} aria-label={`Move ${item.label} down`} className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-40">↓</button>
         <button type="button" onClick={() => onEdit(item)} className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition">Edit</button>
@@ -365,16 +382,24 @@ function AdminNavigation() {
 
   const sessionToken = useCallback(async () => (await supabase.auth.getSession()).data.session?.access_token, [])
 
+  const sel = useSelection()
+  // stable callbacks from useSelection - plain identifiers for the hooks below
+  const pruneSelection = sel.prune
+  const clearSelection = sel.clear
+
   const loadLinks = useCallback(async (section, showArchived) => {
     setLoading(true); setError("")
     try {
       const token = await sessionToken()
       const data = await apiGetAuth(`/admin/nav-items?section=${section}&archived=${showArchived}`, token)
-      setItems(data.items || [])
+      const rows = data.items || []
+      setItems(rows)
+      // drop ids that are no longer in this list (archived elsewhere, tab changed)
+      pruneSelection(rows.map((r) => r.id))
     } catch (err) {
       setError(err.message || "Failed to load links")
     } finally { setLoading(false) }
-  }, [sessionToken])
+  }, [sessionToken, pruneSelection])
 
   const loadCats = useCallback(async () => {
     setCatLoading(true); setCatError("")
@@ -400,8 +425,26 @@ function AdminNavigation() {
 
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(""), 4000); return () => clearTimeout(t) }, [toast])
 
+  // a different tab or view is a different list - never carry a selection
+  // across it (also clears when entering the category editor, which is a
+  // form, not an item list)
+  useEffect(() => { clearSelection() }, [tab, archived, clearSelection])
+
   const catDirty = isCats && catRows !== null && catOriginal !== null
     && (JSON.stringify(catRows) !== catOriginal || catRemoved.length > 0)
+
+  // archived rows belong to the restore list below, not to the reorder grid
+  const visible = archived ? [] : items
+  const archivedRows = items.filter((s) => s.archived_at)
+  const listRows = archived ? archivedRows : visible
+
+  const allSelected = listRows.length > 0 && listRows.every((s) => sel.isSelected(s.id))
+  const someSelected = listRows.some((s) => sel.isSelected(s.id))
+  const onToggleAll = () => {
+    if (allSelected) sel.clear()
+    else sel.selectAll(listRows.map((s) => s.id))
+  }
+  const singleSelected = sel.count === 1 ? listRows.find((s) => sel.isSelected(s.id)) : null
 
   async function handleSubmitLink(payload) {
     const token = await sessionToken()
@@ -415,18 +458,59 @@ function AdminNavigation() {
     setDialog(null); await loadLinks(tab, archived)
   }
 
-  async function handleMoveLink(item, dir) {
-    const ids = items.map((s) => s.id)
-    const i = ids.indexOf(item.id)
-    const j = i + dir
-    if (j < 0 || j >= ids.length) return
-    ids.splice(j, 0, ids.splice(i, 1)[0])
+  async function moveLinkTo(from, to) {
+    if (from === to || to < 0 || to >= visible.length) return
+    const ids = visible.map((s) => s.id)
+    ids.splice(to, 0, ids.splice(from, 1)[0])
     setBusy(true)
     try {
       const token = await sessionToken()
       await apiPostAuth("/admin/nav-items/reorder", { section: tab, ids }, token)
       await loadLinks(tab, archived)
     } catch (err) { setToast(err.message) } finally { setBusy(false) }
+  }
+
+  async function handleMoveLink(item, dir) {
+    const i = visible.findIndex((s) => s.id === item.id)
+    if (i < 0) return
+    return moveLinkTo(i, i + dir)
+  }
+
+  // drag-to-reorder over the current tab's live list (archived has no order)
+  const drag = useReorderDrag((from, to) => { moveLinkTo(from, to) })
+
+  async function bulkVisibility(isVisible) {
+    setBusy(true)
+    try {
+      const token = await sessionToken()
+      const res = await bulkApply([...sel.selected], (id) => apiPatchAuth(`/admin/nav-items/${id}`, { is_visible: isVisible }, token))
+      sel.clear()
+      setToast(bulkSummary(isVisible ? "Shown" : "Hidden", res, "link"))
+      await loadLinks(tab, archived)
+    } catch (err) { setToast(err.message || "Update failed") } finally { setBusy(false) }
+  }
+
+  async function bulkArchive() {
+    setBusy(true)
+    try {
+      const token = await sessionToken()
+      const res = await bulkApply([...sel.selected], (id) => apiDeleteAuth(`/admin/nav-items/${id}`, token))
+      setConfirm(null)
+      sel.clear()
+      setToast(bulkSummary("Archived", res, "link"))
+      await loadLinks(tab, archived)
+    } catch (err) { setConfirm(null); setToast(err.message || "Archive failed") } finally { setBusy(false) }
+  }
+
+  async function bulkRestore() {
+    setBusy(true)
+    try {
+      const token = await sessionToken()
+      const res = await bulkApply([...sel.selected], (id) => apiPostAuth(`/admin/nav-items/${id}/restore`, {}, token))
+      sel.clear()
+      setToast(bulkSummary("Restored", res, "link"))
+      await loadLinks(tab, archived)
+    } catch (err) { setToast(err.message || "Restore failed") } finally { setBusy(false) }
   }
 
   async function handleArchive() {
@@ -663,6 +747,36 @@ function AdminNavigation() {
             </div>
           )}
 
+          {!loading && items.length > 0 && (
+            <>
+              <SelectAllRow allSelected={allSelected} someSelected={someSelected} onToggle={onToggleAll} total={listRows.length} noun="link" />
+              <SelectionBar count={sel.count} onClear={sel.clear}>
+                {archived ? (
+                  <button type="button" onClick={bulkRestore} disabled={busy} className={`${barBtnAccent} min-h-[36px]`}>
+                    Restore {sel.count}
+                  </button>
+                ) : (
+                  <>
+                    {singleSelected && (
+                      <button type="button" onClick={() => setDialog({ mode: "edit", item: singleSelected })} className={`${barBtnPlain} min-h-[36px]`}>
+                        Edit
+                      </button>
+                    )}
+                    <button type="button" onClick={() => bulkVisibility(false)} disabled={busy} className={`${barBtnPlain} min-h-[36px]`}>
+                      Hide {sel.count}
+                    </button>
+                    <button type="button" onClick={() => bulkVisibility(true)} disabled={busy} className={`${barBtnAccent} min-h-[36px]`}>
+                      Show {sel.count}
+                    </button>
+                    <button type="button" onClick={() => setConfirm({ mode: "bulk" })} disabled={busy} className={`${barBtnDanger} min-h-[36px]`}>
+                      Archive {sel.count}
+                    </button>
+                  </>
+                )}
+              </SelectionBar>
+            </>
+          )}
+
           {loading ? (
             <div className="space-y-3" aria-busy="true">
               {[0, 1, 2].map((i) => <div key={i} className="rounded-2xl border border-gray-200 dark:border-[#2c4a6f] bg-white dark:bg-[#16283f] h-20 animate-pulse" />)}
@@ -676,17 +790,34 @@ function AdminNavigation() {
             )
           ) : (
             <div className="space-y-3">
-              {items.map((s, i) => (
-                <LinkCard key={s.id} item={s} index={i} total={items.length} busy={busy} onMove={handleMoveLink} onEdit={(item) => setDialog({ mode: "edit", item })} onArchive={(item) => setConfirm({ item })} />
+              {visible.map((s, i) => (
+                <LinkCard
+                  key={s.id}
+                  item={s}
+                  index={i}
+                  total={visible.length}
+                  busy={busy}
+                  selected={sel.isSelected(s.id)}
+                  onToggleSelect={() => sel.toggle(s.id)}
+                  dragHandleProps={drag.handleProps(i)}
+                  dragging={drag.isDragging(i)}
+                  dragOver={drag.isOver(i)}
+                  onMove={handleMoveLink}
+                  onEdit={(item) => setDialog({ mode: "edit", item })}
+                  onArchive={(item) => setConfirm({ item })}
+                />
               ))}
             </div>
           )}
 
           {archived && items.length > 0 && (
             <div className="mt-4 space-y-2">
-              {items.map((s) => (
-                <div key={s.id} className="flex items-center justify-between rounded-xl border border-dashed border-gray-300 dark:border-[#2c4a6f] px-4 py-2">
-                  <span className="text-xs text-gray-500 dark:text-slate-400">{s.label}</span>
+              {archivedRows.map((s) => (
+                <div key={s.id} className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-gray-300 dark:border-[#2c4a6f] px-4 py-2">
+                  <label className="flex min-w-0 items-center gap-2 cursor-pointer">
+                    <RowCheckBox checked={sel.isSelected(s.id)} onChange={() => sel.toggle(s.id)} label={`Select link ${s.label}`} />
+                    <span className="text-xs text-gray-500 dark:text-slate-400 truncate">{s.label}</span>
+                  </label>
                   <button type="button" onClick={() => handleRestore(s)} disabled={busy} className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-50">Restore</button>
                 </div>
               ))}
@@ -708,10 +839,10 @@ function AdminNavigation() {
           open
           danger
           busy={busy}
-          title="Archive link?"
+          title={confirm.mode === "bulk" ? `Archive ${sel.count} links?` : "Archive link?"}
           message="The link disappears from the site immediately. You can restore it from the archived view."
           confirmLabel="Archive"
-          onConfirm={handleArchive}
+          onConfirm={() => (confirm.mode === "bulk" ? bulkArchive() : handleArchive())}
           onCancel={() => setConfirm(null)}
         />
       )}

@@ -2,6 +2,10 @@ import React, { useCallback, useEffect, useMemo, useState } from "react"
 import { AdminPage, StatusPill, EmptyState, btnPrimary, ConfirmDialog } from "./adminTheme.jsx"
 import supabase from "../lib/supabase"
 import { apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth, apiUploadAuth } from "../lib/api.js"
+import {
+  useSelection, useLongPress, RowCheckBox, SelectionBar, SelectAllRow,
+  bulkApply, bulkSummary, barBtnAccent, barBtnDanger, barBtnPlain,
+} from "./adminBulk.jsx"
 
 const PAGE_SIZE = 12
 
@@ -112,10 +116,19 @@ function MediaDialog({ title, submitLabel, initial, onSubmit, onClose }) {
   )
 }
 
-function MediaCard({ item, onEdit, onArchive, onRestore, onCheck, busy }) {
+function MediaCard({ item, onEdit, onArchive, onRestore, onCheck, busy, selected, onToggleSelect }) {
   const [imgFailed, setImgFailed] = useState(false)
+  // long-press anywhere on the card (except buttons/inputs) to select it
+  const longPress = useLongPress(() => onToggleSelect())
   return (
-    <div className="rounded-2xl border border-gray-200 dark:border-[#2c4a6f] bg-white dark:bg-[#16283f] overflow-hidden flex flex-col">
+    <div
+      {...longPress}
+      className={`rounded-2xl border overflow-hidden flex flex-col transition ${
+        selected
+          ? "border-[#F28C28] ring-2 ring-[#F28C28]/60"
+          : "border-gray-200 dark:border-[#2c4a6f]"
+      } bg-white dark:bg-[#16283f]`}
+    >
       <div className="relative aspect-video bg-gray-100 dark:bg-[#0f2036]">
         {imgFailed ? (
           <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-red-500 dark:text-red-400">Image failed to load</div>
@@ -136,7 +149,10 @@ function MediaCard({ item, onEdit, onArchive, onRestore, onCheck, busy }) {
         )}
       </div>
       <div className="p-3 flex-1 flex flex-col gap-2">
-        <p className="text-sm font-semibold text-gray-900 dark:text-slate-100 line-clamp-2" title={item.alt_text}>{item.alt_text}</p>
+        <div className="flex items-start gap-2">
+          <RowCheckBox checked={selected} onChange={onToggleSelect} label={`Select image ${item.alt_text}`} />
+          <p className="text-sm font-semibold text-gray-900 dark:text-slate-100 line-clamp-2" title={item.alt_text}>{item.alt_text}</p>
+        </div>
         <p className="text-xs text-gray-500 dark:text-slate-400">
           {[item.width && item.height ? `${item.width}×${item.height}` : null, formatBytes(item.size_bytes), formatDate(item.created_at)].filter(Boolean).join(" · ")}
         </p>
@@ -186,6 +202,12 @@ function AdminMedia() {
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState("")
 
+  const sel = useSelection()
+  // stable callbacks from useSelection - destructured so the hooks below
+  // depend on plain identifiers (and never re-run on unrelated renders)
+  const pruneSelection = sel.prune
+  const clearSelection = sel.clear
+
   const load = useCallback(async () => {
     setLoading(true); setError("")
     try {
@@ -193,14 +215,20 @@ function AdminMedia() {
       if (q) params.set("q", q)
       const { data: { session } } = await supabase.auth.getSession()
       const data = await apiGetAuth(`/admin/media?${params}`, session?.access_token)
-      setItems(data.items || [])
+      const rows = data.items || []
+      setItems(rows)
       setTotal(data.total ?? 0)
+      // drop ids that are no longer in this view (archived elsewhere, new page)
+      pruneSelection(rows.map((r) => r.id))
     } catch (err) {
       setError(err.message || "Failed to load media")
     } finally { setLoading(false) }
-  }, [page, q, archived])
+  }, [page, q, archived, pruneSelection])
 
   useEffect(() => { load() }, [load])
+
+  // a different view is a different list - never carry a selection across it
+  useEffect(() => { clearSelection() }, [page, q, archived, clearSelection])
 
   useEffect(() => {
     if (!toast) return
@@ -240,6 +268,35 @@ function AdminMedia() {
       </button>
     </div>
   ), [qInput, archived])
+
+  const visibleIds = items.map((i) => i.id)
+  const allSelected = items.length > 0 && items.every((i) => sel.isSelected(i.id))
+  const someSelected = items.some((i) => sel.isSelected(i.id))
+  const onToggleAll = () => { if (allSelected) sel.clear(); else sel.selectAll(visibleIds) }
+  const singleSelected = sel.count === 1 ? items.find((i) => sel.isSelected(i.id)) : null
+
+  async function bulkArchive() {
+    setBusy(true)
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token
+      const res = await bulkApply([...sel.selected], (id) => apiDeleteAuth(`/admin/media/${id}`, token))
+      setConfirm(null)
+      sel.clear()
+      setToast(bulkSummary("Archived", res, "image"))
+      await load()
+    } catch (err) { setToast(err.message || "Archive failed") } finally { setBusy(false) }
+  }
+
+  async function bulkRestore() {
+    setBusy(true)
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token
+      const res = await bulkApply([...sel.selected], (id) => apiPostAuth(`/admin/media/${id}/restore`, {}, token))
+      sel.clear()
+      setToast(bulkSummary("Restored", res, "image"))
+      await load()
+    } catch (err) { setToast(err.message || "Restore failed") } finally { setBusy(false) }
+  }
 
   async function handleUpload({ altText, file, imageUrl }) {
     if (file) {
@@ -307,6 +364,30 @@ function AdminMedia() {
         </div>
       )}
 
+      {!loading && items.length > 0 && (
+        <>
+          <SelectAllRow allSelected={allSelected} someSelected={someSelected} onToggle={onToggleAll} total={items.length} noun="image" />
+          <SelectionBar count={sel.count} onClear={sel.clear}>
+            {archived ? (
+              <button type="button" onClick={bulkRestore} disabled={busy} className={`${barBtnAccent} min-h-[36px]`}>
+                Restore {sel.count}
+              </button>
+            ) : (
+              <>
+                {singleSelected && (
+                  <button type="button" onClick={() => setDialog({ mode: "edit", item: singleSelected })} className={`${barBtnPlain} min-h-[36px]`}>
+                    Edit alt
+                  </button>
+                )}
+                <button type="button" onClick={() => setConfirm({ mode: "bulk" })} disabled={busy} className={`${barBtnDanger} min-h-[36px]`}>
+                  Archive {sel.count}
+                </button>
+              </>
+            )}
+          </SelectionBar>
+        </>
+      )}
+
       {loading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-busy="true">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -335,6 +416,8 @@ function AdminMedia() {
               key={item.id}
               item={item}
               busy={busy}
+              selected={sel.isSelected(item.id)}
+              onToggleSelect={() => sel.toggle(item.id)}
               onEdit={(m) => setDialog({ mode: "edit", item: m })}
               onArchive={(m) => setConfirm({ mode: "archive", item: m })}
               onRestore={handleRestore}
@@ -378,16 +461,18 @@ function AdminMedia() {
           open
           danger
           busy={busy}
-          title={confirm.mode === "force" ? "Archive anyway?" : "Archive image?"}
+          title={confirm.mode === "bulk" ? `Archive ${sel.count} images?` : confirm.mode === "force" ? "Archive anyway?" : "Archive image?"}
           message={
-            confirm.mode === "force"
-              ? "This image is still used by live content. Archiving it only hides it from the library - the broken reference stays until you replace it."
-              : confirm.item?.used_in?.length
-                ? `Used by ${confirm.item.used_in.map((u) => u.label).join(", ")}.`
-                : "You can restore it later from the archived view."
+            confirm.mode === "bulk"
+              ? "Images still used by live content are skipped (you will see which). You can restore the rest later from the archived view."
+              : confirm.mode === "force"
+                ? "This image is still used by live content. Archiving it only hides it from the library - the broken reference stays until you replace it."
+                : confirm.item?.used_in?.length
+                  ? `Used by ${confirm.item.used_in.map((u) => u.label).join(", ")}.`
+                  : "You can restore it later from the archived view."
           }
           confirmLabel={confirm.mode === "force" ? "Archive anyway" : "Archive"}
-          onConfirm={() => handleArchive(confirm.mode === "force")}
+          onConfirm={() => (confirm.mode === "bulk" ? bulkArchive() : handleArchive(confirm.mode === "force"))}
           onCancel={() => setConfirm(null)}
         />
       )}
