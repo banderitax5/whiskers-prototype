@@ -169,6 +169,12 @@ describe('settings, faqs, policies (Phase 6)', () => {
     expect(merged.payment_methods).toHaveLength(3)
   })
 
+  test('low_stock_threshold is part of the public settings shape', () => {
+    expect(CLIENT_DEFAULT_SETTINGS.low_stock_threshold).toBe(10)
+    expect(contentSettings({ settings: { low_stock_threshold: 4 } }).low_stock_threshold).toBe(4)
+    expect(contentSettings(null).low_stock_threshold).toBe(10)
+  })
+
   test('contentFaqs maps rows to q/a and returns null when empty', () => {
     expect(contentFaqs({})).toBeNull()
     expect(contentFaqs({ faqs: [] })).toBeNull()

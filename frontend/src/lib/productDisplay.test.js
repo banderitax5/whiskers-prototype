@@ -59,6 +59,13 @@ describe('getStockStatus', () => {
     expect(getStockStatus(1).lowStock).toBe(true)
     expect(getStockStatus(LOW_STOCK_THRESHOLD + 1).lowStock).toBe(false)
   })
+  it('honours an owner-configured threshold', () => {
+    expect(getStockStatus(7, 7).lowStock).toBe(true)
+    expect(getStockStatus(8, 7).lowStock).toBe(false)
+    expect(getStockStatus(3, 0).lowStock).toBe(false)
+    expect(getStockStatus(3, -1).lowStock).toBe(true) // invalid threshold falls back
+    expect(getStockStatus(3, 'abc').lowStock).toBe(true)
+  })
   it('flags in stock above the threshold', () => {
     const s = getStockStatus(50)
     expect(s.inStock).toBe(true)

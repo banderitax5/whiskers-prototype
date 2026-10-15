@@ -2,8 +2,14 @@
 // detail page, and the related-products strip so stock/price logic stays in
 // one place instead of being copied around.
 
-// stock at or below this many units shows a "low stock" warning
-export const LOW_STOCK_THRESHOLD = 5
+import { useEffect, useState } from 'react'
+import { fetchSiteContent, contentSettings } from './siteContent.js'
+
+// fallback for the "low stock" warning before site settings load (and for a
+// fresh install with no content endpoint). The owner-editable value in site
+// settings (low_stock_threshold) overrides this via useLowStockThreshold;
+// both default to 10 so the admin stat and the storefront chips agree.
+export const LOW_STOCK_THRESHOLD = 10
 
 // normalize a raw product row (API) or a hardcoded product into the shape the
 // UI components expect. The API returns prod_name/image_url/category; some
@@ -32,13 +38,34 @@ export function formatPrice(price) {
 
 // derive stock status from stock_quantity. Missing/NaN stock is treated as
 // unknown (in stock) so products without stock data are still purchasable.
+// threshold is the owner-editable low_stock_threshold (see useLowStockThreshold);
+// it defaults to LOW_STOCK_THRESHOLD so pure callers and tests keep working.
 // returns { stock, hasStockInfo, inStock, lowStock }
-export function getStockStatus(stock_quantity) {
+export function getStockStatus(stock_quantity, threshold = LOW_STOCK_THRESHOLD) {
   const stock = Number(stock_quantity)
   const hasStockInfo = Number.isFinite(stock)
   const inStock = !hasStockInfo || stock > 0
-  const lowStock = hasStockInfo && stock > 0 && stock <= LOW_STOCK_THRESHOLD
+  const t = Number(threshold)
+  const limit = Number.isFinite(t) && t >= 0 ? t : LOW_STOCK_THRESHOLD
+  const lowStock = hasStockInfo && stock > 0 && stock <= limit
   return { stock, hasStockInfo, inStock, lowStock }
+}
+
+// the owner's low-stock threshold from site settings, or the built-in
+// default while loading / when the endpoint is unavailable. One cached
+// fetch per page load (same snapshot the storefront content uses).
+export function useLowStockThreshold() {
+  const [threshold, setThreshold] = useState(LOW_STOCK_THRESHOLD)
+  useEffect(() => {
+    let cancelled = false
+    fetchSiteContent().then((content) => {
+      if (cancelled || !content) return
+      const t = Number(contentSettings(content).low_stock_threshold)
+      if (Number.isFinite(t) && t >= 0) setThreshold(t)
+    })
+    return () => { cancelled = true }
+  }, [])
+  return threshold
 }
 
 // a product can be added to cart only when it has a real price and stock

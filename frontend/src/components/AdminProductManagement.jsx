@@ -4,9 +4,10 @@ import { apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth, apiUploadAuth } f
 import { AdminPage, AdminTable, EmptyState, StatCard, btnPrimary, StatusPill, ConfirmDialog } from './adminTheme';
 import { SECTION_LABELS, detailsToFields, fieldsToDetails } from '../lib/productInfo';
 import { formatPesos } from '../lib/cartLogic';
-import { formatMargin } from '../lib/adminCosting';
+import { formatMargin, marginInfo } from '../lib/adminCosting';
 import { useRole } from '../context/RoleContext';
 import { canSeeCosts, canManageProductLifecycle } from '../lib/permissions';
+import { fetchSiteContent, contentSettings } from '../lib/siteContent.js';
 import { BsBoxSeam, BsPlusLg, BsDashLg, BsPencilSquare, BsTrash, BsUpload, BsSearch, BsExclamationTriangle, BsArrowClockwise, BsArchive, BsArrowCounterclockwise, BsClockHistory } from 'react-icons/bs';
 import toast from 'react-hot-toast';
 
@@ -63,12 +64,42 @@ const AdminProductManagement = () => {
   const [historyTarget, setHistoryTarget] = useState(null);
   const [historyRows, setHistoryRows] = useState(null);
   const [historyError, setHistoryError] = useState(null);
+  // owner-editable thresholds: low stock comes from the public site-content
+  // payload (staff + admin); the margin warning is admin-only settings
+  const [lowStockThreshold, setLowStockThreshold] = useState(10);
+  const [marginWarnPct, setMarginWarnPct] = useState(null);
   const fileInputRef = useRef(null);
   const mobileFileRef = useRef(null);
   const PAGE_SIZE = 10;
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchProducts(); }, [reloadKey]);
+
+  useEffect(() => {
+    let cancelled = false
+    fetchSiteContent().then((content) => {
+      if (cancelled || !content) return
+      const t = Number(contentSettings(content).low_stock_threshold)
+      if (Number.isFinite(t) && t >= 0) setLowStockThreshold(t)
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (!showCosts || marginWarnPct !== null) return undefined
+    let cancelled = false
+    ;(async () => {
+      try {
+        const token = await getToken()
+        if (!token || cancelled) return
+        const data = await apiGetAuth('/admin/settings', token)
+        const w = Number(data?.settings?.margin_warning_percent)
+        if (!cancelled && Number.isFinite(w) && w >= 0) setMarginWarnPct(w)
+      } catch { /* keep the null default - no amber highlight */ }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showCosts]);
 
   useEffect(() => {
     if (!mobileEditItem) return undefined;
@@ -419,8 +450,16 @@ const AdminProductManagement = () => {
 
   // operational stats always describe the live catalog, not the archived view
   const totalProducts = catalogList.length;
-  const lowStockCount = catalogList.filter((p) => p.stock_quantity > 0 && p.stock_quantity <= 10).length;
+  const lowStockCount = catalogList.filter((p) => p.stock_quantity > 0 && p.stock_quantity <= lowStockThreshold).length;
   const outOfStockCount = catalogList.filter((p) => p.stock_quantity <= 0).length;
+
+  // amber when a known margin is positive but under the owner's warning line
+  // (negative margins stay red; unknown stays green like a normal value)
+  function marginWarning(price, cost) {
+    if (marginWarnPct === null) return false;
+    const info = marginInfo(price, cost);
+    return info.available && info.percent !== null && info.percent >= 0 && info.percent < marginWarnPct;
+  }
 
   // ARCHIVED beats HIDDEN beats OUT beats ACTIVE — the badge rules
   function productBadge(item) {
@@ -450,7 +489,9 @@ const AdminProductManagement = () => {
       { key: 'margin', label: 'Margin', render: (item) => {
         const margin = formatMargin(item.price, item.cost_price);
         const negative = margin.startsWith('-');
-        return <span className={`font-black ${margin === '—' ? 'text-gray-400 dark:text-slate-500' : negative ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>{margin}</span>;
+        const warn = marginWarning(item.price, item.cost_price);
+        const tone = margin === '—' ? 'text-gray-400 dark:text-slate-500' : negative ? 'text-red-600 dark:text-red-400' : warn ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400';
+        return <span className={`font-black ${tone}`} title={warn ? `Under the ${marginWarnPct}% margin warning threshold` : undefined}>{margin}</span>;
       } },
     ] : []),
     { key: 'stock_quantity', label: 'Stock', sortable: true, render: (item) => <span className="text-gray-700 dark:text-slate-300">{item.stock_quantity}</span> },
@@ -707,7 +748,10 @@ const AdminProductManagement = () => {
                 </div>
                 {showCosts && item.cost_price != null && (
                   <div className="text-xs text-gray-500 dark:text-slate-400">
-                    Cost PHP {formatPesos(Number(item.cost_price))} · Margin {formatMargin(item.price, item.cost_price)}
+                    Cost PHP {formatPesos(Number(item.cost_price))} · Margin{' '}
+                    <span className={marginWarning(item.price, item.cost_price) ? 'font-bold text-amber-600 dark:text-amber-400' : undefined}>
+                      {formatMargin(item.price, item.cost_price)}
+                    </span>
                   </div>
                 )}
               </div>

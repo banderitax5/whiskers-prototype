@@ -3,13 +3,16 @@
 // dropped so a stale admin form can never write arbitrary JSON.
 //
 // Public reads go through GET /api/site-content, which runs the result
-// through publicSettings() so admin-only keys (thresholds) never reach the
-// anon payload. The table itself has no RLS policies (service-role only).
+// through publicSettings() so admin-only keys never reach the anon payload.
+// The table itself has no RLS policies (service-role only).
 
 export const PAYMENT_METHOD_IDS = ['gcash', 'paymaya', 'cod']
 
-// keys only the admin dashboard needs; stripped from the public payload
-export const ADMIN_ONLY_KEYS = ['low_stock_threshold', 'margin_warning_percent']
+// keys only the admin dashboard needs; stripped from the public payload.
+// low_stock_threshold is deliberately public: the storefront "Only N left"
+// chips are driven by the same owner-editable value as the admin stat, so
+// there is one threshold instead of two disagreeing ones.
+export const ADMIN_ONLY_KEYS = ['margin_warning_percent']
 
 // what the storefront is born with (matches today's hardcoded values, so
 // enabling the endpoint changes nothing until the owner edits settings)

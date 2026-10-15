@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { useShop } from '../context/ShopContext.jsx'
 import ProductImage from './ProductImage.jsx'
-import { normalizeProduct, formatPrice, getStockStatus, toCartPayload } from '../lib/productDisplay.js'
+import { normalizeProduct, formatPrice, getStockStatus, toCartPayload, useLowStockThreshold } from '../lib/productDisplay.js'
 import { saleFor, useActivePromos } from '../lib/promoDisplay.js'
 
 // compact product card used by the "Related products" strip on the detail page.
@@ -12,8 +12,9 @@ function ProductCard({ product }) {
   const navigate = useNavigate()
   const { addToCart } = useShop()
   const promos = useActivePromos()
+  const lowStockThreshold = useLowStockThreshold()
   const p = normalizeProduct(product)
-  const { inStock, lowStock, stock } = getStockStatus(product?.stock_quantity)
+  const { inStock, lowStock, stock } = getStockStatus(product?.stock_quantity, lowStockThreshold)
   const priceLabel = formatPrice(p.price)
   const sale = saleFor(p, promos)
   const purchasable = p.price > 0 && inStock

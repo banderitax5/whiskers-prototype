@@ -94,10 +94,10 @@ describe('siteSettingsRules: merge + public + enabled', () => {
     assert.equal(merged.payment_methods.find((m) => m.id === 'cod').enabled, true)
   })
 
-  test('publicSettings strips admin-only keys and applies defaults', () => {
+  test('publicSettings keeps low_stock_threshold, strips admin-only keys, applies defaults', () => {
     const pub = publicSettings({ low_stock_threshold: 3, margin_warning_percent: 9, store_name: 'W' })
     assert.equal(pub.store_name, 'W')
-    assert.equal('low_stock_threshold' in pub, false)
+    assert.equal(pub.low_stock_threshold, 3)
     assert.equal('margin_warning_percent' in pub, false)
     assert.equal(pub.shipping_fee, DEFAULT_SETTINGS.shipping_fee)
   })

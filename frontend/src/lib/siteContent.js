@@ -179,6 +179,7 @@ export const CLIENT_DEFAULT_SETTINGS = {
     { id: 'cod', label: 'COD (Cash on Delivery)', enabled: true, instructions: '', qr_url: null },
   ],
   maintenance: { enabled: false, message: '' },
+  low_stock_threshold: 10,
 }
 
 // merged settings (server values over the built-in defaults). Never null -

@@ -8,7 +8,7 @@ import { setProductSeo } from '../lib/seo.js'
 import ProductImage from '../components/ProductImage.jsx'
 import ProductCard from '../components/ProductCard.jsx'
 import ProductInfoAccordion from '../components/ProductInfoAccordion.jsx'
-import { normalizeProduct, formatPrice, getStockStatus, toCartPayload } from '../lib/productDisplay.js'
+import { normalizeProduct, formatPrice, getStockStatus, toCartPayload, useLowStockThreshold } from '../lib/productDisplay.js'
 import { saleFor, useActivePromos } from '../lib/promoDisplay.js'
 import { parseDetails } from '../lib/productInfo.js'
 
@@ -110,7 +110,8 @@ function ProductDetail() {
   const [qty, setQty] = useState(1)
   const [attempt, setAttempt] = useState(0)
   const [recoNote, setRecoNote] = useState(null)
-const promos = useActivePromos()
+  const promos = useActivePromos()
+  const lowStockThreshold = useLowStockThreshold()
   const trackedRef = useRef(null)
 
   const load = useCallback(async () => {
@@ -177,7 +178,7 @@ const promos = useActivePromos()
   if (status === 'error') return <ErrorBlock onRetry={() => setAttempt((a) => a + 1)} />
   if (!p) return <NotFoundBlock />
 
-  const { inStock, lowStock, stock, hasStockInfo } = getStockStatus(item?.stock_quantity)
+  const { inStock, lowStock, stock, hasStockInfo } = getStockStatus(item?.stock_quantity, lowStockThreshold)
   const priceLabel = formatPrice(p.price)
   const sale = saleFor(p, promos)
   const purchasable = p.price > 0 && inStock

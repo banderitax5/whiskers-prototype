@@ -5,7 +5,6 @@ import useLiveProductRows from '../hooks/useLiveProductRows.js'
 import ProductThumb from '../components/ProductThumb.jsx'
 import CartRecommendations from '../components/CartRecommendations.jsx'
 import {
-  LOW_STOCK_THRESHOLD,
   isUuid,
   clampQuantity,
   unavailableReason,
@@ -18,6 +17,7 @@ import {
   lineTotalCents,
 } from '../lib/cartLogic.js'
 import { fetchSiteContent } from '../lib/siteContent.js'
+import { LOW_STOCK_THRESHOLD } from '../lib/productDisplay.js'
 
 // selection survives a trip to /checkout and back
 const SELECTION_KEY = 'whiskers.cart.selectedIds'
@@ -73,6 +73,8 @@ function Cart() {
   // shipping rules from site settings (Phase 6); null until loaded, in which
   // case cartTotals falls back to the built-in flat fee
   const [shippingOpts, setShippingOpts] = useState(null)
+  // owner-editable low-stock threshold; built-in default until settings load
+  const [lowStockThreshold, setLowStockThreshold] = useState(LOW_STOCK_THRESHOLD)
   const initializedRef = useRef(false)
   const storedSelection = useMemo(readStoredSelection, [])
 
@@ -84,6 +86,8 @@ function Cart() {
         fee: content.settings.shipping_fee,
         freeThreshold: content.settings.free_shipping_threshold,
       })
+      const t = Number(content.settings.low_stock_threshold)
+      if (Number.isFinite(t) && t >= 0) setLowStockThreshold(t)
     })
     return () => { cancelled = true }
   }, [])
@@ -316,7 +320,7 @@ function Cart() {
               const live = liveById[item.id]
               const stockKnown = checkedIds.has(item.id) && live && Number.isFinite(Number(live.stock_quantity))
               const stock = stockKnown ? Number(live.stock_quantity) : null
-              const lowStock = stock !== null && stock > 0 && stock <= LOW_STOCK_THRESHOLD
+              const lowStock = stock !== null && stock > 0 && stock <= lowStockThreshold
               const checked = selectedSet.has(item.id)
               const priceChanged = checkedIds.has(item.id) && live &&
                 toCentavos(live.price) > 0 &&

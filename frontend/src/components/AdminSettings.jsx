@@ -344,13 +344,13 @@ export default function AdminSettings() {
           </section>
 
           <section className="rounded-xl border border-gray-200 dark:border-[#1e3a5f] p-4 space-y-3">
-            <h3 className="text-sm font-black uppercase tracking-widest text-gray-800 dark:text-white">Admin thresholds</h3>
-            <p className="text-xs text-gray-500 dark:text-slate-400">These only affect the admin dashboard - shoppers never see them.</p>
+            <h3 className="text-sm font-black uppercase tracking-widest text-gray-800 dark:text-white">Warning thresholds</h3>
+            <p className="text-xs text-gray-500 dark:text-slate-400">One place to set where warnings appear - the dashboard reads these, and the low stock line also drives the storefront's "Only N left" chips.</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field id="low-stock" label="Low stock warning at" hint="Products at or below this stock show a warning in the dashboard.">
+              <Field id="low-stock" label="Low stock warning at" hint="Products at or below this stock show a warning in the dashboard and on product cards.">
                 <input id="low-stock" type="number" min="0" step="1" className={inputCls} value={settings.low_stock_threshold} onChange={(e) => setField('low_stock_threshold', e.target.value)} />
               </Field>
-              <Field id="margin-warn" label="Margin warning below (%)" hint="Lines under this margin are highlighted in order costing.">
+              <Field id="margin-warn" label="Margin warning below (%)" hint="Margins under this line are highlighted (amber) in the product table and order costing. Admins only.">
                 <input id="margin-warn" type="number" min="0" step="1" className={inputCls} value={settings.margin_warning_percent} onChange={(e) => setField('margin_warning_percent', e.target.value)} />
               </Field>
             </div>

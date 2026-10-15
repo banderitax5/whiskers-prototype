@@ -2,14 +2,10 @@
 // side-effect free so the selection, availability, and money rules can be
 // unit tested without React or the network.
 
-import { LOW_STOCK_THRESHOLD } from './productDisplay.js'
-
 // flat shipping fee charged once per order while it has at least one
 // purchasable item. Single source of truth for Cart, Checkout, and the
 // POST /api/orders body (the server re-applies its own copy of this rule).
 export const SHIPPING_FEE_PHP = 75
-
-export { LOW_STOCK_THRESHOLD }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

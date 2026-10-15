@@ -1270,6 +1270,14 @@ try {
   Step 'settings: public payload has settings keys' ($hasKeys -and $shipOk) "shipping_fee=$($scNow.settings.shipping_fee) faqs=$(@($scNow.faqs).Count) policies=$(@($scNow.policies).Count)"
 } catch { Step 'settings: public payload has settings keys' $false (Get-ErrBody $_) }
 
+# thresholds split: low stock is public (drives storefront chips + admin stat),
+# the margin warning stays admin-only
+try {
+  $scNow2 = Invoke-RestMethod -Uri "$base/api/site-content"
+  $threshOk = ($null -ne $scNow2.settings.low_stock_threshold) -and ($null -eq $scNow2.settings.margin_warning_percent)
+  Step 'thresholds: low stock is public, margin warning admin-only' $threshOk "low=$($scNow2.settings.low_stock_threshold)"
+} catch { Step 'thresholds: low stock is public, margin warning admin-only' $false (Get-ErrBody $_) }
+
 if ($m6Ready) {
   # admin writes settings, reads them back, then restores defaults
   $settingsOrig = $null

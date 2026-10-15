@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { extractSizeLabel } from '../lib/productUtils.js'
 import { trackEvent } from '../lib/appEvents.js'
 import ProductImage from './ProductImage.jsx'
-import { normalizeProduct, getStockStatus } from '../lib/productDisplay.js'
+import { normalizeProduct, getStockStatus, useLowStockThreshold } from '../lib/productDisplay.js'
 import { formatPesos } from '../lib/cartLogic'
 import { saleFor, useActivePromos } from '../lib/promoDisplay.js'
 
@@ -16,6 +16,7 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
   const [qty, setQty] = useState(1)
   const [selectedVariant, setSelectedVariant] = useState(null)
   const promos = useActivePromos()
+  const lowStockThreshold = useLowStockThreshold()
   const dialogRef = useRef(null)
 
   // focus trap: cycle Tab inside the dialog while it is open
@@ -69,7 +70,7 @@ function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, o
   // hardcoded ones (shared with the detail page via productDisplay)
   const p = normalizeProduct(current)
   const safePrice = p ? p.price : 0
-  const { stock, hasStockInfo, inStock, lowStock } = getStockStatus(current?.stock_quantity)
+  const { stock, hasStockInfo, inStock, lowStock } = getStockStatus(current?.stock_quantity, lowStockThreshold)
 
   // compute size labels from variants
   const sizes = useMemo(() => {
