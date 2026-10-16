@@ -377,14 +377,25 @@ export const btnGhost = 'px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-[10px] sm:t
 
 export function StatusPill({ kind = 'neutral', children }) {
   const map = {
-    success: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
-    danger: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
-    progress: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
-    info: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
+    success: 'bg-green-100 text-green-900 dark:bg-green-900/30 dark:text-green-200',
+    danger: 'bg-red-100 text-red-900 dark:bg-red-900/30 dark:text-red-200',
+    progress: 'bg-yellow-100 text-yellow-900 dark:bg-yellow-900/30 dark:text-yellow-200',
+    warning: 'bg-yellow-100 text-yellow-900 dark:bg-yellow-900/30 dark:text-yellow-200',
+    info: 'bg-blue-100 text-blue-900 dark:bg-blue-900/30 dark:text-blue-200',
     neutral: 'bg-gray-100 text-gray-700 dark:bg-[#162d4a] dark:text-slate-300',
   };
+  const dot = {
+    success: 'bg-green-600 dark:bg-green-400',
+    danger: 'bg-red-500 dark:bg-red-400',
+    progress: 'bg-yellow-600 dark:bg-yellow-400',
+    warning: 'bg-yellow-600 dark:bg-yellow-400',
+    info: 'bg-blue-500 dark:bg-blue-400',
+    neutral: 'bg-gray-500 dark:bg-slate-400',
+  };
+  const k = map[kind] ? kind : 'neutral';
   return (
-    <span className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider whitespace-nowrap ${map[kind] || map.neutral}`}>
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium capitalize whitespace-nowrap ${map[k]}`}>
+      <span className={`h-2 w-2 shrink-0 rounded-full ${dot[k]}`} aria-hidden="true" />
       {children}
     </span>
   );

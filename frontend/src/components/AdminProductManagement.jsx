@@ -616,10 +616,10 @@ const AdminProductManagement = () => {
 
   // ARCHIVED beats HIDDEN beats OUT beats ACTIVE — the badge rules
   function productBadge(item) {
-    if (item.archived_at) return { kind: 'info', label: 'ARCHIVED' };
-    if (item.is_active === false) return { kind: 'neutral', label: 'HIDDEN' };
-    if (Number(item.stock_quantity || 0) <= 0) return { kind: 'danger', label: 'OUT' };
-    return { kind: 'success', label: 'ACTIVE' };
+    if (item.archived_at) return { kind: 'info', label: 'Archived' };
+    if (item.is_active === false) return { kind: 'neutral', label: 'Hidden' };
+    if (Number(item.stock_quantity || 0) <= 0) return { kind: 'danger', label: 'Out' };
+    return { kind: 'success', label: 'Active' };
   }
 
   const columns = [
