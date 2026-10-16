@@ -110,7 +110,7 @@ export function RowCheckBox({ checked, onChange, label }) {
       onChange={onChange}
       aria-label={label}
       onPointerDown={(e) => e.stopPropagation()}
-      className="h-4 w-4 shrink-0 rounded border-gray-300 dark:border-[#2c4a6f] accent-[#F28C28] cursor-pointer"
+      className="h-4 w-4 shrink-0 rounded border-gray-300 dark:border-[#2c4a6f] accent-[#0b2e59] dark:accent-yellow-400 cursor-pointer"
     />
   )
 }
@@ -132,8 +132,8 @@ export function LongPressBox({ onActivate, children, className }) {
 export function SelectionBar({ count, onClear, children }) {
   if (count === 0) return null
   return (
-    <div role="toolbar" aria-label="Selection actions" className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-[#F28C28]/40 bg-[#F28C28]/10 px-3 py-2">
-      <span className="text-xs font-bold text-[#a35b0c] dark:text-[#F9B671]">{count} selected</span>
+    <div role="toolbar" aria-label="Selection actions" className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-[#0b2e59]/30 bg-[#0b2e59]/10 px-3 py-2 dark:border-yellow-400/30 dark:bg-yellow-400/10">
+      <span className="text-xs font-bold text-[#0b2e59] dark:text-yellow-200">{count} selected</span>
       <div className="ml-auto flex flex-wrap items-center gap-2">
         {children}
         <button
@@ -158,7 +158,7 @@ export function SelectAllRow({ allSelected, someSelected, onToggle, total, noun 
         checked={allSelected}
         ref={(el) => { if (el) el.indeterminate = Boolean(someSelected) && !allSelected }}
         onChange={onToggle}
-        className="h-4 w-4 rounded border-gray-300 dark:border-[#2c4a6f] accent-[#F28C28]"
+        className="h-4 w-4 rounded border-gray-300 dark:border-[#2c4a6f] accent-[#0b2e59] dark:accent-yellow-400"
       />
       Select all ({total} {noun}{total === 1 ? "" : "s"})
     </label>
@@ -251,7 +251,7 @@ export function GripHandle({ handleProps, label = "Drag to reorder" }) {
       aria-hidden="true"
       title={label}
       {...handleProps}
-      className="inline-flex shrink-0 items-center cursor-grab active:cursor-grabbing touch-none select-none text-gray-400 dark:text-slate-500 hover:text-[#F28C28] px-1"
+      className="inline-flex shrink-0 items-center cursor-grab active:cursor-grabbing touch-none select-none text-gray-400 dark:text-slate-500 hover:text-[#0b2e59] dark:hover:text-yellow-300 px-1"
     >
       <BsGripVertical />
     </span>
@@ -263,4 +263,4 @@ export function GripHandle({ handleProps, label = "Drag to reorder" }) {
 export const barBtn = "px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest border transition disabled:opacity-50"
 export const barBtnPlain = `${barBtn} text-gray-600 dark:text-slate-300 border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f]`
 export const barBtnDanger = `${barBtn} text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/40`
-export const barBtnAccent = `${barBtn} text-white bg-[#F28C28] border-[#F28C28] hover:bg-[#d97a1f]`
+export const barBtnAccent = `${barBtn} text-white bg-[#0b2e59] border-[#0b2e59] hover:bg-[#15407a] dark:bg-yellow-400 dark:border-yellow-400 dark:text-gray-900 dark:hover:bg-yellow-300`

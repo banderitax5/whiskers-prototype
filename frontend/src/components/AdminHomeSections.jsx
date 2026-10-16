@@ -216,9 +216,9 @@ function SectionCard({ section, index, total, onMove, onEdit, onArchive, busy, s
   // long-press the card (not its buttons/inputs) to select it
   const longPress = useLongPress(() => onToggleSelect())
   const ring = selected || dragging
-    ? "border-[#F28C28] ring-2 ring-[#F28C28]/70"
+    ? "border-[#0b2e59] ring-2 ring-[#0b2e59]/50 dark:border-yellow-400 dark:ring-yellow-400/50"
     : dragOver
-      ? "border-[#F28C28] ring-2 ring-[#F28C28]/40"
+      ? "border-[#0b2e59] ring-2 ring-[#0b2e59]/25 dark:border-yellow-400 dark:ring-yellow-400/25"
       : "border-gray-200 dark:border-[#2c4a6f]"
   return (
     <div
@@ -417,7 +417,7 @@ function AdminHomeSections() {
         </div>
       </div>
 
-      {toast && <div role="status" className="mb-4 rounded-lg border border-[#F28C28]/40 bg-[#F28C28]/10 px-4 py-2 text-sm font-semibold text-[#a35b0c] dark:text-[#F9B671]">{toast}</div>}
+      {toast && <div role="status" className="mb-4 rounded-lg border border-[#0b2e59]/30 bg-[#0b2e59]/10 px-4 py-2 text-sm font-semibold text-[#0b2e59] dark:border-yellow-400/30 dark:bg-yellow-400/10 dark:text-yellow-200">{toast}</div>}
       {error && (
         <div role="alert" className="mb-4 rounded-lg border border-red-300 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 px-4 py-3">
           <p className="text-sm font-semibold text-red-700 dark:text-red-300">{error}</p>

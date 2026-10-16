@@ -47,7 +47,7 @@ function Field({ id, label, hint, children }) {
   )
 }
 
-const inputCls = 'w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0b2237] px-3 py-2 text-sm text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#F28C28]'
+const inputCls = 'w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0b2237] px-3 py-2 text-sm text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#0b2e59] dark:focus:ring-yellow-400'
 
 export default function AdminSettings() {
   const [tab, setTab] = useState('settings')
@@ -235,7 +235,7 @@ export default function AdminSettings() {
             role="tab"
             aria-selected={tab === t.id}
             onClick={() => setTab(t.id)}
-            className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-widest transition ${tab === t.id ? 'bg-[#F28C28] text-white' : 'border border-gray-300 dark:border-[#1e3a5f] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#162d4a]'}`}
+            className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-widest transition ${tab === t.id ? 'bg-[#0b2e59] dark:bg-yellow-400 text-white dark:text-gray-900' : 'border border-gray-300 dark:border-[#1e3a5f] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#162d4a]'}`}
           >
             {t.label}
           </button>
@@ -312,7 +312,7 @@ export default function AdminSettings() {
                     type="checkbox"
                     checked={m.enabled}
                     onChange={(e) => setMethod(m.id, { enabled: e.target.checked })}
-                    className="h-4 w-4 rounded border-gray-300 text-[#F28C28] focus:ring-[#F28C28]"
+                    className="h-4 w-4 rounded border-gray-300 text-[#0b2e59] dark:text-yellow-400 focus:ring-[#0b2e59] dark:focus:ring-yellow-400"
                   />
                   {m.label || m.id.toUpperCase()} <span className="text-xs font-normal text-gray-400">({m.id})</span>
                 </label>
@@ -334,7 +334,7 @@ export default function AdminSettings() {
                 type="checkbox"
                 checked={settings.maintenance.enabled}
                 onChange={(e) => setField('maintenance', { ...settings.maintenance, enabled: e.target.checked })}
-                className="h-4 w-4 rounded border-gray-300 text-[#F28C28] focus:ring-[#F28C28]"
+                className="h-4 w-4 rounded border-gray-300 text-[#0b2e59] dark:text-yellow-400 focus:ring-[#0b2e59] dark:focus:ring-yellow-400"
               />
               Maintenance mode - hide the shop from shoppers (admins still see it)
             </label>
@@ -371,7 +371,7 @@ export default function AdminSettings() {
         <div>
           <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
             <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
-              <input type="checkbox" checked={faqArchived} onChange={(e) => setFaqArchived(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#F28C28] focus:ring-[#F28C28]" />
+              <input type="checkbox" checked={faqArchived} onChange={(e) => setFaqArchived(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#0b2e59] dark:text-yellow-400 focus:ring-[#0b2e59] dark:focus:ring-yellow-400" />
               Show archived
             </label>
             {!faqArchived && (
@@ -431,7 +431,7 @@ export default function AdminSettings() {
         <div>
           <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
             <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
-              <input type="checkbox" checked={policyArchived} onChange={(e) => setPolicyArchived(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#F28C28] focus:ring-[#F28C28]" />
+              <input type="checkbox" checked={policyArchived} onChange={(e) => setPolicyArchived(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#0b2e59] dark:text-yellow-400 focus:ring-[#0b2e59] dark:focus:ring-yellow-400" />
               Show archived
             </label>
             {!policyArchived && (
@@ -491,7 +491,7 @@ export default function AdminSettings() {
               <textarea id="faq-a" required className={inputCls} rows={5} value={faqDialog.form.answer} onChange={(e) => setFaqDialog((d) => ({ ...d, form: { ...d.form, answer: e.target.value } }))} maxLength={2000} />
             </Field>
             <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
-              <input type="checkbox" checked={faqDialog.form.is_visible} onChange={(e) => setFaqDialog((d) => ({ ...d, form: { ...d.form, is_visible: e.target.checked } }))} className="h-4 w-4 rounded border-gray-300 text-[#F28C28] focus:ring-[#F28C28]" />
+              <input type="checkbox" checked={faqDialog.form.is_visible} onChange={(e) => setFaqDialog((d) => ({ ...d, form: { ...d.form, is_visible: e.target.checked } }))} className="h-4 w-4 rounded border-gray-300 text-[#0b2e59] dark:text-yellow-400 focus:ring-[#0b2e59] dark:focus:ring-yellow-400" />
               Visible on the About page
             </label>
             {faqError && <p className="text-sm font-semibold text-red-600 dark:text-red-400" role="alert">{faqError}</p>}
@@ -517,7 +517,7 @@ export default function AdminSettings() {
               <textarea id="policy-body" className={inputCls} rows={8} value={policyDialog.form.body} onChange={(e) => setPolicyDialog((d) => ({ ...d, form: { ...d.form, body: e.target.value } }))} maxLength={20000} />
             </Field>
             <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
-              <input type="checkbox" checked={policyDialog.form.is_visible} onChange={(e) => setPolicyDialog((d) => ({ ...d, form: { ...d.form, is_visible: e.target.checked } }))} className="h-4 w-4 rounded border-gray-300 text-[#F28C28] focus:ring-[#F28C28]" />
+              <input type="checkbox" checked={policyDialog.form.is_visible} onChange={(e) => setPolicyDialog((d) => ({ ...d, form: { ...d.form, is_visible: e.target.checked } }))} className="h-4 w-4 rounded border-gray-300 text-[#0b2e59] dark:text-yellow-400 focus:ring-[#0b2e59] dark:focus:ring-yellow-400" />
               Visible (shoppers can open the page)
             </label>
             {policyError && <p className="text-sm font-semibold text-red-600 dark:text-red-400" role="alert">{policyError}</p>}

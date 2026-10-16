@@ -125,7 +125,7 @@ function MediaCard({ item, onEdit, onArchive, onRestore, onCheck, busy, selected
       {...longPress}
       className={`rounded-2xl border overflow-hidden flex flex-col transition ${
         selected
-          ? "border-[#F28C28] ring-2 ring-[#F28C28]/60"
+          ? "border-[#0b2e59] ring-2 ring-[#0b2e59]/50 dark:border-yellow-400 dark:ring-yellow-400/50"
           : "border-gray-200 dark:border-[#2c4a6f]"
       } bg-white dark:bg-[#16283f]`}
     >
@@ -356,7 +356,7 @@ function AdminMedia() {
       subtitle="Every banner, slide and icon image. Required alt text keeps the storefront accessible."
     >
       <div className="mb-4">{headerControls}</div>
-      {toast && <div role="status" className="mb-4 rounded-lg border border-[#F28C28]/40 bg-[#F28C28]/10 px-4 py-2 text-sm font-semibold text-[#a35b0c] dark:text-[#F9B671]">{toast}</div>}
+      {toast && <div role="status" className="mb-4 rounded-lg border border-[#0b2e59]/30 bg-[#0b2e59]/10 px-4 py-2 text-sm font-semibold text-[#0b2e59] dark:border-yellow-400/30 dark:bg-yellow-400/10 dark:text-yellow-200">{toast}</div>}
       {error && (
         <div role="alert" className="mb-4 rounded-lg border border-red-300 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 px-4 py-3">
           <p className="text-sm font-semibold text-red-700 dark:text-red-300">{error}</p>

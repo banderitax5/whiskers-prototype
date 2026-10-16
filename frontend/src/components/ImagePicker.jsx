@@ -47,7 +47,7 @@ export default function ImagePicker({ label, value, onChange, required }) {
             type="button"
             onClick={() => setMode("library")}
             aria-pressed={mode === "library"}
-            className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition ${mode === "library" ? "bg-[#F28C28] text-white" : "text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f]"}`}
+            className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition ${mode === "library" ? "bg-[#0b2e59] dark:bg-yellow-400 text-white dark:text-gray-900" : "text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f]"}`}
           >
             Library
           </button>
@@ -55,7 +55,7 @@ export default function ImagePicker({ label, value, onChange, required }) {
             type="button"
             onClick={() => setMode("url")}
             aria-pressed={mode === "url"}
-            className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition ${mode === "url" ? "bg-[#F28C28] text-white" : "text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f]"}`}
+            className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest transition ${mode === "url" ? "bg-[#0b2e59] dark:bg-yellow-400 text-white dark:text-gray-900" : "text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f]"}`}
           >
             Paste link
           </button>
@@ -101,7 +101,7 @@ export default function ImagePicker({ label, value, onChange, required }) {
           ) : items.length === 0 ? (
             <p className="mt-2 text-xs text-gray-500 dark:text-slate-400">
               No images uploaded yet — add some in the{" "}
-              <a href="/admin/media" className="font-semibold underline text-[#a35b0c] dark:text-[#F9B671]">Media Library</a>
+              <a href="/admin/media" className="font-semibold underline text-[#0b2e59] dark:text-yellow-300">Media Library</a>
               {" "}first, or use “Paste link”.
             </p>
           ) : (
@@ -116,10 +116,10 @@ export default function ImagePicker({ label, value, onChange, required }) {
                     aria-selected={on}
                     onClick={() => onChange(on ? "" : m.url)}
                     title={m.alt_text || m.url}
-                    className={`relative aspect-video rounded overflow-hidden border-2 transition ${on ? "border-[#F28C28] ring-1 ring-[#F28C28]" : "border-transparent hover:border-gray-300 dark:hover:border-[#2c4a6f]"}`}
+                    className={`relative aspect-video rounded overflow-hidden border-2 transition ${on ? "border-[#0b2e59] ring-1 ring-[#0b2e59] dark:border-yellow-400 dark:ring-yellow-400" : "border-transparent hover:border-gray-300 dark:hover:border-[#2c4a6f]"}`}
                   >
                     <img src={m.url} alt={m.alt_text || ""} loading="lazy" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.opacity = "0.2" }} />
-                    {on && <span className="absolute inset-0 flex items-center justify-center text-[#F28C28] text-lg font-black drop-shadow">✓</span>}
+                    {on && <span className="absolute inset-0 flex items-center justify-center text-[#0b2e59] dark:text-yellow-400 text-lg font-black drop-shadow">✓</span>}
                   </button>
                 )
               })}

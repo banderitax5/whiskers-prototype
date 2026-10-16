@@ -650,7 +650,7 @@ const AdminProductManagement = () => {
           else sel.selectAdd(displayedIds);
         }}
         aria-label="Select all products in view"
-        className="h-4 w-4 rounded border-gray-300 dark:border-[#2c4a6f] accent-[#F28C28]"
+        className="h-4 w-4 rounded border-gray-300 dark:border-[#2c4a6f] accent-[#0b2e59] dark:accent-yellow-400"
       />
     ), className: 'w-10', render: (item) => (
       <RowCheckBox

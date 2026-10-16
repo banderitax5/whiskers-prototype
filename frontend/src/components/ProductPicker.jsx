@@ -58,7 +58,7 @@ export default function ProductPicker({ selected = [], onToggle, max }) {
                   onClick={() => !atMax || on ? onToggle(p.prod_id) : null}
                   disabled={atMax && !on}
                   aria-pressed={on}
-                  className={`w-full text-left px-3 py-2 text-xs font-semibold transition disabled:opacity-40 ${on ? "bg-[#F28C28]/15 text-[#a35b0c] dark:text-[#F9B671]" : "text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-[#1e3a5f]"}`}
+                  className={`w-full text-left px-3 py-2 text-xs font-semibold transition disabled:opacity-40 ${on ? "bg-[#0b2e59]/10 text-[#0b2e59] dark:bg-yellow-400/15 dark:text-yellow-200" : "text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-[#1e3a5f]"}`}
                 >
                   {on ? "✓ " : ""}
                   {p.prod_name}

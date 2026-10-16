@@ -116,7 +116,7 @@ function DiffList({ changes }) {
           <span className="font-bold text-gray-800 dark:text-slate-200">{humanField(field)}</span>
           {": "}
           <span className="text-gray-500 dark:text-slate-400">{formatValue(c?.from)}</span>
-          <span className="mx-1 font-black text-[#F28C28]">&rarr;</span>
+          <span className="mx-1 font-black text-[#0b2e59] dark:text-yellow-400">&rarr;</span>
           <span className="font-semibold text-gray-900 dark:text-slate-100">{formatValue(c?.to)}</span>
         </li>
       ))}
