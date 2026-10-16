@@ -13,6 +13,7 @@ import { decryptText } from '../utils/encryption.js'
 import { PERIODS, windowDays, bucketPayments } from '../utils/salesBuckets.js'
 import { sanitizeDetails } from '../utils/productDetails.js'
 import { sanitizeProductCreate, sanitizeProductPatch, parseProductListQuery, escapeLike } from '../utils/adminInput.js'
+import { toCsv } from '../utils/csv.js'
 import { invalidateContentCache } from './siteContent.js'
 import { isUuid } from '../utils/uuid.js'
 import { sanitizeAltText, mediaPageParams, buildUsageIndex } from '../utils/mediaRules.js'
@@ -548,14 +549,186 @@ router.get('/products', async (req, res) => {
   }
 })
 
+// GET /api/admin/products/export - CSV backup of the whole catalog. staff get
+// the same columns as their list view (no cost/supplier); admin gets costing
+// too. descriptions and details JSON are escaped so a spreadsheet round-trips.
+router.get('/products/export', async (req, res) => {
+  try {
+    const isAdmin = req.userRole === 'admin'
+    const rows = []
+    for (let from = 0; from < 100000; from += 1000) {
+      const { data, error } = await supabaseAdmin
+        .from('product')
+        .select('prod_id, prod_name, category, brand, price, stock_quantity, is_active, image_url, description, details, archived_at, cost_price, supplier')
+        .order('prod_name', { ascending: true })
+        .range(from, from + 999)
+      if (error) {
+        // costing columns missing (pre-M2): retry without them
+        if (missingColumnOf(error, ['cost_price', 'supplier'])) {
+          const retry = await supabaseAdmin
+            .from('product')
+            .select('prod_id, prod_name, category, brand, price, stock_quantity, is_active, image_url, description, details, archived_at')
+            .order('prod_name', { ascending: true })
+            .range(from, from + 999)
+          if (retry.error) throw retry.error
+          rows.push(...(retry.data || []))
+          if (!retry.data || retry.data.length < 1000) break
+          continue
+        }
+        throw error
+      }
+      rows.push(...(data || []))
+      if (!data || data.length < 1000) break
+    }
+
+    const headers = ['prod_id', 'prod_name', 'category', 'brand', 'price', 'stock_quantity', 'is_active', 'image_url', 'description', 'details']
+    if (isAdmin) headers.push('cost_price', 'supplier')
+    const csvRows = rows.map((r) => {
+      const base = [
+        r.prod_id, r.prod_name, r.category, r.brand, r.price, r.stock_quantity,
+        r.is_active === false ? 'false' : 'true', r.image_url, r.description,
+        Array.isArray(r.details) && r.details.length ? JSON.stringify(r.details) : '',
+      ]
+      if (isAdmin) base.push(r.cost_price ?? '', r.supplier ?? '')
+      return base
+    })
+    const stamp = new Date().toISOString().slice(0, 10)
+    res.set('Content-Type', 'text/csv; charset=utf-8')
+    res.set('Content-Disposition', `attachment; filename="whiskers-products-${stamp}.csv"`)
+    res.send(toCsv(headers, csvRows))
+  } catch (err) {
+    logger.error({ err }, 'Admin product export error')
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// POST /api/admin/products/import - apply a validated batch of rows from a
+// spreadsheet. The client parses/validates for the preview and size-aware
+// batches (~60KB) to stay under the global 100kb json limit; the server
+// re-validates every row through the same sanitizers as the single-row routes.
+// A row with prod_id updates that product; without it, a new product is made.
+// Cap of 200 rows per request keeps one batch well inside the body limit.
+router.post('/products/import', requireAdmin, async (req, res) => {
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows : null
+  if (!rows) return res.status(400).json({ error: 'rows must be an array' })
+  if (rows.length === 0 || rows.length > 200) {
+    return res.status(400).json({ error: 'Import accepts between 1 and 200 rows per batch' })
+  }
+  try {
+    // one pass over the table: id -> row (for updates) and the name set
+    // (for uniqueness, including archived rows)
+    const byId = new Map()
+    const nameOwner = new Map() // lowercase name -> prod_id
+    for (let from = 0; from < 100000; from += 1000) {
+      const { data, error } = await supabaseAdmin
+        .from('product')
+        .select('prod_id, prod_name, price')
+        .range(from, from + 999)
+      if (error) throw error
+      for (const r of data || []) {
+        byId.set(r.prod_id, r)
+        nameOwner.set(String(r.prod_name || '').trim().toLowerCase(), r.prod_id)
+      }
+      if (!data || data.length < 1000) break
+    }
+
+    const isAdmin = req.userRole === 'admin'
+    const errors = []
+    let created = 0
+    let updated = 0
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i] ?? {}
+      try {
+        let details = row.details
+        if (typeof details === 'string' && details.trim()) {
+          try { details = JSON.parse(details) } catch { throw new Error('details must be valid JSON') }
+        }
+        // costing fields are admin-only; strip for staff before sanitizing
+        const body = { ...row, details }
+        if (!isAdmin) { delete body.cost_price; delete body.supplier }
+        delete body.prod_id
+
+        const prodId = typeof row.prod_id === 'string' ? row.prod_id.trim() : ''
+        if (prodId) {
+          if (!byId.has(prodId)) throw new Error('No product with that ID')
+          const { error: inputErr, updates } = sanitizeProductPatch(body)
+          if (inputErr) throw new Error(inputErr)
+          if ('details' in updates) {
+            const d = sanitizeDetails(updates.details)
+            if (d.error) throw new Error(d.error)
+            updates.details = d.value
+          }
+          if (Object.keys(updates).length === 0) continue
+          const prev = byId.get(prodId)
+          const newName = updates.prod_name
+          if (newName && String(prev.prod_name || '').trim().toLowerCase() !== newName.toLowerCase()) {
+            const owner = nameOwner.get(newName.trim().toLowerCase())
+            if (owner && owner !== prodId) throw new Error(`Name already used by another product`)
+            nameOwner.set(newName.trim().toLowerCase(), prodId)
+          }
+          const { error: updErr } = await supabaseAdmin.from('product').update(updates).eq('prod_id', prodId)
+          if (updErr) {
+            if (isSchemaPendingError(updErr)) throw new Error('Database migration pending (M2)')
+            throw new Error(updErr.message || 'Update failed')
+          }
+          if ('price' in updates && Number(prev.price) !== updates.price) {
+            await recordPriceHistory(prodId, prev.price, updates.price, req.userEmail)
+          }
+          updated++
+        } else {
+          const { error: inputErr, value } = sanitizeProductCreate(body)
+          if (inputErr) throw new Error(inputErr)
+          const nameKey = value.prod_name.trim().toLowerCase()
+          if (nameOwner.has(nameKey)) throw new Error('A product with that name already exists')
+          const { data: inserted, error: insErr } = await supabaseAdmin.from('product').insert({ ...value, details: sanitizeDetails(details).value ?? null }).select('prod_id').single()
+          if (insErr) {
+            if (isSchemaPendingError(insErr)) throw new Error('Database migration pending (M2)')
+            throw new Error(insErr.message || 'Insert failed')
+          }
+          // same first-listed-price trail the single-product POST records
+          await recordPriceHistory(inserted.prod_id, null, value.price, req.userEmail)
+          nameOwner.set(nameKey, inserted.prod_id)
+          created++
+        }
+      } catch (err) {
+        errors.push({ row: i + 1, message: err.message || 'Invalid row' })
+      }
+    }
+
+    res.json({ created, updated, errors })
+    logAudit({ adminEmail: req.userEmail, action: 'import', target: 'products', details: `created=${created} updated=${updated} errors=${errors.length}` })
+  } catch (err) {
+    logger.error({ err }, 'Admin product import error')
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
 // POST /api/admin/products - creating products is an admin action (matrix:
 // staff edit text/images/price/stock, only admin adds or removes products)
+
+// app-level name uniqueness (case-insensitive). No DB unique constraint exists
+// (adding one would be a migration), so this check has a tiny race window -
+// acceptable for a single-owner shop; a unique index is the future fix.
+async function productNameTaken(name, excludeId = null) {
+  const { data } = await supabaseAdmin
+    .from('product')
+    .select('prod_id, prod_name')
+    .ilike('prod_name', escapeLike(name))
+    .limit(50)
+  const lower = String(name).trim().toLowerCase()
+  return (data || []).some((r) => String(r.prod_name || '').trim().toLowerCase() === lower && r.prod_id !== excludeId)
+}
+
 router.post('/products', requireAdmin, async (req, res) => {
   const { error: inputErr, value } = sanitizeProductCreate(req.body ?? {})
   if (inputErr) return res.status(400).json({ error: inputErr })
   const sanitizedDetails = sanitizeDetails(req.body?.details)
   if (sanitizedDetails.error) return res.status(400).json({ error: sanitizedDetails.error })
   try {
+    if (await productNameTaken(value.prod_name)) {
+      return res.status(409).json({ error: 'A product with that name already exists', code: 'NAME_TAKEN' })
+    }
     const { data, error } = await supabaseAdmin
       .from('product')
       .insert({ ...value, details: sanitizedDetails.value })
@@ -612,15 +785,21 @@ router.patch('/products/:id', async (req, res) => {
   }
 
   try {
-    // price change? read the current price first so history records old -> new
+    // price/name change? read the current row first so history records
+    // old -> new prices and the name-uniqueness check can skip self-matches
     let oldPrice = null
-    if ('price' in updates) {
+    if ('price' in updates || 'prod_name' in updates) {
       const { data: prev } = await supabaseAdmin
         .from('product')
-        .select('price')
+        .select('price, prod_name')
         .eq('prod_id', req.params.id)
         .maybeSingle()
-      oldPrice = prev?.price ?? null
+      oldPrice = 'price' in updates ? (prev?.price ?? null) : null
+      if ('prod_name' in updates
+        && String(prev?.prod_name || '').trim().toLowerCase() !== updates.prod_name.toLowerCase()
+        && await productNameTaken(updates.prod_name, req.params.id)) {
+        return res.status(409).json({ error: 'A product with that name already exists', code: 'NAME_TAKEN' })
+      }
     }
 
     const { data, error } = await supabaseAdmin

@@ -45,6 +45,8 @@ function SelProbe() {
       <span data-testid="count">{sel.count}</span>
       <button type="button" data-testid="toggle" onClick={() => sel.toggle('a')}>toggle</button>
       <button type="button" data-testid="all" onClick={() => sel.selectAll(['a', 'b'])}>all</button>
+      <button type="button" data-testid="add" onClick={() => sel.selectAdd(['c'])}>add</button>
+      <button type="button" data-testid="deselect" onClick={() => sel.deselect(['a', 'b'])}>deselect</button>
       <button type="button" data-testid="prune" onClick={() => sel.prune(['b'])}>prune</button>
       <button type="button" data-testid="clear" onClick={() => sel.clear()}>clear</button>
     </div>
@@ -101,6 +103,18 @@ describe('useSelection', () => {
     expect(count()).toBe('1')
     await click(c.querySelector('[data-testid="clear"]'))
     expect(count()).toBe('0')
+  })
+
+  it('selectAdd keeps the existing selection; deselect drops only the given ids', async () => {
+    const c = await mount(<SelProbe />)
+    const count = () => c.querySelector('[data-testid="count"]').textContent
+
+    await click(c.querySelector('[data-testid="all"]')) // a + b
+    expect(count()).toBe('2')
+    await click(c.querySelector('[data-testid="add"]')) // + c
+    expect(count()).toBe('3')
+    await click(c.querySelector('[data-testid="deselect"]')) // - a, b
+    expect(count()).toBe('1') // c survives
   })
 })
 

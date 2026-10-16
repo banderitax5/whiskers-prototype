@@ -77,3 +77,15 @@ export function apiUploadAuth(path, body, token) {
   const isForm = body instanceof FormData
   return request(path, { method: 'POST', body, token, isForm })
 }
+
+// raw Response for non-JSON downloads (CSV export); throws like request()
+export async function apiFetchAuth(path, token) {
+  const headers = {}
+  if (token) headers.Authorization = `Bearer ${token}`
+  const res = await fetch(`${apiBase}${path}`, { headers })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw toError(res, data)
+  }
+  return res
+}

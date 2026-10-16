@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseDetails, detailsToFields, fieldsToDetails, formatContent, SECTION_LABELS } from './productInfo.js'
+import { parseDetails, sectionsForEdit, sectionsToDetails, formatContent, SECTION_LABELS } from './productInfo.js'
 
 describe('parseDetails', () => {
   it('returns [] for anything that is not an array', () => {
@@ -21,31 +21,44 @@ describe('parseDetails', () => {
   })
 })
 
-describe('detailsToFields / fieldsToDetails', () => {
-  it('round-trips the curated sections', () => {
+describe('sectionsForEdit / sectionsToDetails', () => {
+  it('loads stored sections as-is for editing (including labels outside the curated set)', () => {
     const details = [
       { label: 'Feeding Guide', content: '2 meals a day' },
-      { label: 'Ingredients', content: 'Chicken' },
+      { label: 'Size Chart', content: 'S / M / L' },
     ]
-    const fields = detailsToFields(details)
-    expect(fields['Feeding Guide']).toBe('2 meals a day')
-    expect(fields['Ingredients']).toBe('Chicken')
-    // sections the product does not use are empty strings, not undefined
-    expect(fields['Product Info']).toBe('')
-    expect(fieldsToDetails(fields)).toEqual([
-      { label: 'Ingredients', content: 'Chicken' },
+    expect(sectionsForEdit(details)).toEqual([
       { label: 'Feeding Guide', content: '2 meals a day' },
+      { label: 'Size Chart', content: 'S / M / L' },
     ])
   })
 
-  it('ignores labels outside the curated set', () => {
-    const fields = detailsToFields([{ label: 'Size Chart', content: 'ignored' }])
-    expect(fields).toEqual(Object.fromEntries(SECTION_LABELS.map((l) => [l, ''])))
+  it('falls back to the five curated labels when a product has no details', () => {
+    expect(sectionsForEdit(null)).toEqual(SECTION_LABELS.map((label) => ({ label, content: '' })))
+    expect(sectionsForEdit([])).toEqual(SECTION_LABELS.map((label) => ({ label, content: '' })))
   })
 
-  it('returns null when every field is blank', () => {
-    expect(fieldsToDetails(Object.fromEntries(SECTION_LABELS.map((l) => [l, '  '])))).toBeNull()
-    expect(fieldsToDetails(undefined)).toBeNull()
+  it('round-trips through sectionsToDetails, dropping contentless rows', () => {
+    const sections = [
+      { label: ' Ingredients ', content: '  Chicken  ' },
+      { label: 'Empty', content: '   ' },
+      { label: '   ', content: 'no label' },
+      { label: 'Size Chart', content: 'S / M / L' },
+    ]
+    expect(sectionsToDetails(sections)).toEqual([
+      { label: 'Ingredients', content: 'Chicken' },
+      { label: 'Size Chart', content: 'S / M / L' },
+    ])
+  })
+
+  it('returns null when nothing has content', () => {
+    expect(sectionsToDetails(SECTION_LABELS.map((l) => ({ label: l, content: '  ' })))).toBeNull()
+    expect(sectionsToDetails(undefined)).toBeNull()
+  })
+
+  it('keeps at most 12 sections', () => {
+    const many = Array.from({ length: 15 }, (_, i) => ({ label: `S${i}`, content: 'x' }))
+    expect(sectionsToDetails(many)).toHaveLength(12)
   })
 })
 

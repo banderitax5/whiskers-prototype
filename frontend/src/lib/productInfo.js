@@ -2,7 +2,8 @@
 // Sections are stored as an ordered array of {label, content}; empty sections
 // are never rendered, so products without info (accessories, etc.) show nothing.
 
-// the five curated sections the admin form exposes today
+// the five curated sections the admin form starts with (owners can add,
+// rename and remove sections - the backend accepts any labels, up to 12)
 export const SECTION_LABELS = [
   'Product Info',
   'Ingredients',
@@ -10,6 +11,9 @@ export const SECTION_LABELS = [
   'Guaranteed Analysis',
   'Storage Condition',
 ]
+
+export const MAX_SECTIONS = 12
+export const MAX_LABEL_LENGTH = 80
 
 // raw jsonb -> renderable sections (drops anything malformed or contentless)
 export function parseDetails(raw) {
@@ -24,23 +28,27 @@ export function parseDetails(raw) {
   return sections
 }
 
-// stored array -> the admin form's {label: content} fields
-export function detailsToFields(details) {
-  const fields = Object.fromEntries(SECTION_LABELS.map((label) => [label, '']))
-  for (const section of parseDetails(details)) {
-    if (section.label in fields) fields[section.label] = section.content
-  }
-  return fields
+// stored jsonb -> the admin form's editable section list. Products with no
+// saved details start from the five curated labels as an empty scaffold.
+export function sectionsForEdit(details) {
+  const stored = parseDetails(details)
+  return stored.length ? stored : SECTION_LABELS.map((label) => ({ label, content: '' }))
 }
 
-// the admin form's {label: content} fields -> storable array (or null)
-export function fieldsToDetails(fields) {
-  const sections = []
-  for (const label of SECTION_LABELS) {
-    const content = typeof fields?.[label] === 'string' ? fields[label].trim() : ''
-    if (content) sections.push({ label, content })
+// the admin form's section list -> storable array (or null). Contentless
+// rows are dropped; more than MAX_SECTIONS keeps the first 12 (the server
+// enforces the same cap).
+export function sectionsToDetails(sections) {
+  if (!Array.isArray(sections)) return null
+  const out = []
+  for (const section of sections) {
+    if (!section || typeof section !== 'object') continue
+    const label = typeof section.label === 'string' ? section.label.trim() : ''
+    const content = typeof section.content === 'string' ? section.content.trim() : ''
+    if (label && content) out.push({ label, content })
+    if (out.length >= MAX_SECTIONS) break
   }
-  return sections.length ? sections : null
+  return out.length ? out : null
 }
 
 const BULLET_RE = /^\s*[-*•]\s+/

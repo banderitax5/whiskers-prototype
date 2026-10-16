@@ -309,6 +309,107 @@ if ($probeId) {
   } catch { Step 'details: empty list clears sections' $false "$($_.Exception.Response.StatusCode.value__)" }
 }
 
+# ── Product admin self-service: name uniqueness + CSV export/import ────────
+# name-uniqueness: creating a second product with the details probe's name
+# must 409 (the details probe product is still live at this point)
+if (-not $stepUpH) {
+  Step 'selfsvc: duplicate name create rejected' $false 'skipped: step-up was rate limited' 'SKIP'
+  Step 'selfsvc: rename to taken name rejected' $false 'skipped: step-up was rate limited' 'SKIP'
+  Step 'selfsvc: import creates product' $false 'skipped: step-up was rate limited' 'SKIP'
+  Step 'selfsvc: import duplicate name row errors' $false 'skipped: step-up was rate limited' 'SKIP'
+  Step 'selfsvc: import updates by prod_id' $false 'skipped: step-up was rate limited' 'SKIP'
+  Step 'selfsvc: import unknown prod_id errors' $false 'skipped: step-up was rate limited' 'SKIP'
+} else {
+  try {
+    $dupBody = @{ prod_name = $probeName; category = 'Dogs - DRY'; price = 2; stock_quantity = 1 } | ConvertTo-Json -Compress
+    Invoke-RestMethod -Uri "$base/api/admin/products" -Method Post -Headers $stepUpH -ContentType 'application/json' -Body $dupBody | Out-Null
+    Step 'selfsvc: duplicate name create rejected' $false 'got 2xx'
+  } catch {
+    $dupSt = $_.Exception.Response.StatusCode.value__
+    $dupCode = ''
+    try { $dupCode = (Get-ErrBody $_) } catch { }
+    Step 'selfsvc: duplicate name create rejected' (($dupSt -eq 409) -and ($dupCode -like '*NAME_TAKEN*')) "$dupSt $dupCode"
+  }
+
+  # a rename onto someone else's name must also 409; then clean the temp row
+  $renameId = $null
+  try {
+    $renameProbe = Invoke-RestMethod -Uri "$base/api/admin/products" -Method Post -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ prod_name = "E2E Rename Probe $([guid]::NewGuid().ToString('N').Substring(0,6))"; category = 'Dogs - DRY'; price = 3; stock_quantity = 1 } | ConvertTo-Json -Compress)
+    $renameId = $renameProbe.item.prod_id
+    try {
+      Invoke-RestMethod -Uri "$base/api/admin/products/$renameId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+        -Body (@{ prod_name = $probeName } | ConvertTo-Json -Compress) | Out-Null
+      Step 'selfsvc: rename to taken name rejected' $false 'got 2xx'
+    } catch {
+      $rnSt = $_.Exception.Response.StatusCode.value__
+      Step 'selfsvc: rename to taken name rejected' ($rnSt -eq 409) $rnSt
+    }
+  } catch { Step 'selfsvc: rename to taken name rejected' $false (Get-ErrBody $_) }
+  if ($renameId) {
+    try { Invoke-RestMethod -Uri "$base/api/admin/products/$renameId" -Method Delete -Headers $stepUpH | Out-Null } catch { }
+  }
+
+  # CSV export: staff-level GET, must come back as csv with the expected header
+  try {
+    $exp = Invoke-WebRequest -Uri "$base/api/admin/products/export" -Headers $authH -UseBasicParsing
+    $expOk = ($exp.StatusCode -eq 200) -and ($exp.Headers['Content-Type'] -like 'text/csv*') -and ($exp.Content.StartsWith('prod_id,prod_name'))
+    Step 'selfsvc: export csv' $expOk "status=$($exp.StatusCode) type=$($exp.Headers['Content-Type'])"
+  } catch { Step 'selfsvc: export csv' $false "$($_.Exception.Response.StatusCode.value__)" }
+
+  # CSV import: create one product, then prove the duplicate-name row errors,
+  # the prod_id row updates, and an unknown prod_id reports a row error
+  $importedId = $null
+  $importedName = "E2E Import Probe $([guid]::NewGuid().ToString('N').Substring(0,6))"
+  try {
+    $impBody = @{ rows = @( @{ prod_name = $importedName; category = 'BIRDS'; price = 44; stock_quantity = 7; is_active = $true } ) } | ConvertTo-Json -Depth 5 -Compress
+    $imp = Invoke-RestMethod -Uri "$base/api/admin/products/import" -Method Post -Headers $stepUpH -ContentType 'application/json' -Body $impBody
+    Step 'selfsvc: import creates product' (($imp.created -eq 1) -and (@($imp.errors).Count -eq 0)) "created=$($imp.created) errors=$(@($imp.errors).Count)"
+    $found = Invoke-RestMethod -Uri "$base/api/admin/products?q=$([uri]::EscapeDataString($importedName))&pageSize=5" -Headers $authH
+    $importedId = ($found.items | Where-Object { $_.prod_name -eq $importedName } | Select-Object -First 1).prod_id
+  } catch { Step 'selfsvc: import creates product' $false (Get-ErrBody $_) }
+
+  try {
+    $impDup = @{ rows = @( @{ prod_name = $importedName; category = 'BIRDS'; price = 55; stock_quantity = 1 } ) } | ConvertTo-Json -Depth 5 -Compress
+    $impDupRes = Invoke-RestMethod -Uri "$base/api/admin/products/import" -Method Post -Headers $stepUpH -ContentType 'application/json' -Body $impDup
+    $dupErrOk = ($impDupRes.created -eq 0) -and (@($impDupRes.errors).Count -eq 1) -and ($impDupRes.errors[0].message -like '*already exists*')
+    Step 'selfsvc: import duplicate name row errors' $dupErrOk "created=$($impDupRes.created) err=$(@($impDupRes.errors)[0].message)"
+  } catch { Step 'selfsvc: import duplicate name row errors' $false (Get-ErrBody $_) }
+
+  if ($importedId) {
+    try {
+      $impUpd = @{ rows = @( @{ prod_id = $importedId; prod_name = $importedName; category = 'BIRDS'; price = 99; stock_quantity = 7; is_active = $true } ) } | ConvertTo-Json -Depth 5 -Compress
+      $impUpdRes = Invoke-RestMethod -Uri "$base/api/admin/products/import" -Method Post -Headers $stepUpH -ContentType 'application/json' -Body $impUpd
+      $updRow = Invoke-RestMethod -Uri "$base/api/admin/products/$importedId/price-history" -Headers $authH
+      $hit = @($updRow.items | Where-Object { [double]$_.new_price -eq 99 }).Count
+      $prices = (@($updRow.items) | ForEach-Object { "$($_.old_price)->$($_.new_price)" }) -join ','
+      Step 'selfsvc: import updates by prod_id' (($impUpdRes.updated -eq 1) -and ($hit -ge 1)) "updated=$($impUpdRes.updated) histCount=$(@($updRow.items).Count) hit=$hit rows=[$prices]"
+    } catch { Step 'selfsvc: import updates by prod_id' $false (Get-ErrBody $_) }
+  } else {
+    Step 'selfsvc: import updates by prod_id' $false 'no imported product to update'
+  }
+
+  try {
+    $badId = [guid]::NewGuid().ToString()
+    $impBad = @{ rows = @( @{ prod_id = $badId; prod_name = 'E2E Ghost'; category = 'BIRDS'; price = 1; stock_quantity = 1 } ) } | ConvertTo-Json -Depth 5 -Compress
+    $impBadRes = Invoke-RestMethod -Uri "$base/api/admin/products/import" -Method Post -Headers $stepUpH -ContentType 'application/json' -Body $impBad
+    $badOk = ($impBadRes.updated -eq 0) -and (@($impBadRes.errors).Count -eq 1) -and ($impBadRes.errors[0].message -like '*No product with that ID*')
+    Step 'selfsvc: import unknown prod_id errors' $badOk "err=$(@($impBadRes.errors)[0].message)"
+  } catch { Step 'selfsvc: import unknown prod_id errors' $false (Get-ErrBody $_) }
+
+  if ($importedId) {
+    try {
+      Invoke-RestMethod -Uri "$base/api/admin/products/$importedId" -Method Delete -Headers $stepUpH | Out-Null
+      try {
+        Invoke-RestMethod -Uri "$base/api/products/$importedId" | Out-Null
+        Step 'selfsvc: import probe cleaned up' $false 'still readable'
+      } catch { Step 'selfsvc: import probe cleaned up' ($_.Exception.Response.StatusCode.value__ -eq 404) $_.Exception.Response.StatusCode.value__ }
+    } catch { Step 'selfsvc: import probe cleaned up' $false (Get-ErrBody $_) }
+  } else {
+    Step 'selfsvc: import probe cleaned up' $false 'no probe to clean'
+  }
+}
+
 
 # ── Phase 2: costings, archive, price history ──────────────────────────────
 # M2 (owner-run migration) adds cost_price/supplier/archived_at + the history

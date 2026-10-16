@@ -2,10 +2,10 @@
 import React, { useCallback, useEffect, useRef, useState } from "react"
 import { BsGripVertical } from "react-icons/bs"
 
-// Shared "Selecting Items" plumbing for the four content pages (Media,
-// Banners, Home Sections, Navigation): multi-select, long-press to select,
+// Shared "Selecting Items" plumbing for the admin pages (Media, Banners,
+// Home Sections, Navigation, Products): multi-select, long-press to select,
 // a bulk-action bar, a per-id bulk runner, and pointer drag-to-reorder.
-// The four pages keep their own data + endpoints; this file owns only the
+// The pages keep their own data + endpoints; this file owns only the
 // interaction model so every page selects the same way.
 
 // ── multi-select ──────────────────────────────────────────────────────────
@@ -24,6 +24,22 @@ export function useSelection() {
   }, [])
   const clear = useCallback(() => setSelected(new Set()), [])
   const selectAll = useCallback((ids) => setSelected(new Set(ids)), [])
+  // additive select-all: keeps ids selected under other filters
+  const selectAdd = useCallback((ids) => {
+    setSelected((s) => {
+      const next = new Set(s)
+      for (const id of ids) next.add(id)
+      return next
+    })
+  }, [])
+  // drop a subset (deselect-all of the current view)
+  const deselect = useCallback((ids) => {
+    const drop = new Set(ids)
+    setSelected((s) => {
+      const next = new Set([...s].filter((id) => !drop.has(id)))
+      return next.size === s.size ? s : next
+    })
+  }, [])
   const prune = useCallback((ids) => {
     const keep = new Set(ids)
     setSelected((s) => {
@@ -33,7 +49,7 @@ export function useSelection() {
   }, [])
   const isSelected = useCallback((id) => selected.has(id), [selected])
 
-  return { selected, count: selected.size, isSelected, toggle, clear, selectAll, prune }
+  return { selected, count: selected.size, isSelected, toggle, clear, selectAll, selectAdd, deselect, prune }
 }
 
 // ── long-press ────────────────────────────────────────────────────────────
@@ -96,6 +112,17 @@ export function RowCheckBox({ checked, onChange, label }) {
       onPointerDown={(e) => e.stopPropagation()}
       className="h-4 w-4 shrink-0 rounded border-gray-300 dark:border-[#2c4a6f] accent-[#F28C28] cursor-pointer"
     />
+  )
+}
+
+// wrapper that turns press-and-hold into select - drop it around any card
+// body (it is a component, so the hook inside stays legal in JSX trees)
+export function LongPressBox({ onActivate, children, className }) {
+  const longPress = useLongPress(onActivate)
+  return (
+    <div {...longPress} className={className}>
+      {children}
+    </div>
   )
 }
 
