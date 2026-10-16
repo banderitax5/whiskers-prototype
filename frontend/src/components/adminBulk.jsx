@@ -262,5 +262,5 @@ export function GripHandle({ handleProps, label = "Drag to reorder" }) {
 // per-row buttons the four cards already use)
 export const barBtn = "px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest border transition disabled:opacity-50"
 export const barBtnPlain = `${barBtn} text-[#0b2e59] bg-white border-[#0b2e59]/35 hover:bg-[#0b2e59]/10 dark:text-slate-200 dark:bg-[#162d4a] dark:border-[#2c4a6f] dark:hover:bg-[#1e3a5f]`
-export const barBtnDanger = `${barBtn} text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/40`
+export const barBtnDanger = `${barBtn} text-red-700 bg-red-50 border-red-300 hover:bg-red-100 dark:text-red-300 dark:bg-red-950/40 dark:border-red-800/70 dark:hover:bg-red-950/70`
 export const barBtnAccent = `${barBtn} text-white bg-[#0b2e59] border-[#0b2e59] hover:bg-[#15407a] dark:bg-yellow-400 dark:border-yellow-400 dark:text-gray-900 dark:hover:bg-yellow-300`
