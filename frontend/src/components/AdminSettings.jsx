@@ -28,7 +28,6 @@ const DEFAULT_FORM = {
   payment_methods: [],
   maintenance: { enabled: false, message: '' },
   low_stock_threshold: 10,
-  margin_warning_percent: 20,
 }
 
 const DEFAULT_METHODS = [
@@ -142,8 +141,10 @@ export default function AdminSettings() {
         free_shipping_threshold: settings.free_shipping_threshold === '' ? null : Number(settings.free_shipping_threshold),
         shipping_fee: Number(settings.shipping_fee),
         low_stock_threshold: Number(settings.low_stock_threshold),
-        margin_warning_percent: Number(settings.margin_warning_percent),
       }
+      // the margin-warning knob was retired (margins render green/red only) -
+      // never write the legacy key again
+      delete payload.margin_warning_percent
       const data = await apiPatchAuth('/admin/settings', payload, token)
       setSettings(toForm(data.settings || {}))
       setUpdatedAt(data.updated_at || null)
@@ -349,9 +350,6 @@ export default function AdminSettings() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field id="low-stock" label="Low stock warning at" hint="Products at or below this stock show a warning in the dashboard and on product cards.">
                 <input id="low-stock" type="number" min="0" step="1" className={inputCls} value={settings.low_stock_threshold} onChange={(e) => setField('low_stock_threshold', e.target.value)} />
-              </Field>
-              <Field id="margin-warn" label="Margin warning below (%)" hint="Margins under this line are highlighted (amber) in the product table and order costing. Admins only.">
-                <input id="margin-warn" type="number" min="0" step="1" className={inputCls} value={settings.margin_warning_percent} onChange={(e) => setField('margin_warning_percent', e.target.value)} />
               </Field>
             </div>
           </section>

@@ -5,7 +5,7 @@ import { AdminPage, AdminTable, EmptyState, StatCard, btnPrimary, StatusPill, Co
 import { sectionsForEdit, sectionsToDetails, MAX_SECTIONS } from '../lib/productInfo';
 import { parseCsv, csvToProducts, batchRows, importTemplateCsv } from '../lib/productCsv';
 import { formatPesos } from '../lib/cartLogic';
-import { formatMargin, marginInfo } from '../lib/adminCosting';
+import { formatMargin } from '../lib/adminCosting';
 import { useRole } from '../context/RoleContext';
 import { canSeeCosts, canManageProductLifecycle } from '../lib/permissions';
 import { fetchSiteContent, contentSettings } from '../lib/siteContent.js';
@@ -66,10 +66,9 @@ const AdminProductManagement = () => {
   const [historyTarget, setHistoryTarget] = useState(null);
   const [historyRows, setHistoryRows] = useState(null);
   const [historyError, setHistoryError] = useState(null);
-  // owner-editable thresholds: low stock comes from the public site-content
-  // payload (staff + admin); the margin warning is admin-only settings
+  // owner-editable threshold: low stock comes from the public site-content
+  // payload (staff + admin)
   const [lowStockThreshold, setLowStockThreshold] = useState(10);
-  const [marginWarnPct, setMarginWarnPct] = useState(null);
   // category dropdown options: public active categories plus whatever the
   // loaded admin list contains (hidden / archived products keep their labels)
   const [categoryList, setCategoryList] = useState([]);
@@ -110,22 +109,6 @@ const AdminProductManagement = () => {
   // drop selected ids that no longer exist (deleted or restored away)
   const pruneSel = sel.prune;
   useEffect(() => { pruneSel(products.map((p) => p.prod_id)) }, [products, pruneSel]);
-
-  useEffect(() => {
-    if (!showCosts || marginWarnPct !== null) return undefined
-    let cancelled = false
-    ;(async () => {
-      try {
-        const token = await getToken()
-        if (!token || cancelled) return
-        const data = await apiGetAuth('/admin/settings', token)
-        const w = Number(data?.settings?.margin_warning_percent)
-        if (!cancelled && Number.isFinite(w) && w >= 0) setMarginWarnPct(w)
-      } catch { /* keep the null default - no amber highlight */ }
-    })()
-    return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showCosts]);
 
   useEffect(() => {
     if (!mobileEditItem) return undefined;
@@ -622,12 +605,13 @@ const AdminProductManagement = () => {
   // rows currently on screen - the scope of "select all" and the bulk bar
   const displayedIds = useMemo(() => displayed.map((p) => p.prod_id), [displayed]);
 
-  // amber when a known margin is positive but under the owner's warning line
-  // (negative margins stay red; unknown stays green like a normal value)
-  function marginWarning(price, cost) {
-    if (marginWarnPct === null) return false;
-    const info = marginInfo(price, cost);
-    return info.available && info.percent !== null && info.percent >= 0 && info.percent < marginWarnPct;
+  // margin cell tone: green when profitable, red when losing money, gray when
+  // there is no meaningful number (no cost yet, or no selling price)
+  function marginTone(price, cost) {
+    const margin = formatMargin(price, cost);
+    if (margin === '—') return 'text-gray-400 dark:text-slate-500';
+    if (margin.startsWith('-')) return 'text-red-600 dark:text-red-400';
+    return 'text-emerald-600 dark:text-emerald-400';
   }
 
   // ARCHIVED beats HIDDEN beats OUT beats ACTIVE — the badge rules
@@ -675,13 +659,9 @@ const AdminProductManagement = () => {
       { key: 'cost_price', label: 'Cost', sortable: true, render: (item) => (
         <span className="text-gray-700 dark:text-slate-300">{item.cost_price != null ? `PHP ${formatPesos(Number(item.cost_price))}` : '—'}</span>
       ) },
-      { key: 'margin', label: 'Margin', render: (item) => {
-        const margin = formatMargin(item.price, item.cost_price);
-        const negative = margin.startsWith('-');
-        const warn = marginWarning(item.price, item.cost_price);
-        const tone = margin === '—' ? 'text-gray-400 dark:text-slate-500' : negative ? 'text-red-600 dark:text-red-400' : warn ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400';
-        return <span className={`font-black ${tone}`} title={warn ? `Under the ${marginWarnPct}% margin warning threshold` : undefined}>{margin}</span>;
-      } },
+      { key: 'margin', label: 'Margin', render: (item) => (
+        <span className={`font-black ${marginTone(item.price, item.cost_price)}`}>{formatMargin(item.price, item.cost_price)}</span>
+      ) },
     ] : []),
     { key: 'stock_quantity', label: 'Stock', sortable: true, render: (item) => <span className="text-gray-700 dark:text-slate-300">{item.stock_quantity}</span> },
     { key: 'status', label: 'Status', render: (item) => {
@@ -1004,7 +984,7 @@ const AdminProductManagement = () => {
                 {showCosts && item.cost_price != null && (
                   <div className="text-xs text-gray-500 dark:text-slate-400">
                     Cost PHP {formatPesos(Number(item.cost_price))} · Margin{' '}
-                    <span className={marginWarning(item.price, item.cost_price) ? 'font-bold text-amber-600 dark:text-amber-400' : undefined}>
+                    <span className={`font-semibold ${marginTone(item.price, item.cost_price)}`}>
                       {formatMargin(item.price, item.cost_price)}
                     </span>
                   </div>

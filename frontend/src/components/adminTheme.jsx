@@ -377,14 +377,14 @@ export const btnGhost = 'px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-[10px] sm:t
 
 export function StatusPill({ kind = 'neutral', children }) {
   const map = {
-    success: 'bg-green-100 text-green-800 border border-green-300 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700',
-    danger: 'bg-red-100 text-red-700 border border-red-300 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700',
-    progress: 'bg-yellow-100 text-gray-900 border border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-200 dark:border-yellow-700',
-    info: 'bg-blue-100 text-blue-800 border border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700',
-    neutral: 'bg-gray-100 text-gray-700 border border-gray-300 dark:bg-[#162d4a] dark:text-slate-300 dark:border-[#1e3a5f]',
+    success: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
+    danger: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+    progress: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
+    info: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
+    neutral: 'bg-gray-100 text-gray-700 dark:bg-[#162d4a] dark:text-slate-300',
   };
   return (
-    <span className={`inline-flex items-center justify-center px-2 py-0.5 sm:px-3 sm:py-1 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-center whitespace-nowrap overflow-hidden ${map[kind] || map.neutral}`}>
+    <span className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider whitespace-nowrap ${map[kind] || map.neutral}`}>
       {children}
     </span>
   );

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import supabase from '../lib/supabase';
-import { apiGetAllPages, apiPatchAuth, apiDeleteAuth, apiGetAuth } from '../lib/api';
+import { apiGetAllPages, apiPatchAuth, apiDeleteAuth } from '../lib/api';
 import { formatPesos } from '../lib/cartLogic';
 import { formatMargin } from '../lib/adminCosting';
 import { AdminPage, AdminTable, AdminRowDropdown, EmptyState, StatCard, StatusPill, ConfirmDialog } from './adminTheme';
@@ -34,28 +34,8 @@ const AdminOrders = () => {
   const [reloadKey, setReloadKey] = useState(0);
   const PAGE_SIZE = 10;
   const role = useRole();
-  // admin-only settings: amber-highlight lines under this margin % (staff
-  // never see cost fields, so they never need this)
-  const [marginWarnPct, setMarginWarnPct] = useState(null);
-
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchAll(); }, [reloadKey]);
-
-  useEffect(() => {
-    if (role !== 'admin' || marginWarnPct !== null) return undefined
-    let cancelled = false
-    ;(async () => {
-      try {
-        const token = await getToken()
-        if (!token || cancelled) return
-        const data = await apiGetAuth('/admin/settings', token)
-        const w = Number(data?.settings?.margin_warning_percent)
-        if (!cancelled && Number.isFinite(w) && w >= 0) setMarginWarnPct(w)
-      } catch { /* keep null - no amber highlight */ }
-    })()
-    return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role]);
 
   useEffect(() => {
     if (!viewingOrder) return undefined;
@@ -199,15 +179,10 @@ const AdminOrders = () => {
   // deleting orders is admin-only on the backend, so staff never see it
   const canDelete = role === 'admin';
 
-  // line margin tone: negative is red; a known positive margin under the
-  // owner's warning line is amber; everything else green
+  // line margin tone: green when profitable, red when losing money
   function lineMarginTone(effectivePrice, unitCost) {
     const margin = Number(effectivePrice) - Number(unitCost)
     if (margin < 0) return 'text-red-600 dark:text-red-400 font-semibold'
-    if (marginWarnPct !== null && Number(unitCost) >= 0 && Number(effectivePrice) > 0) {
-      const pct = (margin / Number(effectivePrice)) * 100
-      if (pct < marginWarnPct) return 'text-amber-600 dark:text-amber-400 font-semibold'
-    }
     return 'text-emerald-600 dark:text-emerald-400 font-semibold'
   }
 
