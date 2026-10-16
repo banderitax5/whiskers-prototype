@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import supabase from '../lib/supabase';
 import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from '../lib/api';
-import { AdminPage, AdminTable, EmptyState, StatCard, btnPrimary, StatusPill, ConfirmDialog } from './adminTheme';
+import { AdminPage, AdminTable, EmptyState, StatCard, btnPrimary, StatusPill, ConfirmDialog, AdminSelect } from './adminTheme';
 import ProductPicker from './ProductPicker.jsx';
 import { formatPesos } from '../lib/cartLogic';
 import { BsGift, BsPlusLg, BsPencilSquare, BsTrash } from 'react-icons/bs';
@@ -391,9 +391,7 @@ useEffect(() => {
                 </div>
                 <div>
                   <label htmlFor="promo-type" className={labelClass}>Discount Type</label>
-                  <select id="promo-type" value={formData.type} onChange={(e) => onChange('type', e.target.value)} className={inputClass}>
-                    {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                  </select>
+                  <AdminSelect id="promo-type" value={formData.type} onChange={(v) => onChange('type', v)} options={TYPES} className={`mt-1.5 ${inputClass}`} />
                 </div>
                 <div>
                   <label htmlFor="promo-value" className={labelClass}>Value {formData.type === 'percent' ? '(%)' : '(PHP)'}</label>
@@ -410,25 +408,23 @@ useEffect(() => {
                 </div>
                 <div>
                   <label htmlFor="promo-scope" className={labelClass}>Applies To</label>
-                  <select id="promo-scope" value={formData.scope} onChange={(e) => onChange('scope', e.target.value)} className={inputClass}>
-                    {SCOPES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                  </select>
+                  <AdminSelect id="promo-scope" value={formData.scope} onChange={(v) => onChange('scope', v)} options={SCOPES} className={`mt-1.5 ${inputClass}`} />
                 </div>
                 {formData.scope === 'category' && (
                   <div className="sm:col-span-2">
                     <label htmlFor="promo-target" className={labelClass}>Which category?</label>
-                    <select
+                    <AdminSelect
                       id="promo-target"
                       value={formData.target_id}
-                      onChange={(e) => onChange('target_id', e.target.value)}
-                      className={inputClass}
-                    >
-                      <option value="">Choose a category…</option>
-                      {!categories.includes(formData.target_id) && formData.target_id && (
-                        <option value={formData.target_id}>{formData.target_id} (saved)</option>
-                      )}
-                      {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-                    </select>
+                      onChange={(v) => onChange('target_id', v)}
+                      ariaLabel="Which category?"
+                      className={`mt-1.5 ${inputClass}`}
+                      options={[
+                        { value: "", label: "Choose a category…" },
+                        ...(!categories.includes(formData.target_id) && formData.target_id ? [{ value: formData.target_id, label: `${formData.target_id} (saved)` }] : []),
+                        ...categories.map((c) => ({ value: c, label: c })),
+                      ]}
+                    />
                     <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Only products in this category get the discount.</p>
                   </div>
                 )}

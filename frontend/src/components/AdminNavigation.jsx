@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react"
 import supabase from "../lib/supabase"
 import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from "../lib/api.js"
 import { fetchSiteContent, contentPolicies } from "../lib/siteContent.js"
-import { AdminPage, StatusPill, EmptyState, btnPrimary, btnGhost, ConfirmDialog } from "./adminTheme.jsx"
+import { AdminPage, StatusPill, EmptyState, btnPrimary, btnGhost, ConfirmDialog, AdminSelect } from "./adminTheme.jsx"
 import ImagePicker from "./ImagePicker.jsx"
 import ProductPicker from "./ProductPicker.jsx"
 import ContentHistoryDialog from "./ContentHistoryDialog.jsx"
@@ -144,8 +144,8 @@ function LinkDialog({ section, initial, onClose, onSubmit }) {
   }, [form.destType, form.raw, policyPages])
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
-  const pick = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
-  const changeType = (e) => setForm((f) => ({ ...f, destType: e.target.value, destValue: "", raw: "" }))
+  const pick = (k) => (v) => setForm((f) => ({ ...f, [k]: v }))
+  const changeType = (v) => setForm((f) => ({ ...f, destType: v, destValue: "", raw: "" }))
   const pageOptions = [...SHOPPER_PAGES, ...policyPages]
   const promoMeta = (code) => {
     const p = promos.find((x) => x.code === code)
@@ -218,49 +218,65 @@ function LinkDialog({ section, initial, onClose, onSubmit }) {
               <label htmlFor="nav-dest" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">
                 Where should this link go? <span className="text-red-500">*</span>
               </label>
-              <select id="nav-dest" value={form.destType} onChange={changeType} aria-required="true" className={selectCls}>
-                {DEST_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
+              <AdminSelect id="nav-dest" value={form.destType} onChange={changeType} options={DEST_TYPES} className="mt-1.5 w-full" />
             </div>
             {form.destType === "page" && (
               <div>
                 <label htmlFor="nav-page" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Which page?</label>
-                <select id="nav-page" required value={form.destValue} onChange={pick("destValue")} aria-required="true" className={selectCls}>
-                  <option value="">Choose a page…</option>
-                  {pageOptions.map((p) => <option key={p.href} value={p.href}>{p.label}</option>)}
-                </select>
+                <AdminSelect id="nav-page" value={form.destValue} onChange={pick("destValue")} ariaLabel="Which page?" className="mt-1.5 w-full" options={[{ value: "", label: "Choose a page…" }, ...pageOptions.map((p) => ({ value: p.href, label: p.label }))]} />
               </div>
             )}
             {form.destType === "category" && (
               <div>
                 <label htmlFor="nav-category" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Which category?</label>
-                <select id="nav-category" required value={form.destValue} onChange={pick("destValue")} aria-required="true" className={selectCls}>
-                  <option value="">Choose a category…</option>
-                  {!categories.includes(form.destValue) && form.destValue && <option value={form.destValue}>{form.destValue} (saved)</option>}
-                  {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <AdminSelect
+                  id="nav-category"
+                  value={form.destValue}
+                  onChange={pick("destValue")}
+                  ariaLabel="Which category?"
+                  className="mt-1.5 w-full"
+                  options={[
+                    { value: "", label: "Choose a category…" },
+                    ...(!categories.includes(form.destValue) && form.destValue ? [{ value: form.destValue, label: `${form.destValue} (saved)` }] : []),
+                    ...categories.map((c) => ({ value: c, label: c })),
+                  ]}
+                />
                 <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Shoppers will land on the shop page filtered to this category.</p>
               </div>
             )}
             {form.destType === "brand" && (
               <div>
                 <label htmlFor="nav-brand" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Which brand?</label>
-                <select id="nav-brand" required value={form.destValue} onChange={pick("destValue")} aria-required="true" className={selectCls}>
-                  <option value="">Choose a brand…</option>
-                  {!brands.includes(form.destValue) && form.destValue && <option value={form.destValue}>{form.destValue} (saved)</option>}
-                  {brands.map((b) => <option key={b} value={b}>{b}</option>)}
-                </select>
+                <AdminSelect
+                  id="nav-brand"
+                  value={form.destValue}
+                  onChange={pick("destValue")}
+                  ariaLabel="Which brand?"
+                  className="mt-1.5 w-full"
+                  options={[
+                    { value: "", label: "Choose a brand…" },
+                    ...(!brands.includes(form.destValue) && form.destValue ? [{ value: form.destValue, label: `${form.destValue} (saved)` }] : []),
+                    ...brands.map((b) => ({ value: b, label: b })),
+                  ]}
+                />
                 <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Shoppers will land on the shop page filtered to this brand.</p>
               </div>
             )}
             {form.destType === "promo" && (
               <div>
                 <label htmlFor="nav-promo" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Which promotion?</label>
-                <select id="nav-promo" required value={form.destValue} onChange={pick("destValue")} aria-required="true" className={selectCls}>
-                  <option value="">Choose a promotion…</option>
-                  {!promos.some((p) => p.code === form.destValue) && form.destValue && <option value={form.destValue}>{promoMeta(form.destValue)} (saved)</option>}
-                  {promos.map((p) => <option key={p.code} value={p.code}>{promoMeta(p.code)}{p.is_active ? "" : " (inactive)"}</option>)}
-                </select>
+                <AdminSelect
+                  id="nav-promo"
+                  value={form.destValue}
+                  onChange={pick("destValue")}
+                  ariaLabel="Which promotion?"
+                  className="mt-1.5 w-full"
+                  options={[
+                    { value: "", label: "Choose a promotion…" },
+                    ...(!promos.some((p) => p.code === form.destValue) && form.destValue ? [{ value: form.destValue, label: `${promoMeta(form.destValue)} (saved)` }] : []),
+                    ...promos.map((p) => ({ value: p.code, label: `${promoMeta(p.code)}${p.is_active ? "" : " (inactive)"}` })),
+                  ]}
+                />
               </div>
             )}
             {form.destType === "product" && (
@@ -275,7 +291,7 @@ function LinkDialog({ section, initial, onClose, onSubmit }) {
                 <label htmlFor="nav-href" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">
                   Website address <span className="text-red-500">*</span>
                 </label>
-                <input id="nav-href" type="url" required maxLength={500} value={form.raw} onChange={pick("raw")} aria-required="true" placeholder="https://…"
+                <input id="nav-href" type="url" required maxLength={500} value={form.raw} onChange={(e) => pick("raw")(e.target.value)} aria-required="true" placeholder="https://…"
                   className={selectCls} />
                 <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Opens in a new tab on the site.</p>
               </div>
@@ -285,7 +301,7 @@ function LinkDialog({ section, initial, onClose, onSubmit }) {
                 <label htmlFor="nav-href" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">
                   Link (advanced) <span className="text-red-500">*</span>
                 </label>
-                <input id="nav-href" type="text" required maxLength={500} value={form.raw} onChange={pick("raw")} aria-required="true" placeholder="/menu?promo=SUMMER or https://…"
+                <input id="nav-href" type="text" required maxLength={500} value={form.raw} onChange={(e) => pick("raw")(e.target.value)} aria-required="true" placeholder="/menu?promo=SUMMER or https://…"
                   className={selectCls} />
                 <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Start with / (a page on this site) or https:// (an external site).</p>
               </div>

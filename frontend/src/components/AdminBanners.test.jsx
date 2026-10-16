@@ -37,6 +37,26 @@ async function render() {
 }
 async function flush() { await act(async () => { await new Promise((r) => setTimeout(r, 0)) }) }
 
+// AdminSelect renders its options in a portal on document.body (not inside
+// the dialog container), so portal queries use document, not the container
+function portalOptions() {
+  return [...document.querySelectorAll('[role="option"]')]
+}
+async function openSelect(id) {
+  const trigger = document.querySelector(`#${id}`)
+  await act(async () => { trigger.click() })
+  return trigger
+}
+async function clickOption(value) {
+  const opt = portalOptions().find((o) => o.getAttribute('data-value') === value)
+  if (!opt) throw new Error(`no portal option ${value}`)
+  await act(async () => { opt.click() })
+}
+async function pickSelect(id, value) {
+  await openSelect(id)
+  await clickOption(value)
+}
+
 const sampleBanner = {
   id: 'b1',
   placement: 'home_hero',
@@ -111,7 +131,9 @@ describe('AdminBanners page states', () => {
     expect(dlg).toBeTruthy()
     expect(dlg.textContent).toMatch(/Where should this banner link\?/)
     const typeSel = dlg.querySelector('#b-linktype')
-    const labels = [...typeSel.options].map((o) => o.textContent)
+    expect(typeSel.tagName).toBe('BUTTON')
+    await openSelect('b-linktype')
+    const labels = portalOptions().map((o) => o.textContent)
     expect(labels).toEqual(['No link', 'A product', 'A category', 'A brand', 'A promotion', 'A web page'])
     // image fields are pickers (Library / Paste link), not raw path inputs
     expect([...dlg.querySelectorAll('button')].some((b) => b.textContent === 'Library')).toBe(true)
@@ -128,15 +150,11 @@ describe('AdminBanners page states', () => {
     await act(async () => { newBtn.click() })
     await flush()
     const dlg = c.querySelector('[role="dialog"]')
-    const typeSel = dlg.querySelector('#b-linktype')
-    await act(async () => {
-      typeSel.value = 'category'
-      typeSel.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-    await flush()
+    await pickSelect('b-linktype', 'category')
     const catSel = dlg.querySelector('#b-target-category')
     expect(catSel).toBeTruthy()
-    const opts = [...catSel.options].map((o) => o.textContent)
+    await openSelect('b-target-category')
+    const opts = portalOptions().map((o) => o.textContent)
     expect(opts).toContain('Dogs')
     expect(opts).toContain('Cats')
     expect(dlg.textContent).toMatch(/land on the shop page filtered/)
@@ -151,8 +169,7 @@ describe('AdminBanners page states', () => {
     await act(async () => { editBtn.click() })
     await flush()
     const dlg = c.querySelector('[role="dialog"]')
-    const typeSel = dlg.querySelector('#b-linktype')
-    expect(typeSel.value).toBe('none')
+    expect(dlg.querySelector('#b-linktype').textContent).toMatch(/No link/)
     expect(dlg.textContent).toMatch(/destination couldn’t be read/)
     // every other field stays editable; the stale bare target is gone from
     // the form so saving with "No link" succeeds instead of 400-ing
@@ -168,22 +185,15 @@ describe('AdminBanners page states', () => {
     await act(async () => { newBtn.click() })
     await flush()
     const dlg = c.querySelector('[role="dialog"]')
-    const typeSel = dlg.querySelector('#b-linktype')
-    await act(async () => {
-      typeSel.value = 'brand'
-      typeSel.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-    await flush()
+    await pickSelect('b-linktype', 'brand')
     const brandSel = dlg.querySelector('#b-target-brand')
     expect(brandSel).toBeTruthy()
-    const opts = [...brandSel.options].map((o) => o.textContent)
+    await openSelect('b-target-brand')
+    const opts = portalOptions().map((o) => o.textContent)
     expect(opts).toContain('Aozi')
     expect(opts).toContain('Royal Canin')
     // picking a brand stores the /menu?brand= link the storefront resolves
-    await act(async () => {
-      brandSel.value = 'Aozi'
-      brandSel.dispatchEvent(new Event('change', { bubbles: true }))
-    })
+    await clickOption('Aozi')
     expect(dlg.textContent).toMatch(/filtered to this brand/)
   })
 

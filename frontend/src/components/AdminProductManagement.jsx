@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import supabase from '../lib/supabase';
 import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth, apiUploadAuth, apiFetchAuth } from '../lib/api';
-import { AdminPage, AdminTable, EmptyState, StatCard, btnPrimary, StatusPill, ConfirmDialog } from './adminTheme';
+import { AdminPage, AdminTable, EmptyState, StatCard, btnPrimary, StatusPill, ConfirmDialog, AdminSelect } from './adminTheme';
 import { sectionsForEdit, sectionsToDetails, MAX_SECTIONS } from '../lib/productInfo';
 import { parseCsv, csvToProducts, batchRows, importTemplateCsv } from '../lib/productCsv';
 import { formatPesos } from '../lib/cartLogic';
@@ -1544,21 +1544,21 @@ function CategoryField({ id, value, options, onChange, className }) {
     );
   }
   return (
-    <select
+    <AdminSelect
       id={id}
       value={known ? value : ''}
-      onChange={(e) => {
-        if (e.target.value === '__new__') { setTyping(true); onChange(''); }
-        else onChange(e.target.value);
+      onChange={(v) => {
+        if (v === '__new__') { setTyping(true); onChange(''); }
+        else onChange(v);
       }}
-      title="Pick an existing category, or choose New to create one"
+      ariaLabel="Pick an existing category, or choose New to create one"
       className={className}
-      required
-    >
-      <option value="" disabled>{value ? value : 'Choose a category...'}</option>
-      {selectOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-      <option value="__new__">+ New category...</option>
-    </select>
+      options={[
+        { value: '', label: value ? value : 'Choose a category...', disabled: true },
+        ...selectOptions.map((c) => ({ value: c, label: c })),
+        { value: '__new__', label: '+ New category...' },
+      ]}
+    />
   );
 }
 

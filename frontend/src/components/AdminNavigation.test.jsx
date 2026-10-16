@@ -44,10 +44,17 @@ function type(el, value) {
   el.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
-// same idea for <select> - the change event is what React listens for
-function select(el, value) {
-  Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set.call(el, value)
-  el.dispatchEvent(new Event('change', { bubbles: true }))
+// AdminSelect renders its options in a portal on document.body; the trigger
+// is a button, so picking = click trigger, then click the option button
+function portalOptions() {
+  return [...document.querySelectorAll('[role="option"]')]
+}
+async function pickSelect(id, value) {
+  const trigger = document.querySelector(`#${id}`)
+  await act(async () => { trigger.click() })
+  const opt = portalOptions().find((o) => o.getAttribute('data-value') === value)
+  if (!opt) throw new Error(`no portal option ${value} for #${id}`)
+  await act(async () => { opt.click() })
 }
 
 function button(container, text) {
@@ -101,8 +108,8 @@ describe('AdminNavigation link tabs', () => {
     const form = c.querySelector('form')
     await act(async () => {
       type(c.querySelector('#nav-label'), 'Evil')
-      select(c.querySelector('#nav-dest'), 'custom')
     })
+    await pickSelect('nav-dest', 'custom')
     await act(async () => {
       type(c.querySelector('#nav-href'), 'javascript:alert(1)')
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
@@ -121,8 +128,8 @@ describe('AdminNavigation link tabs', () => {
     const form = c.querySelector('form')
     await act(async () => {
       type(c.querySelector('#nav-label'), 'Shop')
-      select(c.querySelector('#nav-page'), '/menu')
     })
+    await pickSelect('nav-page', '/menu')
     await act(async () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     })
@@ -142,11 +149,11 @@ describe('AdminNavigation link tabs', () => {
     await act(async () => { button(c, 'New link').click() })
     await flush()
     const form = c.querySelector('form')
-    await act(async () => { select(c.querySelector('#nav-dest'), 'category') })
+    await pickSelect('nav-dest', 'category')
     await act(async () => {
       type(c.querySelector('#nav-label'), 'Dogs only')
-      select(c.querySelector('#nav-category'), 'Dogs')
     })
+    await pickSelect('nav-category', 'Dogs')
     await act(async () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     })
@@ -162,8 +169,8 @@ describe('AdminNavigation link tabs', () => {
     await flush()
     await act(async () => { button(c, 'Edit').click() })
     await flush()
-    expect(c.querySelector('#nav-dest').value).toBe('page')
-    expect(c.querySelector('#nav-page').value).toBe('/about')
+    expect(c.querySelector('#nav-dest').textContent).toMatch(/A page on this site/)
+    expect(c.querySelector('#nav-page').textContent).toMatch(/About us/)
   })
 
   it('bulk hide: select-all then one PATCH per link', async () => {

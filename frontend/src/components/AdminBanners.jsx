@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
 import supabase from "../lib/supabase"
 import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from "../lib/api.js"
-import { AdminPage, StatusPill, EmptyState, btnPrimary, btnGhost, ConfirmDialog } from "./adminTheme.jsx"
+import { AdminPage, StatusPill, EmptyState, btnPrimary, btnGhost, ConfirmDialog, AdminSelect } from "./adminTheme.jsx"
 import ImagePicker from "./ImagePicker.jsx"
 import ProductPicker from "./ProductPicker.jsx"
 import ContentHistoryDialog from "./ContentHistoryDialog.jsx"
@@ -233,9 +233,7 @@ function BannerDialog({ title, placement, initial, onClose, onSubmit }) {
             </div>
             <div className="sm:col-span-2">
               <label htmlFor="b-linktype" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Where should this banner link?</label>
-              <select id="b-linktype" value={form.link_type} onChange={set("link_type")} className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100">
-                {LINK_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+              <AdminSelect id="b-linktype" value={form.link_type} onChange={(v) => setForm((f) => ({ ...f, link_type: v }))} options={LINK_TYPE_OPTIONS} className="mt-1.5 w-full" />
               {linkWasCleared && (
                 <p className="mt-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400">
                   The saved destination couldn’t be read, so the link was turned off — choose a new one (or save with “No link”).
@@ -257,74 +255,73 @@ function BannerDialog({ title, placement, initial, onClose, onSubmit }) {
             {form.link_type === "category" && (
               <div className="sm:col-span-2">
                 <label htmlFor="b-target-category" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Which category?</label>
-                <select
+                <AdminSelect
                   id="b-target-category"
-                  required
                   value={pickerValue}
-                  onChange={(e) => setForm((f) => ({ ...f, link_target: e.target.value ? `/menu?category=${encodeURIComponent(e.target.value)}` : "" }))}
-                  aria-required="true"
-                  className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100"
-                >
-                  <option value="">Choose a category…</option>
-                  {!categories.includes(pickerValue) && pickerValue && <option value={pickerValue}>{pickerValue} (saved)</option>}
-                  {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
+                  onChange={(v) => setForm((f) => ({ ...f, link_target: v ? `/menu?category=${encodeURIComponent(v)}` : "" }))}
+                  ariaLabel="Which category?"
+                  className="mt-1.5 w-full"
+                  options={[
+                    { value: "", label: "Choose a category…" },
+                    ...(!categories.includes(pickerValue) && pickerValue ? [{ value: pickerValue, label: `${pickerValue} (saved)` }] : []),
+                    ...categories.map((c) => ({ value: c, label: c })),
+                  ]}
+                />
                 <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Shoppers will land on the shop page filtered to this category.</p>
               </div>
             )}
             {form.link_type === "brand" && (
               <div className="sm:col-span-2">
                 <label htmlFor="b-target-brand" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Which brand?</label>
-                <select
+                <AdminSelect
                   id="b-target-brand"
-                  required
                   value={pickerValue}
-                  onChange={(e) => setForm((f) => ({ ...f, link_target: e.target.value ? `/menu?brand=${encodeURIComponent(e.target.value)}` : "" }))}
-                  aria-required="true"
-                  className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100"
-                >
-                  <option value="">Choose a brand…</option>
-                  {!brands.includes(pickerValue) && pickerValue && <option value={pickerValue}>{pickerValue} (saved)</option>}
-                  {brands.map((b) => <option key={b} value={b}>{b}</option>)}
-                </select>
+                  onChange={(v) => setForm((f) => ({ ...f, link_target: v ? `/menu?brand=${encodeURIComponent(v)}` : "" }))}
+                  ariaLabel="Which brand?"
+                  className="mt-1.5 w-full"
+                  options={[
+                    { value: "", label: "Choose a brand…" },
+                    ...(!brands.includes(pickerValue) && pickerValue ? [{ value: pickerValue, label: `${pickerValue} (saved)` }] : []),
+                    ...brands.map((b) => ({ value: b, label: b })),
+                  ]}
+                />
                 <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Shoppers will land on the shop page filtered to this brand.</p>
               </div>
             )}
             {form.link_type === "promo" && (
               <div className="sm:col-span-2">
                 <label htmlFor="b-target-promo" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Which promotion?</label>
-                <select
+                <AdminSelect
                   id="b-target-promo"
-                  required
                   value={pickerValue}
-                  onChange={(e) => setForm((f) => ({ ...f, link_target: e.target.value ? `/menu?promo=${encodeURIComponent(e.target.value)}` : "" }))}
-                  aria-required="true"
-                  className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100"
-                >
-                  <option value="">Choose a promotion…</option>
-                  {!promos.some((p) => p.code === pickerValue) && pickerValue && <option value={pickerValue}>{promoMeta(pickerValue)} (saved)</option>}
-                  {promos.map((p) => <option key={p.code} value={p.code}>{promoMeta(p.code)}{p.is_active ? "" : " (inactive)"}</option>)}
-                </select>
+                  onChange={(v) => setForm((f) => ({ ...f, link_target: v ? `/menu?promo=${encodeURIComponent(v)}` : "" }))}
+                  ariaLabel="Which promotion?"
+                  className="mt-1.5 w-full"
+                  options={[
+                    { value: "", label: "Choose a promotion…" },
+                    ...(!promos.some((p) => p.code === pickerValue) && pickerValue ? [{ value: pickerValue, label: `${promoMeta(pickerValue)} (saved)` }] : []),
+                    ...promos.map((p) => ({ value: p.code, label: `${promoMeta(p.code)}${p.is_active ? "" : " (inactive)"}` })),
+                  ]}
+                />
               </div>
             )}
             {form.link_type === "url" && (
               <div className="sm:col-span-2">
                 <label htmlFor="b-target-page" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Which page?</label>
-                <select
+                <AdminSelect
                   id="b-target-page"
-                  required={!isCustomUrl}
                   value={isCustomUrl ? "__other" : form.link_target || ""}
-                  onChange={(e) => {
-                    const v = e.target.value
+                  onChange={(v) => {
                     setForm((f) => ({ ...f, link_target: v === "__other" ? "" : v }))
                   }}
-                  className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100"
-                >
-                  <option value="">Choose a page…</option>
-                  {INTERNAL_PAGES.map((p) => <option key={p.href} value={p.href}>{p.label}</option>)}
-                  <option value="__other">Another website…</option>
-                  {isCustomUrl && <option value="__other" hidden>{form.link_target}</option>}
-                </select>
+                  ariaLabel="Which page?"
+                  className="mt-1.5 w-full"
+                  options={[
+                    { value: "", label: "Choose a page…" },
+                    ...INTERNAL_PAGES.map((p) => ({ value: p.href, label: p.label })),
+                    { value: "__other", label: "Another website…" },
+                  ]}
+                />
                 {isCustomUrl && (
                   <input
                     type="url"
@@ -345,11 +342,17 @@ function BannerDialog({ title, placement, initial, onClose, onSubmit }) {
             )}
             <div>
               <label htmlFor="b-status" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Status</label>
-              <select id="b-status" value={form.status} onChange={set("status")} className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100">
-                <option value="draft">Draft (hidden)</option>
-                <option value="published">Published (live)</option>
-                <option value="scheduled">Scheduled (needs start date)</option>
-              </select>
+              <AdminSelect
+                id="b-status"
+                value={form.status}
+                onChange={(v) => setForm((f) => ({ ...f, status: v }))}
+                className="mt-1.5 w-full"
+                options={[
+                  { value: "draft", label: "Draft (hidden)" },
+                  { value: "published", label: "Published (live)" },
+                  { value: "scheduled", label: "Scheduled (needs start date)" },
+                ]}
+              />
             </div>
             <div>
               <label htmlFor="b-starts" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Starts at</label>

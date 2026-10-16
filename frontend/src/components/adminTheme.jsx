@@ -253,6 +253,16 @@ export function AdminTable({ columns, rows, rowKey, loading, empty, colSpan, onR
 // vertical axis — so an absolutely-positioned menu on the last row would stretch the
 // table and reveal a scrollbar. Portaling with fixed positioning keeps the menu
 // overlapping the table with zero effect on table height.
+// shared dropdown styling - every admin dropdown (row status menus, form
+// selects) uses one trigger/panel/option look so the whole admin feels like
+// one product
+const SELECT_TRIGGER = "bg-white dark:bg-[#162d4a] text-gray-700 dark:text-slate-200 border border-gray-200 dark:border-[#1e3a5f] rounded-lg text-[10px] font-black uppercase tracking-widest px-2 py-1.5 text-left focus:outline-none focus:border-[#0b2e59] dark:focus:border-yellow-400 cursor-pointer flex items-center justify-between gap-1 disabled:opacity-50";
+const SELECT_PANEL = "bg-white dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] rounded-lg shadow-lg overflow-hidden";
+function selectOptionCls(active) {
+  return `w-full text-left px-2 py-1.5 text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 dark:hover:bg-[#1e3a5f] ${active ? "text-[#0b2e59] dark:text-yellow-200 bg-gray-50 dark:bg-[#1e3a5f]/50" : "text-gray-700 dark:text-slate-300"}`;
+}
+const SELECT_CHEVRON = <svg className="w-2.5 h-2.5 shrink-0 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg>;
+
 export function AdminRowDropdown({ open, onToggle, onClose, value, options, onSelect, disabled }) {
   const triggerRef = useRef(null);
   const menuRef = useRef(null);
@@ -324,10 +334,10 @@ export function AdminRowDropdown({ open, onToggle, onClose, value, options, onSe
         aria-expanded={open}
         aria-label={`${value} — change status`}
         onClick={(e) => { e.stopPropagation(); onToggle(); }}
-        className="w-[6rem] bg-white dark:bg-[#162d4a] text-gray-700 dark:text-slate-200 border border-gray-200 dark:border-[#1e3a5f] rounded-lg text-[10px] font-black uppercase tracking-widest px-2 py-1.5 text-left focus:outline-none focus:border-[#0b2e59] cursor-pointer flex items-center justify-between gap-1 disabled:opacity-50"
+        className={`w-[6rem] ${SELECT_TRIGGER}`}
       >
         <span className="truncate">{value}</span>
-        <svg className="w-2.5 h-2.5 shrink-0 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg>
+        {SELECT_CHEVRON}
       </button>
       {open && pos && createPortal(
         <div
@@ -335,7 +345,7 @@ export function AdminRowDropdown({ open, onToggle, onClose, value, options, onSe
           role="listbox"
           aria-label="Status options"
           style={{ position: 'fixed', left: pos.left, top: pos.top, bottom: pos.bottom, width: pos.width, zIndex: 10000 }}
-          className="bg-white dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] rounded-lg shadow-lg overflow-hidden"
+          className={SELECT_PANEL}
         >
           {options.map((opt) => (
             <button
@@ -343,10 +353,117 @@ export function AdminRowDropdown({ open, onToggle, onClose, value, options, onSe
               type="button"
               role="option"
               aria-selected={opt === value}
+              data-value={opt}
               onClick={(e) => { e.stopPropagation(); onSelect(opt); }}
-              className={`w-full text-left px-2 py-1.5 text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 dark:hover:bg-[#1e3a5f] ${opt === value ? 'text-[#0b2e59] dark:text-yellow-200 bg-gray-50 dark:bg-[#1e3a5f]/50' : 'text-gray-700 dark:text-slate-300'}`}
+              className={selectOptionCls(opt === value)}
             >
               {opt}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+// form-style dropdown with the same look as the row status menus. options are
+// strings or { value, label, disabled }; the trigger shows the current label.
+// onChange receives the raw value (not a DOM event).
+export function AdminSelect({ value, options, onChange, disabled, ariaLabel, className = 'w-full', id }) {
+  const opts = (options || []).map((o) => (typeof o === 'string' ? { value: o, label: o } : o));
+  const current = opts.find((o) => o.value === value);
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+  const [pos, setPos] = useState(null);
+
+  useEffect(() => {
+    if (!open) { setPos(null); return undefined; }
+    const el = triggerRef.current;
+    if (!el) return undefined;
+    const r = el.getBoundingClientRect();
+    const MENU_MAX = 240;
+    const flip = window.innerHeight - r.bottom < MENU_MAX && r.top > MENU_MAX;
+    setPos({
+      left: r.left,
+      width: Math.max(r.width, 160),
+      ...(flip ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }),
+    });
+    const menuEl = menuRef.current;
+    if (menuEl) {
+      const active = menuEl.querySelector('[aria-selected="true"]') || menuEl.querySelector('button');
+      if (active) active.focus();
+    }
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); triggerRef.current?.focus(); return; }
+      if (e.key === 'Tab') {
+        const items = menuEl ? Array.from(menuEl.querySelectorAll('button')) : [];
+        if (items.length === 0) return;
+        const idx = items.indexOf(document.activeElement);
+        if (e.shiftKey && idx <= 0) { e.preventDefault(); items[items.length - 1].focus(); }
+        else if (!e.shiftKey && idx === items.length - 1) { e.preventDefault(); items[0].focus(); }
+      }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const items = menuEl ? Array.from(menuEl.querySelectorAll('button')) : [];
+        if (items.length === 0) return;
+        const idx = items.indexOf(document.activeElement);
+        const next = e.key === 'ArrowDown'
+          ? items[(idx + 1) % items.length]
+          : items[(idx - 1 + items.length) % items.length];
+        next.focus();
+      }
+    };
+    const onDown = (e) => {
+      if (menuRef.current?.contains(e.target) || triggerRef.current?.contains(e.target)) return;
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('mousedown', onDown);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('mousedown', onDown);
+    };
+  }, [open]);
+
+  return (
+    <div className={`relative ${className}`}>
+      <button
+        ref={triggerRef}
+        id={id}
+        type="button"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={ariaLabel || (typeof current?.label === 'string' ? current.label : 'Select an option')}
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        className={`w-full ${SELECT_TRIGGER}`}
+      >
+        <span className="truncate">{current?.label || value || '—'}</span>
+        {SELECT_CHEVRON}
+      </button>
+      {open && pos && createPortal(
+        <div
+          ref={menuRef}
+          role="listbox"
+          aria-label={ariaLabel || 'Options'}
+          style={{ position: 'fixed', left: pos.left, top: pos.top, bottom: pos.bottom, width: pos.width, zIndex: 10000 }}
+          className={SELECT_PANEL}
+        >
+          {opts.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              role="option"
+              aria-selected={o.value === value}
+              data-value={o.value}
+              disabled={o.disabled}
+              onClick={(e) => { e.stopPropagation(); onChange(o.value); setOpen(false); triggerRef.current?.focus(); }}
+              className={selectOptionCls(o.value === value)}
+            >
+              {o.label}
             </button>
           ))}
         </div>,

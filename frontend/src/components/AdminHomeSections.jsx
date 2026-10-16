@@ -1,7 +1,7 @@
 ﻿import React, { useCallback, useEffect, useMemo, useState } from "react"
 import supabase from "../lib/supabase"
 import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from "../lib/api.js"
-import { AdminPage, StatusPill, EmptyState, btnPrimary, btnGhost, ConfirmDialog } from "./adminTheme.jsx"
+import { AdminPage, StatusPill, EmptyState, btnPrimary, btnGhost, ConfirmDialog, AdminSelect } from "./adminTheme.jsx"
 import ProductPicker from "./ProductPicker.jsx"
 import ContentHistoryDialog from "./ContentHistoryDialog.jsx"
 import {
@@ -151,28 +151,26 @@ function SectionDialog({ initial, onClose, onSubmit }) {
             {isRow && (
               <div>
                 <label htmlFor="sec-rule" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Which products?</label>
-                <select id="sec-rule" value={form.rule} onChange={set("rule")} className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100">
-                  {RULES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-                </select>
+                <AdminSelect id="sec-rule" value={form.rule} onChange={(v) => setForm((f) => ({ ...f, rule: v }))} options={RULES} className="mt-1.5 w-full" />
               </div>
             )}
             {isRow && (form.rule === "category" || form.rule === "brand") && (
               <div>
                 <label htmlFor="sec-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">{form.rule === "category" ? "Which category?" : "Which brand?"}</label>
-                <select
+                <AdminSelect
                   id="sec-name"
-                  required
                   value={form.name}
-                  onChange={set("name")}
-                  aria-required="true"
-                  className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100"
-                >
-                  <option value="">Choose {form.rule === "category" ? "a category" : "a brand"}…</option>
-                  {(form.rule === "category" ? categories : brands).map((n) => <option key={n} value={n}>{n}</option>)}
-                  {form.name && !(form.rule === "category" ? categories : brands).includes(form.name) && (
-                    <option value={form.name}>{form.name} (saved)</option>
-                  )}
-                </select>
+                  onChange={(v) => setForm((f) => ({ ...f, name: v }))}
+                  ariaLabel={form.rule === "category" ? "Which category?" : "Which brand?"}
+                  className="mt-1.5 w-full"
+                  options={[
+                    { value: "", label: `Choose ${form.rule === "category" ? "a category" : "a brand"}…` },
+                    ...(form.rule === "category" ? categories : brands).map((n) => ({ value: n, label: n })),
+                    ...(form.name && !(form.rule === "category" ? categories : brands).includes(form.name)
+                      ? [{ value: form.name, label: `${form.name} (saved)` }]
+                      : []),
+                  ]}
+                />
                 <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
                   {form.rule === "category" ? "Every product in this category appears in the row." : "Every product of this brand appears in the row."}
                 </p>
@@ -184,11 +182,17 @@ function SectionDialog({ initial, onClose, onSubmit }) {
             <div className="grid gap-4 sm:grid-cols-3">
               <div>
                 <label htmlFor="sec-status" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Status</label>
-                <select id="sec-status" value={form.status} onChange={set("status")} className="mt-1.5 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] p-2 text-sm text-gray-900 dark:text-slate-100">
-                  <option value="draft">Draft (hidden)</option>
-                  <option value="published">Published (live)</option>
-                  <option value="scheduled">Scheduled</option>
-                </select>
+                <AdminSelect
+                  id="sec-status"
+                  value={form.status}
+                  onChange={(v) => setForm((f) => ({ ...f, status: v }))}
+                  className="mt-1.5 w-full"
+                  options={[
+                    { value: "draft", label: "Draft (hidden)" },
+                    { value: "published", label: "Published (live)" },
+                    { value: "scheduled", label: "Scheduled" },
+                  ]}
+                />
               </div>
               <div>
                 <label htmlFor="sec-starts" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">Starts at</label>

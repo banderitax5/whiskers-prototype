@@ -93,17 +93,18 @@ describe('AdminProductManagement self-service upgrades', () => {
     await act(async () => {
       ;[...c.querySelectorAll('button')].find((b) => b.textContent.includes('New Product')).click()
     })
-    const select = c.querySelector('#product-category-desktop')
-    expect(select.tagName).toBe('SELECT')
-    const labels = [...select.options].map((o) => o.textContent)
+    const trigger = c.querySelector('#product-category-desktop')
+    expect(trigger.tagName).toBe('BUTTON')
+    // options render in a portal on document.body
+    await act(async () => { trigger.click() })
+    const labels = [...document.querySelectorAll('[role="option"]')].map((o) => o.textContent)
     expect(labels).toContain('DOGS')
     expect(labels).toContain('TOYS')
     expect(labels).toContain('+ New category...')
     // choosing New flips to a free-text input for the new name
     await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set
-      setter.call(select, '__new__')
-      select.dispatchEvent(new Event('change', { bubbles: true }))
+      const opt = [...document.querySelectorAll('[role="option"]')].find((o) => o.getAttribute('data-value') === '__new__')
+      opt.click()
     })
     const input = c.querySelector('#product-category-desktop')
     expect(input.tagName).toBe('INPUT')
