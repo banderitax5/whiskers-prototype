@@ -9,7 +9,7 @@ import { formatMargin, marginInfo } from '../lib/adminCosting';
 import { useRole } from '../context/RoleContext';
 import { canSeeCosts, canManageProductLifecycle } from '../lib/permissions';
 import { fetchSiteContent, contentSettings } from '../lib/siteContent.js';
-import { useSelection, RowCheckBox, SelectionBar, SelectAllRow, LongPressBox, bulkApply, bulkSummary, barBtnPlain, barBtnDanger } from './adminBulk';
+import { useSelection, RowCheckBox, SelectionBar, SelectAllRow, LongPressBox, bulkApply, bulkSummary, barBtnPlain, barBtnAccent, barBtnDanger } from './adminBulk';
 import { BsBoxSeam, BsPlusLg, BsDashLg, BsPencilSquare, BsTrash, BsUpload, BsSearch, BsExclamationTriangle, BsArrowClockwise, BsArchive, BsArrowCounterclockwise, BsClockHistory, BsFiles, BsDownload, BsQuestionCircle } from 'react-icons/bs';
 import toast from 'react-hot-toast';
 
@@ -951,7 +951,7 @@ const AdminProductManagement = () => {
       />
 
       <SelectionBar count={sel.count} onClear={sel.clear}>
-        <button type="button" className={barBtnPlain} onClick={() => { setBulkCategory(''); setBulkDialog('category'); }} disabled={bulkBusy}>
+        <button type="button" className={barBtnAccent} onClick={() => { setBulkCategory(''); setBulkDialog('category'); }} disabled={bulkBusy}>
           Set category...
         </button>
         <button type="button" className={barBtnPlain} onClick={() => runBulkPatch(() => ({ is_active: false }), 'Set hidden')} disabled={bulkBusy}>
@@ -960,7 +960,7 @@ const AdminProductManagement = () => {
         <button type="button" className={barBtnPlain} onClick={() => runBulkPatch(() => ({ is_active: true }), 'Set shown')} disabled={bulkBusy}>
           Show
         </button>
-        <button type="button" className={barBtnPlain} onClick={() => { setBulkPrice(''); setBulkDialog('price'); }} disabled={bulkBusy}>
+        <button type="button" className={barBtnAccent} onClick={() => { setBulkPrice(''); setBulkDialog('price'); }} disabled={bulkBusy}>
           Set price...
         </button>
         {canLifecycle && (

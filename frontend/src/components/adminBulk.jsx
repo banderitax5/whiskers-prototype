@@ -139,7 +139,7 @@ export function SelectionBar({ count, onClear, children }) {
         <button
           type="button"
           onClick={onClear}
-          className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition"
+          className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest text-[#0b2e59] bg-white border border-[#0b2e59]/35 hover:bg-[#0b2e59]/10 dark:text-slate-200 dark:bg-[#162d4a] dark:border-[#2c4a6f] dark:hover:bg-[#1e3a5f] transition"
         >
           Clear
         </button>
@@ -261,6 +261,6 @@ export function GripHandle({ handleProps, label = "Drag to reorder" }) {
 // small shared button styles for bar actions (kept consistent with the
 // per-row buttons the four cards already use)
 export const barBtn = "px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest border transition disabled:opacity-50"
-export const barBtnPlain = `${barBtn} text-gray-600 dark:text-slate-300 border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f]`
+export const barBtnPlain = `${barBtn} text-[#0b2e59] bg-white border-[#0b2e59]/35 hover:bg-[#0b2e59]/10 dark:text-slate-200 dark:bg-[#162d4a] dark:border-[#2c4a6f] dark:hover:bg-[#1e3a5f]`
 export const barBtnDanger = `${barBtn} text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/40`
 export const barBtnAccent = `${barBtn} text-white bg-[#0b2e59] border-[#0b2e59] hover:bg-[#15407a] dark:bg-yellow-400 dark:border-yellow-400 dark:text-gray-900 dark:hover:bg-yellow-300`
