@@ -22,7 +22,7 @@ vi.mock('../lib/siteContent.js', () => ({
 vi.mock('../context/RoleContext', () => ({ useRole: () => 'admin' }))
 
 import AdminProductManagement from './AdminProductManagement.jsx'
-import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth } from '../lib/api'
+import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth, apiUploadAuth } from '../lib/api'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -209,5 +209,32 @@ describe('AdminProductManagement self-service upgrades', () => {
     await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })) })
     expect(c.textContent).toMatch(/1 product ready/)
     expect(c.textContent).toMatch(/Bird Swing/)
+  })
+
+  it('rejects oversized or wrong-type images inline before uploading', async () => {
+    mockBackend()
+    const c = await render()
+    await flush()
+    await act(async () => {
+      ;[...c.querySelectorAll('button')].find((b) => b.textContent.includes('New Product')).click()
+    })
+    // static hint sits under the dropzone
+    expect(c.textContent).toMatch(/JPG, PNG, WebP or GIF/)
+    expect(c.textContent).toMatch(/up to 5 MB/)
+    const alerts = () => [...c.querySelectorAll('[role="alert"]')].map((a) => a.textContent)
+
+    const input = c.querySelector('#product-image-desktop')
+    const big = new File(['x'], 'big.jpg', { type: 'image/jpeg' })
+    Object.defineProperty(big, 'size', { value: 6 * 1024 * 1024 })
+    Object.defineProperty(input, 'files', { value: [big], configurable: true })
+    await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(alerts().some((t) => /6\.0 MB/.test(t) && /limit is 5 MB/.test(t))).toBe(true)
+    expect(apiUploadAuth).not.toHaveBeenCalled()
+
+    const txt = new File(['x'], 'notes.txt', { type: 'text/plain' })
+    Object.defineProperty(input, 'files', { value: [txt], configurable: true })
+    await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(alerts().some((t) => /supported image/.test(t))).toBe(true)
+    expect(apiUploadAuth).not.toHaveBeenCalled()
   })
 })

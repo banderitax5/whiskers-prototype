@@ -21,6 +21,30 @@ const FIELD_LABEL = 'block text-xs font-bold uppercase tracking-widest text-gray
 // cost/supplier payload rules: filled = send the value; blank with no prior
 // value = omit the key (so a create/edit works against a pre-M2 database);
 // blank with a prior value = explicit null to clear it.
+const MAX_IMAGE_MB = 5;
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const IMAGE_TYPES_LABEL = 'JPG, PNG, WebP or GIF';
+
+// pre-check files client-side so size/type problems get a friendly inline
+// message instead of a generic server error after the round trip
+function imageFileProblem(file) {
+  if (!file) return null;
+  if (file.type && !IMAGE_TYPES.includes(file.type)) {
+    return `"${file.name}" isn't a supported image — please use ${IMAGE_TYPES_LABEL}.`;
+  }
+  if (typeof file.size === 'number' && file.size > MAX_IMAGE_MB * 1024 * 1024) {
+    const mb = (file.size / (1024 * 1024)).toFixed(1);
+    return `That image is ${mb} MB — the limit is ${MAX_IMAGE_MB} MB. Please pick a smaller file.`;
+  }
+  return null;
+}
+
+function friendlyImageError(message) {
+  const msg = String(message || '');
+  if (/5\s*MB/i.test(msg)) return `That image is over the ${MAX_IMAGE_MB} MB limit — please pick a smaller file.`;
+  return msg || 'Image upload failed';
+}
+
 function costPatchFields(form, original, showCosts) {
   if (!showCosts) return {};
   const fields = {};
@@ -45,6 +69,7 @@ const AdminProductManagement = () => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [imageError, setImageError] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [editingOriginal, setEditingOriginal] = useState(null);
@@ -63,6 +88,7 @@ const AdminProductManagement = () => {
   const [mobileEditItem, setMobileEditItem] = useState(null);
   const [mobileForm, setMobileForm] = useState({ prod_name: '', category: '', brand: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: sectionsForEdit(null), cost_price: '', supplier: '' });
   const [mobileUploading, setMobileUploading] = useState(false);
+  const [mobileImageError, setMobileImageError] = useState('');
   const [mobileDragging, setMobileDragging] = useState(false);
   const [mobileUrlInput, setMobileUrlInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -161,6 +187,7 @@ const AdminProductManagement = () => {
   }
 
   function startEdit(item) {
+    setImageError('');
     setEditing(item.prod_id);
     setEditingOriginal(item);
     setFormData({
@@ -180,6 +207,7 @@ const AdminProductManagement = () => {
   }
 
   function resetForm() {
+    setImageError('');
     setEditing(null);
     setEditingOriginal(null);
     setFormData({ prod_name: '', category: '', brand: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: sectionsForEdit(null), cost_price: '', supplier: '' });
@@ -187,6 +215,9 @@ const AdminProductManagement = () => {
 
   const handleFileUpload = async (file) => {
     if (!file) return;
+    const problem = imageFileProblem(file);
+    if (problem) { setImageError(problem); toast.error(problem); return; }
+    setImageError('');
     try {
       setUploading(true);
       const fd = new FormData();
@@ -195,7 +226,7 @@ const AdminProductManagement = () => {
       const { url } = await apiUploadAuth('/admin/images/upload', fd, token);
       setFormData((f) => ({ ...f, image_url: url }));
       toast.success('Image uploaded');
-    } catch (error) { toast.error('Error uploading image: ' + error.message); }
+    } catch (error) { const friendly = friendlyImageError(error.message); setImageError(friendly); toast.error(friendly); }
     finally { setUploading(false); }
   };
 
@@ -208,6 +239,7 @@ const AdminProductManagement = () => {
 
   const handleUrlUpload = async () => {
     if (!urlInput.trim()) return;
+    setImageError('');
     try {
       setUploading(true);
       const token = await getToken(); if (!token) return;
@@ -215,7 +247,7 @@ const AdminProductManagement = () => {
       setFormData((f) => ({ ...f, image_url: url }));
       setUrlInput('');
       toast.success('Image fetched and uploaded');
-    } catch (error) { toast.error('Error fetching image: ' + error.message); }
+    } catch (error) { const friendly = friendlyImageError(error.message); setImageError(friendly); toast.error(friendly); }
     finally { setUploading(false); }
   };
 
@@ -449,6 +481,7 @@ const AdminProductManagement = () => {
   }
 
   function openMobileEdit(item) {
+    setMobileImageError('');
     setMobileEditItem(item);
     setMobileForm({
       prod_name: item.prod_name || '',
@@ -467,6 +500,9 @@ const AdminProductManagement = () => {
 
   async function handleMobileUpload(file) {
     if (!file) return;
+    const problem = imageFileProblem(file);
+    if (problem) { setMobileImageError(problem); toast.error(problem); return; }
+    setMobileImageError('');
     try {
       setMobileUploading(true);
       const fd = new FormData();
@@ -475,12 +511,13 @@ const AdminProductManagement = () => {
       const { url } = await apiUploadAuth('/admin/images/upload', fd, token);
       setMobileForm((f) => ({ ...f, image_url: url }));
       toast.success('Image uploaded');
-    } catch (error) { toast.error('Upload failed: ' + error.message); }
+    } catch (error) { const friendly = friendlyImageError(error.message); setMobileImageError(friendly); toast.error(friendly); }
     finally { setMobileUploading(false); }
   }
 
   async function handleMobileUrlUpload() {
     if (!mobileUrlInput.trim()) return;
+    setMobileImageError('');
     try {
       setMobileUploading(true);
       const token = await getToken(); if (!token) return;
@@ -488,7 +525,7 @@ const AdminProductManagement = () => {
       setMobileForm((f) => ({ ...f, image_url: url }));
       setMobileUrlInput('');
       toast.success('Image fetched');
-    } catch (error) { toast.error('Fetch failed: ' + error.message); }
+    } catch (error) { const friendly = friendlyImageError(error.message); setMobileImageError(friendly); toast.error(friendly); }
     finally { setMobileUploading(false); }
   }
 
@@ -790,6 +827,8 @@ const AdminProductManagement = () => {
               <span className="text-xs">{uploading ? 'Uploading...' : isDragging ? 'Drop image here' : 'Drag & drop or click'}</span>
               <input ref={fileInputRef} id="product-image-desktop" type="file" accept="image/*" onChange={(e) => handleFileUpload(e.target.files[0])} className="hidden" />
               </div>
+              <p className="mt-1 text-[11px] text-gray-500 dark:text-slate-400">{IMAGE_TYPES_LABEL} &middot; up to {MAX_IMAGE_MB} MB</p>
+              {imageError && <p role="alert" className="mt-1 text-[11px] font-medium text-red-600 dark:text-red-400">{imageError}</p>}
             </div>
           </div>
           <div>
@@ -1171,6 +1210,8 @@ const AdminProductManagement = () => {
                 <span className="text-xs">{mobileUploading ? 'Uploading...' : 'Upload image'}</span>
                 <input ref={mobileFileRef} id="product-image-mobile" type="file" accept="image/*" onChange={(e) => handleMobileUpload(e.target.files[0])} className="hidden" />
                 </div>
+                <p className="mt-1 text-[11px] text-gray-500 dark:text-slate-400">{IMAGE_TYPES_LABEL} &middot; up to {MAX_IMAGE_MB} MB</p>
+                {mobileImageError && <p role="alert" className="mt-1 text-[11px] font-medium text-red-600 dark:text-red-400">{mobileImageError}</p>}
               </div>
               <div>
                 <label htmlFor="product-image-url-mobile" className={FIELD_LABEL}>Or paste an image URL</label>
