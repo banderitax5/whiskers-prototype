@@ -13,6 +13,11 @@ import { useSelection, RowCheckBox, SelectionBar, SelectAllRow, LongPressBox, bu
 import { BsBoxSeam, BsPlusLg, BsDashLg, BsPencilSquare, BsTrash, BsUpload, BsSearch, BsExclamationTriangle, BsArrowClockwise, BsArchive, BsArrowCounterclockwise, BsClockHistory, BsFiles, BsDownload, BsQuestionCircle } from 'react-icons/bs';
 import toast from 'react-hot-toast';
 
+// form-field label style shared by the desktop and mobile product forms -
+// placeholders alone vanish once a field has a value, which made the filled
+// price/cost/stock boxes unreadable
+const FIELD_LABEL = 'block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400';
+
 // cost/supplier payload rules: filled = send the value; blank with no prior
 // value = omit the key (so a create/edit works against a pre-M2 database);
 // blank with a prior value = explicit null to clear it.
@@ -718,17 +723,27 @@ const AdminProductManagement = () => {
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 p-5 rounded-xl border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#0f2137] space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            <input value={formData.prod_name} onChange={(e) => setFormData({...formData, prod_name: e.target.value})} placeholder="Product Name" title="Exactly what shoppers will see" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
-            <CategoryField
-              id="product-category-desktop"
-              value={formData.category}
-              options={categoryOptions}
-              onChange={(category) => setFormData({ ...formData, category })}
-              className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 focus:outline-none focus:border-[#0b2e59]"
-            />
-            <input value={formData.brand} onChange={(e) => setFormData({...formData, brand: e.target.value})} placeholder="Brand (optional)" title="Shown on the product page" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
             <div>
-              <input value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} type="number" min="0" step="0.01" placeholder="Price" title={canPrice ? "Selling price in pesos" : "Only the admin can change the price"} aria-label="Price" disabled={!canPrice} className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59] disabled:opacity-60" required />
+              <label htmlFor="product-name-desktop" className={FIELD_LABEL}>Product name <span className="text-red-500">*</span></label>
+              <input id="product-name-desktop" value={formData.prod_name} onChange={(e) => setFormData({...formData, prod_name: e.target.value})} placeholder="Exactly what shoppers will see" title="Exactly what shoppers will see" className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
+            </div>
+            <div>
+              <label htmlFor="product-category-desktop" className={FIELD_LABEL}>Category <span className="text-red-500">*</span></label>
+              <CategoryField
+                id="product-category-desktop"
+                value={formData.category}
+                options={categoryOptions}
+                onChange={(category) => setFormData({ ...formData, category })}
+                className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 focus:outline-none focus:border-[#0b2e59]"
+              />
+            </div>
+            <div>
+              <label htmlFor="product-brand-desktop" className={FIELD_LABEL}>Brand (optional)</label>
+              <input id="product-brand-desktop" value={formData.brand} onChange={(e) => setFormData({...formData, brand: e.target.value})} placeholder="Shown on the product page" title="Shown on the product page" className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
+            </div>
+            <div>
+              <label htmlFor="product-price-desktop" className={FIELD_LABEL}>Price (₱) <span className="text-red-500">*</span></label>
+              <input id="product-price-desktop" value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} type="number" min="0" step="0.01" placeholder="0.00" title={canPrice ? "Selling price in pesos" : "Only the admin can change the price"} aria-label="Price" disabled={!canPrice} className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59] disabled:opacity-60" required />
               {!canPrice && (
                 <p className="mt-1 text-[11px] text-gray-500 dark:text-slate-400">Selling price is managed by the admin.</p>
               )}
@@ -740,17 +755,28 @@ const AdminProductManagement = () => {
             </div>
             {showCosts && (
               <>
-                <input value={formData.cost_price} onChange={(e) => setFormData({...formData, cost_price: e.target.value})} type="number" min="0" step="0.01" placeholder="Cost (admin only)" aria-label="Cost price" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
-                <input value={formData.supplier} onChange={(e) => setFormData({...formData, supplier: e.target.value})} placeholder="Supplier (admin only)" aria-label="Supplier" maxLength={120} className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
+                <div>
+                  <label htmlFor="product-cost-desktop" className={FIELD_LABEL}>Cost (₱, admin only)</label>
+                  <input id="product-cost-desktop" value={formData.cost_price} onChange={(e) => setFormData({...formData, cost_price: e.target.value})} type="number" min="0" step="0.01" placeholder="0.00" aria-label="Cost price" className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
+                </div>
+                <div>
+                  <label htmlFor="product-supplier-desktop" className={FIELD_LABEL}>Supplier (admin only)</label>
+                  <input id="product-supplier-desktop" value={formData.supplier} onChange={(e) => setFormData({...formData, supplier: e.target.value})} placeholder="Who you buy it from" aria-label="Supplier" maxLength={120} className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
+                </div>
               </>
             )}
-            <input value={formData.stock_quantity} onChange={(e) => setFormData({...formData, stock_quantity: e.target.value})} type="number" min="0" step="1" placeholder="Stock" title="How many you have; 0 shows as out of stock" aria-label="Stock quantity" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
-            <div
+            <div>
+              <label htmlFor="product-stock-desktop" className={FIELD_LABEL}>Stock quantity <span className="text-red-500">*</span></label>
+              <input id="product-stock-desktop" value={formData.stock_quantity} onChange={(e) => setFormData({...formData, stock_quantity: e.target.value})} type="number" min="0" step="1" placeholder="How many you have" title="How many you have; 0 shows as out of stock" aria-label="Stock quantity" className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
+            </div>
+            <div>
+              <label htmlFor="product-image-desktop" className={FIELD_LABEL}>Product image</label>
+              <div
               onClick={() => fileInputRef.current?.click()}
               onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
-              className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed cursor-pointer transition ${
+              className={`mt-1.5 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed cursor-pointer transition ${
                 isDragging
                   ? 'border-[#facc15] bg-[#facc15]/10 text-[#0b2e59] dark:text-yellow-200'
                   : 'border-gray-300 dark:border-[#1e3a5f] bg-gray-50 dark:bg-[#162d4a] text-gray-500 dark:text-slate-400 hover:border-[#0b2e59]'
@@ -762,29 +788,38 @@ const AdminProductManagement = () => {
                 <BsUpload />
               )}
               <span className="text-xs">{uploading ? 'Uploading...' : isDragging ? 'Drop image here' : 'Drag & drop or click'}</span>
-              <input ref={fileInputRef} type="file" accept="image/*" onChange={(e) => handleFileUpload(e.target.files[0])} className="hidden" />
+              <input ref={fileInputRef} id="product-image-desktop" type="file" accept="image/*" onChange={(e) => handleFileUpload(e.target.files[0])} className="hidden" />
+              </div>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div>
+            <label htmlFor="product-image-url-desktop" className={FIELD_LABEL}>Or paste an image URL</label>
+            <div className="mt-1.5 flex gap-2">
             <input
+              id="product-image-url-desktop"
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}
-              placeholder="Or paste image URL..."
+              placeholder="https://..."
               className="flex-1 px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 text-sm focus:outline-none focus:border-[#0b2e59]"
             />
-            <button type="button" onClick={handleUrlUpload} disabled={uploading || !urlInput.trim()} className="px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest border border-gray-200 dark:border-[#1e3a5f] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#162d4a] disabled:opacity-30 disabled:cursor-not-allowed transition">
-              Fetch
-            </button>
+              <button type="button" onClick={handleUrlUpload} disabled={uploading || !urlInput.trim()} className="px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest border border-gray-200 dark:border-[#1e3a5f] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#162d4a] disabled:opacity-30 disabled:cursor-not-allowed transition">
+                Fetch
+              </button>
+            </div>
           </div>
-          <textarea
-            value={formData.description}
-            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            placeholder="Description (optional, shown on the product page)"
-            title="Short sales blurb shown under the product title"
-            rows={3}
-            maxLength={2000}
-            className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 text-sm focus:outline-none focus:border-[#0b2e59] resize-y"
-          />
+          <div>
+            <label htmlFor="product-description-desktop" className={FIELD_LABEL}>Description (optional)</label>
+            <textarea
+              id="product-description-desktop"
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              placeholder="Short sales blurb shown under the product title"
+              title="Short sales blurb shown under the product title"
+              rows={3}
+              maxLength={2000}
+              className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 text-sm focus:outline-none focus:border-[#0b2e59] resize-y"
+            />
+          </div>
           <DetailsEditor
             idPrefix="product-info-desktop"
             sections={formData.details || []}
@@ -1069,18 +1104,28 @@ const AdminProductManagement = () => {
               <button onClick={() => setMobileEditItem(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 text-lg leading-none">&times;</button>
             </div>
             <form onSubmit={handleMobileSubmit} className="p-4 space-y-3">
-              <input value={mobileForm.prod_name} onChange={(e) => setMobileForm({...mobileForm, prod_name: e.target.value})} placeholder="Product Name" title="Exactly what shoppers will see" className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
-              <CategoryField
-                id="product-category-mobile"
-                value={mobileForm.category}
-                options={categoryOptions}
-                onChange={(category) => setMobileForm({ ...mobileForm, category })}
-                className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm focus:outline-none focus:border-[#0b2e59]"
-              />
-              <input value={mobileForm.brand} onChange={(e) => setMobileForm({...mobileForm, brand: e.target.value})} placeholder="Brand (optional)" title="Shown on the product page" className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
+              <div>
+                <label htmlFor="product-name-mobile" className={FIELD_LABEL}>Product name <span className="text-red-500">*</span></label>
+                <input id="product-name-mobile" value={mobileForm.prod_name} onChange={(e) => setMobileForm({...mobileForm, prod_name: e.target.value})} placeholder="Exactly what shoppers will see" title="Exactly what shoppers will see" className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
+              </div>
+              <div>
+                <label htmlFor="product-category-mobile" className={FIELD_LABEL}>Category <span className="text-red-500">*</span></label>
+                <CategoryField
+                  id="product-category-mobile"
+                  value={mobileForm.category}
+                  options={categoryOptions}
+                  onChange={(category) => setMobileForm({ ...mobileForm, category })}
+                  className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm focus:outline-none focus:border-[#0b2e59]"
+                />
+              </div>
+              <div>
+                <label htmlFor="product-brand-mobile" className={FIELD_LABEL}>Brand (optional)</label>
+                <input id="product-brand-mobile" value={mobileForm.brand} onChange={(e) => setMobileForm({...mobileForm, brand: e.target.value})} placeholder="Shown on the product page" title="Shown on the product page" className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <input value={mobileForm.price} onChange={(e) => setMobileForm({...mobileForm, price: e.target.value})} type="number" min="0" step="0.01" placeholder="Price" title={canPrice ? "Selling price in pesos" : "Only the admin can change the price"} aria-label="Price" disabled={!canPrice} className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59] disabled:opacity-60" required />
+                  <label htmlFor="product-price-mobile" className={FIELD_LABEL}>Price (₱) <span className="text-red-500">*</span></label>
+                  <input id="product-price-mobile" value={mobileForm.price} onChange={(e) => setMobileForm({...mobileForm, price: e.target.value})} type="number" min="0" step="0.01" placeholder="0.00" title={canPrice ? "Selling price in pesos" : "Only the admin can change the price"} aria-label="Price" disabled={!canPrice} className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59] disabled:opacity-60" required />
                   {!canPrice && (
                     <p className="mt-1 text-[10px] text-gray-500 dark:text-slate-400">Admin sets the price.</p>
                   )}
@@ -1090,20 +1135,31 @@ const AdminProductManagement = () => {
                     </p>
                   )}
                 </div>
-                <input value={mobileForm.stock_quantity} onChange={(e) => setMobileForm({...mobileForm, stock_quantity: e.target.value})} type="number" min="0" step="1" placeholder="Stock" title="How many you have; 0 shows as out of stock" aria-label="Stock quantity" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
+                <div>
+                  <label htmlFor="product-stock-mobile" className={FIELD_LABEL}>Stock <span className="text-red-500">*</span></label>
+                  <input id="product-stock-mobile" value={mobileForm.stock_quantity} onChange={(e) => setMobileForm({...mobileForm, stock_quantity: e.target.value})} type="number" min="0" step="1" placeholder="How many" title="How many you have; 0 shows as out of stock" aria-label="Stock quantity" className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
+                </div>
               </div>
               {showCosts && (
                 <div className="grid grid-cols-2 gap-3">
-                  <input value={mobileForm.cost_price} onChange={(e) => setMobileForm({...mobileForm, cost_price: e.target.value})} type="number" min="0" step="0.01" placeholder="Cost (admin)" aria-label="Cost price" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
-                  <input value={mobileForm.supplier} onChange={(e) => setMobileForm({...mobileForm, supplier: e.target.value})} placeholder="Supplier (admin)" aria-label="Supplier" maxLength={120} className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
+                  <div>
+                    <label htmlFor="product-cost-mobile" className={FIELD_LABEL}>Cost (₱, admin)</label>
+                    <input id="product-cost-mobile" value={mobileForm.cost_price} onChange={(e) => setMobileForm({...mobileForm, cost_price: e.target.value})} type="number" min="0" step="0.01" placeholder="0.00" aria-label="Cost price" className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
+                  </div>
+                  <div>
+                    <label htmlFor="product-supplier-mobile" className={FIELD_LABEL}>Supplier (admin)</label>
+                    <input id="product-supplier-mobile" value={mobileForm.supplier} onChange={(e) => setMobileForm({...mobileForm, supplier: e.target.value})} placeholder="Who you buy it from" aria-label="Supplier" maxLength={120} className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
+                  </div>
                 </div>
               )}
-              <div
+              <div>
+                <label htmlFor="product-image-mobile" className={FIELD_LABEL}>Product image</label>
+                <div
                 onClick={() => mobileFileRef.current?.click()}
                 onDragOver={(e) => { e.preventDefault(); setMobileDragging(true); }}
                 onDragLeave={() => setMobileDragging(false)}
                 onDrop={(e) => { e.preventDefault(); setMobileDragging(false); if (e.dataTransfer.files[0]) handleMobileUpload(e.dataTransfer.files[0]); }}
-                className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed cursor-pointer transition ${
+                className={`mt-1.5 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed cursor-pointer transition ${
                   mobileDragging
                     ? 'border-[#facc15] bg-[#facc15]/10 text-[#0b2e59] dark:text-yellow-200'
                     : 'border-gray-300 dark:border-[#1e3a5f] bg-gray-50 dark:bg-[#162d4a] text-gray-500 dark:text-slate-400 hover:border-[#0b2e59]'
@@ -1113,21 +1169,29 @@ const AdminProductManagement = () => {
                   <span className="inline-block w-4 h-4 border-2 border-[#0b2e59] border-t-transparent rounded-full animate-spin" />
                 ) : <BsUpload />}
                 <span className="text-xs">{mobileUploading ? 'Uploading...' : 'Upload image'}</span>
-                <input ref={mobileFileRef} type="file" accept="image/*" onChange={(e) => handleMobileUpload(e.target.files[0])} className="hidden" />
+                <input ref={mobileFileRef} id="product-image-mobile" type="file" accept="image/*" onChange={(e) => handleMobileUpload(e.target.files[0])} className="hidden" />
+                </div>
               </div>
-              <div className="flex gap-2">
-                <input value={mobileUrlInput} onChange={(e) => setMobileUrlInput(e.target.value)} placeholder="Or paste image URL..." className="flex-1 px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
-                <button type="button" onClick={handleMobileUrlUpload} disabled={mobileUploading || !mobileUrlInput.trim()} className="px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border border-gray-200 dark:border-[#1e3a5f] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#162d4a] disabled:opacity-30 disabled:cursor-not-allowed transition">Fetch</button>
+              <div>
+                <label htmlFor="product-image-url-mobile" className={FIELD_LABEL}>Or paste an image URL</label>
+                <div className="mt-1.5 flex gap-2">
+                  <input id="product-image-url-mobile" value={mobileUrlInput} onChange={(e) => setMobileUrlInput(e.target.value)} placeholder="https://..." className="flex-1 px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
+                  <button type="button" onClick={handleMobileUrlUpload} disabled={mobileUploading || !mobileUrlInput.trim()} className="px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border border-gray-200 dark:border-[#1e3a5f] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#162d4a] disabled:opacity-30 disabled:cursor-not-allowed transition">Fetch</button>
+                </div>
               </div>
-              <textarea
-                value={mobileForm.description}
-                onChange={(e) => setMobileForm({ ...mobileForm, description: e.target.value })}
-                placeholder="Description (optional)"
-                title="Short sales blurb shown under the product title"
-                rows={3}
-                maxLength={2000}
-                className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59] resize-y"
-              />
+              <div>
+                <label htmlFor="product-description-mobile" className={FIELD_LABEL}>Description (optional)</label>
+                <textarea
+                  id="product-description-mobile"
+                  value={mobileForm.description}
+                  onChange={(e) => setMobileForm({ ...mobileForm, description: e.target.value })}
+                  placeholder="Short sales blurb shown under the product title"
+                  title="Short sales blurb shown under the product title"
+                  rows={3}
+                  maxLength={2000}
+                  className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59] resize-y"
+                />
+              </div>
               <DetailsEditor
                 idPrefix="product-info-mobile"
                 sections={mobileForm.details || []}
