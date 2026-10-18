@@ -45,7 +45,7 @@ audit-logged and captured in change history.
 | Price validation | ✅ Done | `Number.isFinite(x) >= 0` + trim in the form (`AdminProductManagement.jsx` submit path); backend `sanitizeProductPatch` |
 | "Price is 0" warning | ❌ Missing | 0 is a valid saved price (414 of 465 products are unpriced); nothing warns the owner that the storefront will block checkout and show "Price not yet set" |
 | "Name already exists" | ❌ Missing | no duplicate `prod_name` check on create/update (contrast: policies L2515 and promos L2694 *do* return 409) |
-| "Image too large" | ⚠️ Partial | 5MB cap enforced (`admin.js` L1151) with an error handler + audit log, but the message is generic, not a friendly inline hint |
+| "Image too large" | ✅ Done | client-side pre-check + friendly inline `role="alert"` message and static "JPG, PNG, WebP or GIF · up to 5 MB" hint on both desktop and mobile forms (`AdminProductManagement.jsx` `imageFileProblem`/`friendlyImageError`); server 5MB cap unchanged |
 
 ## 6. Bulk actions ❌
 
@@ -63,7 +63,7 @@ Nothing anywhere in the repo (grep for csv/xlsx returns zero hits).
 Action row is Edit / ±stock / price history / archive / delete only
 (`AdminProductManagement.jsx` L461–L476).
 
-## 9. Multiple images per product ❌
+## 9. Multiple images per product ❌ — **disregarded by owner (2026-10-19)**
 
 One `image_url` column, whitelisted in `adminInput.js` L92. The admin Media
 Library (`AdminMedia`) exists for uploads but is not wired as a per-product
@@ -86,7 +86,7 @@ gallery; no drag-to-reorder, no "main image" concept.
 
 Making labels owner-defined is a **UI-only change** — no migration needed.
 
-## 12. Variants (size/weight with own price + stock) ❌
+## 12. Variants (size/weight with own price + stock) ❌ — **disregarded by owner (2026-10-19)**
 
 No variant model. Products that differ only by size exist as separate rows (e.g.
 1kg/5kg/10kg), which the Quick View groups for display only
@@ -177,9 +177,11 @@ added to the paper's scope) before they're built.
 7. **#20** help/tooltips pass
 
 ### Needs an owner decision (schema + flow changes)
-- **#9 multi-image** — new table + drag UI + checkout/cart display of the main image
-- **#12 variants** — schema + cart/checkout must choose a variant
-- **#10 per-product threshold** — new column, small migration
+- **#10 per-product threshold** — Option A: one nullable `product.low_stock_threshold` column (null = inherit global); recommended, awaiting yes/no
 - **#16/#18 draft + scheduled** — new product states (mirror the banner/section machinery)
 - **#17 full history + restore** — snapshot table
-- **#19 price lock for staff** — decide the exact rule (staff stock-only, prices owner-only?)
+- **#1 weight/size** — keep the free-text line in Product Info (no change) vs a dedicated field (needs a column)
+
+### Disregarded by owner (2026-10-19)
+- **#9 multi-image** — no build
+- **#12 variants** — planned then dropped by owner; design notes live in the session log only
