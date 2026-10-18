@@ -368,7 +368,7 @@ useEffect(() => {
 
       {showForm && (
         <dialog open className="modal modal-open" aria-label={editing ? 'Edit promo' : 'New promo'}>
-          <div className="modal-box max-w-2xl max-h-[85dvh] overflow-y-auto rounded-2xl bg-white dark:bg-[#0f2137]">
+          <div className="modal-box max-w-2xl my-4 max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl bg-white dark:bg-[#0f2137]">
             <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-4">
               {editing ? `Edit ${editing.code}` : 'New Promo Code'}
             </h3>

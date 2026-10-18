@@ -1098,7 +1098,7 @@ const AdminProductManagement = () => {
       {/* Mobile Edit Dialog */}
       {mobileEditItem && (
         <dialog className="modal modal-open" aria-label="Edit Product">
-          <div className="modal-box max-w-md bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] p-0 gap-0">
+          <div className="modal-box max-w-md my-4 max-h-[calc(100vh-2rem)] bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] p-0 gap-0">
             <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#1e3a5f]">
               <h3 className="font-bold text-gray-900 dark:text-slate-100 text-sm">Edit Product</h3>
               <button onClick={() => setMobileEditItem(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 text-lg leading-none">&times;</button>
@@ -1235,7 +1235,7 @@ const AdminProductManagement = () => {
       {/* Price History Dialog */}
       {historyTarget && (
         <dialog className="modal modal-open" aria-label="Price History">
-          <div className="modal-box max-w-md bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] p-0 gap-0">
+          <div className="modal-box max-w-md my-4 max-h-[calc(100vh-2rem)] bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] p-0 gap-0">
             <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#1e3a5f]">
               <div className="min-w-0">
                 <h3 className="font-bold text-gray-900 dark:text-slate-100 text-sm">Price History</h3>
@@ -1307,7 +1307,7 @@ const AdminProductManagement = () => {
       {/* Bulk category dialog */}
       {bulkDialog === 'category' && (
         <dialog className="modal modal-open" aria-label="Set category for selected products">
-          <div className="modal-box max-w-sm bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] p-0 gap-0">
+          <div className="modal-box max-w-sm my-4 max-h-[calc(100vh-2rem)] bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] p-0 gap-0">
             <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#1e3a5f]">
               <h3 className="font-bold text-gray-900 dark:text-slate-100 text-sm">Set category for {sel.count} product{sel.count === 1 ? '' : 's'}</h3>
               <button onClick={() => setBulkDialog(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 text-lg leading-none" aria-label="Close">&times;</button>
@@ -1340,7 +1340,7 @@ const AdminProductManagement = () => {
       {/* Bulk price dialog */}
       {bulkDialog === 'price' && (
         <dialog className="modal modal-open" aria-label="Set price for selected products">
-          <div className="modal-box max-w-sm bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] p-0 gap-0">
+          <div className="modal-box max-w-sm my-4 max-h-[calc(100vh-2rem)] bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] p-0 gap-0">
             <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#1e3a5f]">
               <h3 className="font-bold text-gray-900 dark:text-slate-100 text-sm">Set price for {sel.count} product{sel.count === 1 ? '' : 's'}</h3>
               <button onClick={() => setBulkDialog(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 text-lg leading-none" aria-label="Close">&times;</button>
@@ -1380,7 +1380,7 @@ const AdminProductManagement = () => {
       {/* CSV import dialog */}
       {importOpen && (
         <dialog className="modal modal-open" aria-label="Import products from CSV">
-          <div className="modal-box max-w-2xl bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] p-0 gap-0">
+          <div className="modal-box max-w-2xl my-4 max-h-[calc(100vh-2rem)] bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] p-0 gap-0">
             <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#1e3a5f]">
               <div className="min-w-0">
                 <h3 className="font-bold text-gray-900 dark:text-slate-100 text-sm">Import products from CSV</h3>
@@ -1539,7 +1539,7 @@ const AdminProductManagement = () => {
       {/* Help */}
       {helpOpen && (
         <dialog className="modal modal-open" aria-label="How to manage products">
-          <div className="modal-box max-w-lg bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] p-0 gap-0">
+          <div className="modal-box max-w-lg my-4 max-h-[calc(100vh-2rem)] bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] p-0 gap-0">
             <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#1e3a5f]">
               <h3 className="font-bold text-gray-900 dark:text-slate-100 text-sm">How to manage products</h3>
               <button onClick={() => setHelpOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 text-lg leading-none" aria-label="Close">&times;</button>
