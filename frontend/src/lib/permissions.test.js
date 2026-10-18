@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { describe, it, expect } from 'vitest';
-import { ADMIN_NAV, canSeeNav, ADMIN_ONLY_PAGES, STAFF_FALLBACK, canSeeCosts, canManageProductLifecycle } from '../lib/permissions';
+import { ADMIN_NAV, canSeeNav, ADMIN_ONLY_PAGES, STAFF_FALLBACK, canSeeCosts, canManageProductLifecycle, canEditPrice } from '../lib/permissions';
 
 describe('permissions - admin navigation', () => {
   it('exposes orders, payments, products, support to staff but not customers/audit-logs', () => {
@@ -57,5 +57,11 @@ describe('permissions - costing and lifecycle gates', () => {
     expect(canManageProductLifecycle('admin')).toBe(true);
     expect(canManageProductLifecycle('staff')).toBe(false);
     expect(canManageProductLifecycle('user')).toBe(false);
+  });
+
+  it('locks the selling price to admin (staff cannot change prices)', () => {
+    expect(canEditPrice('admin')).toBe(true);
+    expect(canEditPrice('staff')).toBe(false);
+    expect(canEditPrice('user')).toBe(false);
   });
 });

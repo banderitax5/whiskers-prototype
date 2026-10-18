@@ -35,8 +35,14 @@ export function canSeeCosts(role) {
 }
 
 // product lifecycle (create, archive, delete) is admin-only per the same
-// matrix; staff edit text/images/price/stock on existing products.
+// matrix; staff edit text/images/stock on existing products.
 export function canManageProductLifecycle(role) {
+  return role === 'admin'
+}
+
+// selling price is owner-only. Server enforces the same split (a staff PATCH
+// carrying a price field is 403-ed), so this gate just keeps the input honest.
+export function canEditPrice(role) {
   return role === 'admin'
 }
 

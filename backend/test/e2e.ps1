@@ -848,6 +848,20 @@ if ($probeId) {
     }
   }
 
+  # selling price is owner-only: even an unchanged price value sent by staff
+  # is refused (the gate is on the field, not the delta)
+  if (-not $stepUpH) { Step 'staff PATCH price denied 403' $false 'skipped: step-up was rate limited' 'SKIP' }
+  else {
+    try {
+      Invoke-RestMethod -Uri "$base/api/admin/products/$probeId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+        -Body (@{ price = 999 } | ConvertTo-Json -Compress) | Out-Null
+      Step 'staff PATCH price denied 403' $false 'got 2xx'
+    } catch {
+      $sppBody = Get-ErrBody $_
+      Step 'staff PATCH price denied 403' (($_.Exception.Response.StatusCode.value__ -eq 403) -and ($sppBody -like '*Only an admin can change the selling price*')) $sppBody
+    }
+  }
+
   if (-not $stepUpH) { Step 'staff POST product denied 403' $false 'skipped: step-up was rate limited' 'SKIP' }
   else {
     try {

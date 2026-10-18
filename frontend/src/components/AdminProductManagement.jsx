@@ -7,7 +7,7 @@ import { parseCsv, csvToProducts, batchRows, importTemplateCsv } from '../lib/pr
 import { formatPesos } from '../lib/cartLogic';
 import { formatMargin } from '../lib/adminCosting';
 import { useRole } from '../context/RoleContext';
-import { canSeeCosts, canManageProductLifecycle } from '../lib/permissions';
+import { canSeeCosts, canManageProductLifecycle, canEditPrice } from '../lib/permissions';
 import { fetchSiteContent, contentSettings } from '../lib/siteContent.js';
 import { useSelection, RowCheckBox, SelectionBar, SelectAllRow, LongPressBox, bulkApply, bulkSummary, barBtnPlain, barBtnAccent, barBtnDanger } from './adminBulk';
 import { BsBoxSeam, BsPlusLg, BsDashLg, BsPencilSquare, BsTrash, BsUpload, BsSearch, BsExclamationTriangle, BsArrowClockwise, BsArchive, BsArrowCounterclockwise, BsClockHistory, BsFiles, BsDownload, BsQuestionCircle } from 'react-icons/bs';
@@ -36,6 +36,7 @@ const AdminProductManagement = () => {
   const role = useRole();
   const showCosts = canSeeCosts(role);
   const canLifecycle = canManageProductLifecycle(role);
+  const canPrice = canEditPrice(role);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -246,7 +247,8 @@ const AdminProductManagement = () => {
         prod_name: formData.prod_name.trim(),
         category: formData.category.trim(),
         brand: formData.brand?.trim() || null,
-        price,
+        // staff never send a price: the server 403s the field outright
+        ...(canPrice ? { price } : {}),
         stock_quantity: stock,
         is_active: formData.is_active,
         image_url: formData.image_url,
@@ -517,7 +519,7 @@ const AdminProductManagement = () => {
         prod_name: mobileForm.prod_name.trim(),
         category: mobileForm.category.trim(),
         brand: mobileForm.brand?.trim() || null,
-        price,
+        ...(canPrice ? { price } : {}),
         stock_quantity: stock,
         is_active: mobileForm.is_active,
         image_url: mobileForm.image_url,
@@ -726,7 +728,10 @@ const AdminProductManagement = () => {
             />
             <input value={formData.brand} onChange={(e) => setFormData({...formData, brand: e.target.value})} placeholder="Brand (optional)" title="Shown on the product page" className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
             <div>
-              <input value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} type="number" min="0" step="0.01" placeholder="Price" title="Selling price in pesos" aria-label="Price" className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
+              <input value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} type="number" min="0" step="0.01" placeholder="Price" title={canPrice ? "Selling price in pesos" : "Only the admin can change the price"} aria-label="Price" disabled={!canPrice} className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59] disabled:opacity-60" required />
+              {!canPrice && (
+                <p className="mt-1 text-[11px] text-gray-500 dark:text-slate-400">Selling price is managed by the admin.</p>
+              )}
               {formData.price !== '' && Number(formData.price) === 0 && (
                 <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400" role="status">
                   Price is 0 - shoppers will see &quot;Price not yet set&quot; and cannot buy this product.
@@ -940,9 +945,11 @@ const AdminProductManagement = () => {
         <button type="button" className={barBtnPlain} onClick={() => runBulkPatch(() => ({ is_active: true }), 'Set shown')} disabled={bulkBusy}>
           Show
         </button>
-        <button type="button" className={barBtnAccent} onClick={() => { setBulkPrice(''); setBulkDialog('price'); }} disabled={bulkBusy}>
-          Set price...
-        </button>
+        {canPrice && (
+          <button type="button" className={barBtnAccent} onClick={() => { setBulkPrice(''); setBulkDialog('price'); }} disabled={bulkBusy}>
+            Set price...
+          </button>
+        )}
         {canLifecycle && (
           <button type="button" className={barBtnDanger} onClick={() => setBulkDialog('archive')} disabled={bulkBusy}>
             Archive...
@@ -1073,7 +1080,10 @@ const AdminProductManagement = () => {
               <input value={mobileForm.brand} onChange={(e) => setMobileForm({...mobileForm, brand: e.target.value})} placeholder="Brand (optional)" title="Shown on the product page" className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" />
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <input value={mobileForm.price} onChange={(e) => setMobileForm({...mobileForm, price: e.target.value})} type="number" min="0" step="0.01" placeholder="Price" title="Selling price in pesos" aria-label="Price" className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
+                  <input value={mobileForm.price} onChange={(e) => setMobileForm({...mobileForm, price: e.target.value})} type="number" min="0" step="0.01" placeholder="Price" title={canPrice ? "Selling price in pesos" : "Only the admin can change the price"} aria-label="Price" disabled={!canPrice} className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59] disabled:opacity-60" required />
+                  {!canPrice && (
+                    <p className="mt-1 text-[10px] text-gray-500 dark:text-slate-400">Admin sets the price.</p>
+                  )}
                   {mobileForm.price !== '' && Number(mobileForm.price) === 0 && (
                     <p className="mt-1 text-[10px] text-amber-600 dark:text-amber-400" role="status">
                       Price 0 - cannot be bought.

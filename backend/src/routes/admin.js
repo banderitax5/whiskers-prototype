@@ -758,8 +758,16 @@ router.patch('/products/:id', async (req, res) => {
   const body = req.body ?? {}
   const touchesCosting = 'cost_price' in body || 'supplier' in body
   const touchesArchive = 'archived' in body
-  if ((touchesCosting || touchesArchive) && req.userRole !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' })
+  const touchesPrice = 'price' in body
+  if (req.userRole !== 'admin') {
+    // selling price is owner territory: staff manage text/images/stock but a
+    // price change attempt is refused outright (fail-closed, like costing)
+    if (touchesPrice) {
+      return res.status(403).json({ error: 'Only an admin can change the selling price' })
+    }
+    if (touchesCosting || touchesArchive) {
+      return res.status(403).json({ error: 'Admin access required' })
+    }
   }
   const { archived, ...rest } = body
   const { error: inputErr, updates } = Object.keys(rest).length > 0
