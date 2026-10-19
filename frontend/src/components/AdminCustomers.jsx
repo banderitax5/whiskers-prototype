@@ -65,7 +65,12 @@ const AdminCustomers = () => {
       setCustomers((prev) => prev.map((c) => c.id === customer.id ? { ...c, role: nextRole } : c));
       toast.success(`Role changed to ${nextRole}`);
     } catch (err) {
-      if (err.message !== 'Verification cancelled') toast.error(err.message);
+      // a cancelled password prompt must not look like a silent failure
+      if (err.message === 'Verification cancelled') {
+        toast('Role was not changed - password confirmation was cancelled.');
+      } else {
+        toast.error(err.message);
+      }
     } finally {
       setSavingId(null);
       setOpenDropdown(null);
@@ -84,7 +89,11 @@ const AdminCustomers = () => {
       setCustomers((prev) => prev.filter((c) => c.id !== target.id));
       toast.success('Customer removed');
     } catch (err) {
-      if (err.message !== 'Verification cancelled') toast.error(err.message);
+      if (err.message === 'Verification cancelled') {
+        toast('Customer was not removed - password confirmation was cancelled.');
+      } else {
+        toast.error(err.message);
+      }
     } finally {
       setSavingId(null);
     }
