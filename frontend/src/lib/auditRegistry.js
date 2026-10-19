@@ -371,7 +371,10 @@ export const REGISTRY = {
       if (label && changes?.price?.from != null && changes?.price?.to != null) {
         return `${who} changed the price of ${noun} from ₱${formatPesos(changes.price.from)} to ₱${formatPesos(changes.price.to)}`
       }
-      const fields = parsed.fields.map(humanizeField)
+      // the structured diff (exact changed fields) beats the details list,
+      // which carries every submitted column - not only what actually changed
+      const changedKeys = changes ? Object.keys(changes) : []
+      const fields = (changedKeys.length ? changedKeys : parsed.fields).map(humanizeField)
       const suffix = fields.length ? ` (changed: ${fields.join(', ')})` : ''
       return `${who} updated ${noun}${suffix}`
     },

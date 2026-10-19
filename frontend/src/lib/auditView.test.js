@@ -214,7 +214,10 @@ describe('createResolver', () => {
       items: [{ id: '11111111-1111-1111-1111-111111111111', firstName: 'Juan', lastName: 'Dela Cruz' }],
     })
     apiGet.mockImplementation(async (path) => {
-      if (path === '/products/22222222-2222-2222-2222-222222222222') return { prod_name: 'Royal Canin Adult 10kg' }
+      // production wraps the row: GET /products/:id -> { item: {...} }
+      if (path === '/products/22222222-2222-2222-2222-222222222222') {
+        return { item: { prod_name: 'Royal Canin Adult 10kg' } }
+      }
       throw new Error('404')
     })
     const resolver = createResolver()

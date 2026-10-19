@@ -301,6 +301,21 @@ describe('describeEntry with structured changes (Phase B)', () => {
     expect(e.sentence).toBe('You updated the product "Treats" (changed: Stock quantity).')
   })
 
+  it('suffix lists only diffed fields, not every column the form submitted', () => {
+    // details carries Object.keys(updates) - every field the PATCH sent -
+    // while changes holds only what actually differed
+    const e = describeEntry(
+      {
+        action: 'update',
+        target: 'product:p1',
+        details: 'price, stock_quantity, category',
+        changes: { stock_quantity: { from: 10, to: 20 } },
+      },
+      { who, label: 'Alpha Pro 10kg' }
+    )
+    expect(e.sentence).toBe('You updated the product "Alpha Pro 10kg" (changed: Stock quantity).')
+  })
+
   it('role change quotes the previous role when recorded', () => {
     const e = describeEntry(
       {

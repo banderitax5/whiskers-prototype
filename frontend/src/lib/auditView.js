@@ -297,7 +297,9 @@ export function createResolver() {
       if (productFetch.has(id)) return productFetch.get(id)
       const job = (async () => {
         try {
-          const item = await apiGet(`/products/${id}`)
+          const data = await apiGet(`/products/${id}`)
+          // GET /products/:id wraps the row as { item: {...} }; tolerate a flat body too
+          const item = data?.item || data
           productNames.set(id, item?.prod_name || null)
         } catch {
           productNames.set(id, null)
