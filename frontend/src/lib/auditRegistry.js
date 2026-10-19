@@ -4,6 +4,8 @@
 // auditRegistry.test.js scans backend/src for `action: '...'` and fails if a
 // new code has no entry here, so this file cannot silently rot.
 
+import { formatPesos } from './cartLogic'
+
 export const CATEGORIES = [
   'Products',
   'Orders',
@@ -361,9 +363,14 @@ export const REGISTRY = {
   },
   update: {
     category: 'Products',
-    important: ({ parsed }) => parsed.fields.some((f) => PRICE_FIELDS.has(f)),
-    describe: ({ who, parsed, label }) => {
+    important: ({ parsed, changes }) => parsed.fields.some((f) => PRICE_FIELDS.has(f))
+      || Boolean(changes && 'price' in changes),
+    describe: ({ who, parsed, label, changes }) => {
       const noun = label ? `the product "${label}"` : 'a deleted product'
+      // an exact price diff (Phase B) beats the generic field list
+      if (label && changes?.price?.from != null && changes?.price?.to != null) {
+        return `${who} changed the price of ${noun} from ₱${formatPesos(changes.price.from)} to ₱${formatPesos(changes.price.to)}`
+      }
       const fields = parsed.fields.map(humanizeField)
       const suffix = fields.length ? ` (changed: ${fields.join(', ')})` : ''
       return `${who} updated ${noun}${suffix}`
@@ -405,11 +412,13 @@ export const REGISTRY = {
       if (t.kind === 'support') return 'Support'
       return 'Other'
     },
-    describe: ({ who, parsed, target }) => {
+    describe: ({ who, parsed, target, changes }) => {
       if (target.kind === 'support') return `${who} replied to a support request`
-      const change = parsed.changes[0]
-      const to = change ? statusWord(change.to) : 'a new status'
-      return `${who} changed an order's status to ${to}`
+      const to = changes?.status?.to != null
+        ? statusWord(changes.status.to)
+        : (parsed.changes[0] ? statusWord(parsed.changes[0].to) : 'a new status')
+      const from = changes?.status?.from != null ? ` from ${statusWord(changes.status.from)}` : ''
+      return `${who} changed an order's status${from} to ${to}`
     },
   },
 
@@ -417,11 +426,12 @@ export const REGISTRY = {
   role_change: {
     category: 'Customers',
     important: true,
-    describe: ({ who, parsed, label }) => {
+    describe: ({ who, parsed, label, changes }) => {
       const change = parsed.changes[0]
-      const role = change ? change.to : 'a new role'
+      const role = changes?.role?.to ?? (change ? change.to : 'a new role')
+      const from = changes?.role?.from != null ? ` from ${changes.role.from}` : ''
       const whose = label ? `of "${label}"` : 'of an account'
-      return `${who} changed the role ${whose} to ${role}`
+      return `${who} changed the role ${whose}${from} to ${role}`
     },
   },
   user_delete: {
@@ -693,13 +703,21 @@ function genericDescribe({ who, action, target }) {
   return `${who} ${verb} ${noun}`
 }
 
+// structured { field: { from, to } } map recorded by the Phase B backend;
+// null when absent/empty so describes can test truthily
+function normalizeChanges(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  return Object.keys(raw).length > 0 ? raw : null
+}
+
 // Entry row shape consumed by the Audit Logs page:
 // { sentence, category, important, hidden, parsed, target, row }
 export function describeEntry(row, ctx = {}) {
   const who = ctx.who || 'Someone'
   const parsed = parseChanges(row.details)
   const target = parseTarget(row.target)
-  const base = { who, parsed, target, label: ctx.label ?? null, row }
+  const changes = normalizeChanges(row.changes)
+  const base = { who, parsed, target, label: ctx.label ?? null, row, changes }
   const entry = REGISTRY[row.action]
   const category = entry
     ? (typeof entry.category === 'function' ? entry.category(row) : entry.category)

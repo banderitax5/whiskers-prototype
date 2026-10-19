@@ -7,8 +7,9 @@ vi.mock('../lib/api', () => ({
 
 import { apiGetAllPages, apiGet } from '../lib/api.js'
 import {
-  buildCsv, createResolver, dayKey, dayLabel, exactLabel, filterEntries,
-  groupByDay, hasActiveFilters, inDateRange, relativeLabel, shortId, timeOnlyLabel, whoFor,
+  buildCsv, changeLines, changesSummary, createResolver, dayKey, dayLabel, exactLabel,
+  filterEntries, formatChangeValue, groupByDay, hasActiveFilters, inDateRange, relativeLabel,
+  shortId, timeOnlyLabel, whoFor,
 } from './auditView.js'
 
 // noon in Manila on 2026-10-19
@@ -137,8 +138,50 @@ describe('buildCsv', () => {
     const lines = csv.split('\r\n')
     expect(lines[0]).toContain('What happened')
     expect(lines[0]).toContain('Admin email (raw)')
+    expect(lines[0]).toContain('Changes')
     expect(lines[1]).toContain('You said ""hi"".')
     expect(lines).toHaveLength(2)
+  })
+
+  it('includes a readable Changes column for structured rows', () => {
+    const csv = buildCsv([entry({
+      row: { changes: { price: { from: 265, to: 299 }, stock_quantity: { from: 50, to: 40 } } },
+    })])
+    const lines = csv.split('\r\n')
+    expect(lines[1]).toContain('Price: ₱265.00 -> ₱299.00')
+    expect(lines[1]).toContain('Stock quantity: 50 -> 40')
+  })
+})
+
+describe('formatChangeValue / changeLines / changesSummary', () => {
+  it('formats money fields in pesos and plain numbers bare', () => {
+    expect(formatChangeValue('price', 265)).toBe('₱265.00')
+    expect(formatChangeValue('cost_price', 5.5)).toBe('₱5.50')
+    expect(formatChangeValue('stock_quantity', 40)).toBe('40')
+  })
+
+  it('formats booleans, nulls, and long strings', () => {
+    expect(formatChangeValue('is_active', true)).toBe('Yes')
+    expect(formatChangeValue('is_active', false)).toBe('No')
+    expect(formatChangeValue('supplier', null)).toBe('—')
+    expect(formatChangeValue('alt_text', 'x'.repeat(200))).toHaveLength(123)
+  })
+
+  it('turns a changes map into labelled lines and a one-line summary', () => {
+    const lines = changeLines({ price: { from: 265, to: 299 }, is_active: { from: true, to: false } })
+    expect(lines).toEqual([
+      { field: 'price', label: 'Price', from: '₱265.00', to: '₱299.00' },
+      { field: 'is_active', label: 'Visibility', from: 'Yes', to: 'No' },
+    ])
+    expect(changesSummary({ price: { from: 265, to: 299 } })).toBe('Price: ₱265.00 -> ₱299.00')
+  })
+
+  it('is empty for missing or malformed changes', () => {
+    expect(changeLines(null)).toEqual([])
+    expect(changeLines(undefined)).toEqual([])
+    expect(changeLines({})).toEqual([])
+    expect(changeLines([1, 2])).toEqual([])
+    expect(changeLines({ weird: 'bare' })).toEqual([])
   })
 })
 

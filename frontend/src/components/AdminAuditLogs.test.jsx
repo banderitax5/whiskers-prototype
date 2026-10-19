@@ -68,6 +68,10 @@ const SAMPLE = [
     action: 'settings_update',
     target: 'site_settings',
     details: 'updated: store_name, shipping_fee',
+    changes: {
+      store_name: { from: 'Whiskers Pet Shop', to: 'Happy Paws' },
+      shipping_fee: { from: 75, to: 99 },
+    },
     created_at: NOW_ISO,
   },
   {
@@ -176,8 +180,13 @@ describe('Audit logs page', () => {
     expect(panel.textContent).toContain('What changed')
     expect(panel.textContent).toContain('Store name')
     expect(panel.textContent).toContain('Shipping fee')
+    // structured changes render exact formatted values (Phase B)
+    expect(panel.textContent).toContain('₱75.00')
+    expect(panel.textContent).toContain('₱99.00')
+    expect(panel.textContent).toContain('Happy Paws')
     expect(panel.textContent).toContain('Technical details')
     expect(panel.textContent).toContain('settings_update')
+    expect(panel.textContent).toContain('shipping_fee') // raw changes JSON in the tech dl
     expect(expandBtn.getAttribute('aria-expanded')).toBe('true')
     // collapse removes the panel row from the DOM
     await act(async () => { expandBtn.click() })

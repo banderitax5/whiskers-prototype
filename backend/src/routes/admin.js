@@ -23,6 +23,7 @@ import { sanitizeNavItem, sanitizeCategoryBatch, sanitizeCategoryRemoval, NAV_SE
 import { sanitizeSettings, sanitizeFaq, sanitizePolicy, mergeSettings } from '../utils/siteSettingsRules.js'
 import { invalidateSettingsCache } from '../utils/shopSettings.js'
 import { missingColumnOf, isSchemaPendingError } from '../utils/pgErrors.js'
+import { sanitizeChanges } from '../utils/auditChanges.js'
 import { effectiveUnitPrice, lineMargin } from '../utils/orderCosting.js'
 import { sendOrderStatusEmail, sendSupportReplyEmail, maskEmail } from '../utils/mailer.js'
 import { recordContentHistory, diffChanges, historyLabel } from '../utils/contentHistory.js'
@@ -433,6 +434,12 @@ router.patch('/customers/:id/role', requireAdmin, async (req, res) => {
   }
 
   try {
+    // read the current role first so the audit log can record old -> new
+    const { data: currentProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('role')
+      .eq('id', req.params.id)
+      .maybeSingle()
     const { data, error } = await supabaseAdmin
       .from('profiles')
       .update({ role })
@@ -446,7 +453,15 @@ router.patch('/customers/:id/role', requireAdmin, async (req, res) => {
       throw error
     }
     res.json({ item: data })
-    logAudit({ adminEmail: req.userEmail, action: 'role_change', target: `user:${req.params.id}`, details: `role -> ${role} (step-up verified)` })
+    logAudit({
+      adminEmail: req.userEmail,
+      action: 'role_change',
+      target: `user:${req.params.id}`,
+      details: `role -> ${role} (step-up verified)`,
+      changes: currentProfile && currentProfile.role !== role
+        ? { role: { from: currentProfile.role, to: role } }
+        : null,
+    })
   } catch (err) {
     logger.error({ err }, 'Admin role update error')
     res.status(500).json({ error: 'Server error' })
@@ -793,22 +808,22 @@ router.patch('/products/:id', async (req, res) => {
   }
 
   try {
-    // price/name change? read the current row first so history records
-    // old -> new prices and the name-uniqueness check can skip self-matches
-    let oldPrice = null
-    if ('price' in updates || 'prod_name' in updates) {
-      const { data: prev } = await supabaseAdmin
-        .from('product')
-        .select('price, prod_name')
-        .eq('prod_id', req.params.id)
-        .maybeSingle()
-      oldPrice = 'price' in updates ? (prev?.price ?? null) : null
-      if ('prod_name' in updates
-        && String(prev?.prod_name || '').trim().toLowerCase() !== updates.prod_name.toLowerCase()
-        && await productNameTaken(updates.prod_name, req.params.id)) {
-        return res.status(409).json({ error: 'A product with that name already exists', code: 'NAME_TAKEN' })
-      }
+    // read the current values first: price history needs old -> new prices,
+    // the name-uniqueness check needs the old name, and the audit log records
+    // an exact field diff. Best-effort: a failed read (e.g. a column that a
+    // pending migration has not added yet) just means the diff starts from
+    // null - the update below produces its own proper error if it must.
+    const { data: prev } = await supabaseAdmin
+      .from('product')
+      .select(Object.keys(updates).join(', '))
+      .eq('prod_id', req.params.id)
+      .maybeSingle()
+    if ('prod_name' in updates
+      && String(prev?.prod_name || '').trim().toLowerCase() !== updates.prod_name.toLowerCase()
+      && await productNameTaken(updates.prod_name, req.params.id)) {
+      return res.status(409).json({ error: 'A product with that name already exists', code: 'NAME_TAKEN' })
     }
+    const oldPrice = 'price' in updates ? (prev?.price ?? null) : null
 
     const { data, error } = await supabaseAdmin
       .from('product')
@@ -827,7 +842,13 @@ router.patch('/products/:id', async (req, res) => {
     }
     const isAdmin = req.userRole === 'admin'
     res.json({ item: isAdmin ? data : stripCostFields(data) })
-    logAudit({ adminEmail: req.userEmail, action: 'update', target: `product:${req.params.id}`, details: Object.keys(updates).join(', ') })
+    logAudit({
+      adminEmail: req.userEmail,
+      action: 'update',
+      target: `product:${req.params.id}`,
+      details: Object.keys(updates).join(', '),
+      changes: diffChanges(prev || {}, data, Object.keys(updates)),
+    })
     if ('price' in updates && Number(oldPrice) !== updates.price) {
       recordPriceHistory(req.params.id, oldPrice, updates.price, req.userEmail)
     }
@@ -1117,7 +1138,13 @@ router.patch('/orders/:id', async (req, res) => {
       throw error
     }
     res.json({ item: data })
-    logAudit({ adminEmail: req.userEmail, action: 'status', target: `order:${req.params.id}`, details: `status -> ${status}` })
+    logAudit({
+      adminEmail: req.userEmail,
+      action: 'status',
+      target: `order:${req.params.id}`,
+      details: `status -> ${status}`,
+      changes: current.status !== status ? { status: { from: current.status, to: status } } : null,
+    })
 
     if (current.status !== status) {
       const { count } = await supabaseAdmin
@@ -1308,14 +1335,29 @@ router.get('/audit-logs', requireAdmin, async (req, res) => {
 })
 
 // helper: insert an audit log record (called after admin actions)
-export async function logAudit({ adminEmail, action, target, details }) {
+// `changes` is an optional { field: { from, to } } map (usually from
+// diffChanges) that lets the Audit Logs page show exact old -> new values.
+// Pre-migration tolerance: if the changes column does not exist yet, the
+// row is retried without it so logging never breaks the live action.
+export async function logAudit({ adminEmail, action, target, details, changes }) {
   try {
-    await supabaseAdmin.from('audit_logs').insert({
+    const row = {
       admin_email: adminEmail || 'unknown',
       action,
       target: target || null,
       details: details || null,
-    })
+    }
+    const clean = sanitizeChanges(changes)
+    if (clean) row.changes = clean
+    const { error } = await supabaseAdmin.from('audit_logs').insert(row)
+    if (!error) return
+    if (clean && isSchemaPendingError(error)) {
+      delete row.changes
+      const { error: retryErr } = await supabaseAdmin.from('audit_logs').insert(row)
+      if (retryErr) logger.error({ err: retryErr }, 'Audit log write failed')
+      return
+    }
+    logger.error({ err: error }, 'Audit log write failed')
   } catch (err) {
     logger.error({ err }, 'Audit log write failed')
   }
@@ -1666,8 +1708,9 @@ router.patch('/media/:id', requireAdmin, async (req, res) => {
       .single()
     if (error) throw error
     res.json({ item: data })
-    logAudit({ adminEmail: req.userEmail, action: 'media_update', target: req.params.id, details: `alt: '${before.alt_text}' -> '${alt.value}'` })
-    recordContentHistory('media', req.params.id, 'update', { name: historyLabel(before, 'alt_text', 'url') || 'Image', changes: diffChanges(before, data, ['alt_text']) }, req.userEmail)
+    const mediaChanges = diffChanges(before, data, ['alt_text'])
+    logAudit({ adminEmail: req.userEmail, action: 'media_update', target: req.params.id, details: `alt: '${before.alt_text}' -> '${alt.value}'`, changes: mediaChanges })
+    recordContentHistory('media', req.params.id, 'update', { name: historyLabel(before, 'alt_text', 'url') || 'Image', changes: mediaChanges }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Media update error')
     res.status(500).json({ error: 'Failed to update media' })
@@ -1826,8 +1869,9 @@ router.patch('/banners/:id', requireAdmin, async (req, res) => {
     invalidateContentCache()
     res.json({ item: data })
     const changed = Object.keys(clean.values).join(', ')
-    logAudit({ adminEmail: req.userEmail, action: 'banner_update', target: req.params.id, details: `changed: ${changed}` })
-    recordContentHistory('banners', req.params.id, 'update', { name: historyLabel(before, 'title', 'alt') || 'Banner', changes: diffChanges(before, data, Object.keys(clean.values)) }, req.userEmail)
+    const bannerChanges = diffChanges(before, data, Object.keys(clean.values))
+    logAudit({ adminEmail: req.userEmail, action: 'banner_update', target: req.params.id, details: `changed: ${changed}`, changes: bannerChanges })
+    recordContentHistory('banners', req.params.id, 'update', { name: historyLabel(before, 'title', 'alt') || 'Banner', changes: bannerChanges }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Banner update error')
     res.status(500).json({ error: 'Failed to update banner' })
@@ -1982,8 +2026,9 @@ router.patch('/sections/:id', requireAdmin, async (req, res) => {
     if (error) throw error
     invalidateContentCache()
     res.json({ item: data })
-    logAudit({ adminEmail: req.userEmail, action: 'section_update', target: req.params.id, details: `changed: ${Object.keys(clean.values).join(', ')}` })
-    recordContentHistory('sections', req.params.id, 'update', { name: historyLabel(before, 'title') || 'Section', changes: diffChanges(before, data, Object.keys(clean.values)) }, req.userEmail)
+    const sectionChanges = diffChanges(before, data, Object.keys(clean.values))
+    logAudit({ adminEmail: req.userEmail, action: 'section_update', target: req.params.id, details: `changed: ${Object.keys(clean.values).join(', ')}`, changes: sectionChanges })
+    recordContentHistory('sections', req.params.id, 'update', { name: historyLabel(before, 'title') || 'Section', changes: sectionChanges }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Section update error')
     res.status(500).json({ error: 'Failed to update section' })
@@ -2144,8 +2189,9 @@ router.patch('/nav-items/:id', requireAdmin, async (req, res) => {
     if (error) throw error
     invalidateContentCache()
     res.json({ item: data })
-    logAudit({ adminEmail: req.userEmail, action: 'nav_update', target: req.params.id, details: `changed: ${Object.keys(clean.values).join(', ')}` })
-    recordContentHistory('nav_items', req.params.id, 'update', { name: historyLabel(before, 'label') || 'Link', changes: diffChanges(before, data, Object.keys(clean.values)) }, req.userEmail)
+    const navChanges = diffChanges(before, data, Object.keys(clean.values))
+    logAudit({ adminEmail: req.userEmail, action: 'nav_update', target: req.params.id, details: `changed: ${Object.keys(clean.values).join(', ')}`, changes: navChanges })
+    recordContentHistory('nav_items', req.params.id, 'update', { name: historyLabel(before, 'label') || 'Link', changes: navChanges }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Nav item update error')
     res.status(500).json({ error: 'Failed to update navigation link' })
@@ -2503,7 +2549,13 @@ router.patch('/settings', requireAdmin, async (req, res) => {
     invalidateSettingsCache()
     invalidateContentCache()
     res.json({ settings: mergeSettings(saved.data || {}, {}), updated_at: saved.updated_at, seeded: true })
-    logAudit({ adminEmail: req.userEmail, action: 'settings_update', target: 'site_settings', details: `updated: ${Object.keys(clean.values).join(', ')}` })
+    logAudit({
+      adminEmail: req.userEmail,
+      action: 'settings_update',
+      target: 'site_settings',
+      details: `updated: ${Object.keys(clean.values).join(', ')}`,
+      changes: diffChanges(current?.data || {}, merged, Object.keys(clean.values)),
+    })
     recordContentHistory('site_settings', 'site_settings', 'update', {
       name: 'Store settings',
       changes: diffChanges(current?.data || {}, merged, Object.keys(clean.values)),
@@ -2583,8 +2635,9 @@ router.patch('/faqs/:id', requireAdmin, async (req, res) => {
     if (error) throw error
     invalidateContentCache()
     res.json({ item: data })
-    logAudit({ adminEmail: req.userEmail, action: 'faq_update', target: req.params.id, details: `changed: ${Object.keys(clean.values).join(', ')}` })
-    recordContentHistory('faqs', req.params.id, 'update', { name: historyLabel(before, 'question') || 'FAQ', changes: diffChanges(before, data, Object.keys(clean.values)) }, req.userEmail)
+    const faqChanges = diffChanges(before, data, Object.keys(clean.values))
+    logAudit({ adminEmail: req.userEmail, action: 'faq_update', target: req.params.id, details: `changed: ${Object.keys(clean.values).join(', ')}`, changes: faqChanges })
+    recordContentHistory('faqs', req.params.id, 'update', { name: historyLabel(before, 'question') || 'FAQ', changes: faqChanges }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'FAQ update error')
     res.status(500).json({ error: 'Failed to update FAQ' })
@@ -2733,8 +2786,9 @@ router.patch('/policies/:id', requireAdmin, async (req, res) => {
     if (error) throw error
     invalidateContentCache()
     res.json({ item: data })
-    logAudit({ adminEmail: req.userEmail, action: 'policy_update', target: req.params.id, details: `changed: ${Object.keys(clean.values).join(', ')}` })
-    recordContentHistory('policies', req.params.id, 'update', { name: historyLabel(before, 'title') || 'Policy', changes: diffChanges(before, data, Object.keys(clean.values)) }, req.userEmail)
+    const policyChanges = diffChanges(before, data, Object.keys(clean.values))
+    logAudit({ adminEmail: req.userEmail, action: 'policy_update', target: req.params.id, details: `changed: ${Object.keys(clean.values).join(', ')}`, changes: policyChanges })
+    recordContentHistory('policies', req.params.id, 'update', { name: historyLabel(before, 'title') || 'Policy', changes: policyChanges }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Policy update error')
     res.status(500).json({ error: 'Failed to update policy' })
@@ -2949,6 +3003,7 @@ router.patch('/promos/:code', requireAdmin, async (req, res) => {
   }
 
   try {
+    const { data: prev } = await supabaseAdmin.from('promos').select('*').eq('code', code).maybeSingle()
     const { data, error } = await supabaseAdmin
       .from('promos')
       .update(updates)
@@ -2959,7 +3014,12 @@ router.patch('/promos/:code', requireAdmin, async (req, res) => {
     if (!data) return res.status(404).json({ error: 'Promo not found' })
     invalidateContentCache()
     res.json(data)
-    logAudit({ adminEmail: req.userEmail, action: 'promo_update', target: code })
+    logAudit({
+      adminEmail: req.userEmail,
+      action: 'promo_update',
+      target: code,
+      changes: prev ? diffChanges(prev, data, Object.keys(updates)) : null,
+    })
   } catch (err) {
     logger.error({ err }, 'Promo update error')
     res.status(500).json({ error: 'Failed to update promo' })

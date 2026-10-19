@@ -270,3 +270,73 @@ describe('describeEntry sentences (owner-facing examples)', () => {
     expect(e.category).toBe('Other')
   })
 })
+
+describe('describeEntry with structured changes (Phase B)', () => {
+  const who = 'You'
+
+  it('product price sentence quotes exact pesos and stays important', () => {
+    const e = describeEntry(
+      {
+        action: 'update',
+        target: 'product:p1',
+        details: 'price',
+        changes: { price: { from: 265, to: 299 } },
+      },
+      { who, label: 'Royal Canin Adult 10kg' }
+    )
+    expect(e.sentence).toBe('You changed the price of the product "Royal Canin Adult 10kg" from ₱265.00 to ₱299.00.')
+    expect(e.important).toBe(true)
+  })
+
+  it('product update without a price change keeps the field-list sentence', () => {
+    const e = describeEntry(
+      {
+        action: 'update',
+        target: 'product:p1',
+        details: 'stock_quantity',
+        changes: { stock_quantity: { from: 50, to: 40 } },
+      },
+      { who, label: 'Treats' }
+    )
+    expect(e.sentence).toBe('You updated the product "Treats" (changed: Stock quantity).')
+  })
+
+  it('role change quotes the previous role when recorded', () => {
+    const e = describeEntry(
+      {
+        action: 'role_change',
+        target: 'user:u1',
+        details: 'role -> admin (step-up verified)',
+        changes: { role: { from: 'user', to: 'admin' } },
+      },
+      { who, label: 'Juan Dela Cruz' }
+    )
+    expect(e.sentence).toBe('You changed the role of "Juan Dela Cruz" from user to admin.')
+  })
+
+  it('order status quotes the previous status when recorded', () => {
+    const e = describeEntry(
+      {
+        action: 'status',
+        target: 'order:o1',
+        details: 'status -> Shipped',
+        changes: { status: { from: 'Processing', to: 'Shipped' } },
+      },
+      { who }
+    )
+    expect(e.sentence).toBe("You changed an order's status from Processing to Shipped.")
+  })
+
+  it('treats an empty or malformed changes map as absent', () => {
+    const empty = describeEntry(
+      { action: 'status', target: 'order:o1', details: 'status -> Shipped', changes: {} },
+      { who }
+    )
+    expect(empty.sentence).toBe("You changed an order's status to Shipped.")
+    const malformed = describeEntry(
+      { action: 'status', target: 'order:o1', details: 'status -> Shipped', changes: [1] },
+      { who }
+    )
+    expect(malformed.sentence).toBe("You changed an order's status to Shipped.")
+  })
+})

@@ -7,7 +7,7 @@ import {
   CATEGORIES, CATEGORY_PILL, describeEntry, humanizeField, maskValue, parseTarget,
 } from '../lib/auditRegistry'
 import {
-  buildCsv, createResolver, dayKey, downloadCsv, exactLabel, filterEntries,
+  buildCsv, changeLines, createResolver, dayKey, downloadCsv, exactLabel, filterEntries,
   groupByDay, hasActiveFilters, relativeLabel, timeOnlyLabel, whoFor,
 } from '../lib/auditView'
 import {
@@ -61,8 +61,30 @@ function ImportantMarker() {
 
 function EntryDetails({ e }) {
   const { parsed, row } = e
+  // Phase B rows carry exact from -> to values in `changes`; they beat the
+  // details-string parse when present. Older rows fall through to the parser.
+  const structured = changeLines(row.changes)
   let changed
-  if (parsed.changes.length) {
+  if (structured.length) {
+    changed = (
+      <dl className="space-y-1">
+        {structured.map((l) => (
+          <div key={l.field} className="flex flex-wrap items-baseline gap-1 text-xs text-gray-700 dark:text-slate-300">
+            <dt className="font-bold">{l.label}</dt>
+            <dd>
+              {l.from !== '—' ? (
+                <>
+                  {maskValue(l.label, l.from)} <span aria-hidden="true">→</span> {maskValue(l.label, l.to)}
+                </>
+              ) : (
+                maskValue(l.label, l.to)
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    )
+  } else if (parsed.changes.length) {
     changed = (
       <dl className="space-y-1">
         {parsed.changes.map((c, i) => (
@@ -102,9 +124,10 @@ function EntryDetails({ e }) {
     `action: ${row.action || '-'}`,
     `target: ${row.target || '-'}`,
     `details: ${row.details || '-'}`,
+    row.changes ? `changes: ${JSON.stringify(row.changes)}` : null,
     `admin: ${row.admin_email || '-'}`,
     `id: ${row.id || '-'}`,
-  ].join('\n')
+  ].filter(Boolean).join('\n')
   return (
     <div className="px-4 py-3 space-y-3 bg-gray-50 dark:bg-[#162d4a]/40 border-t border-gray-100 dark:border-[#1e3a5f]">
       <div className="flex items-start justify-between gap-2">
@@ -124,6 +147,12 @@ function EntryDetails({ e }) {
           <dd className="break-all">{row.action || '-'}</dd>
           <dt className="opacity-60">Target</dt>
           <dd className="break-all">{row.target || '-'}</dd>
+          {row.changes ? (
+            <>
+              <dt className="opacity-60">Changes</dt>
+              <dd className="break-all">{JSON.stringify(row.changes)}</dd>
+            </>
+          ) : null}
           <dt className="opacity-60">Admin</dt>
           <dd className="break-all">{row.admin_email || '-'}</dd>
           <dt className="opacity-60">Entry ID</dt>

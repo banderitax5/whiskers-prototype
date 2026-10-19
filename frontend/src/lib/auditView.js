@@ -4,6 +4,8 @@
 // an injectable `now` so tests are deterministic.
 
 import { apiGet, apiGetAllPages } from './api'
+import { formatPesos } from './cartLogic'
+import { humanizeField } from './auditRegistry'
 
 const MANILA = 'Asia/Manila'
 
@@ -166,6 +168,45 @@ export function shortId(id) {
   return s.length > 8 ? s.slice(0, 8) : s
 }
 
+// ------------------------------------------------------------- changes ----
+// Rows recorded by the Phase B backend carry a structured { field: { from, to } }
+// map in `changes`; these helpers render it for the detail panel, the CSV, and
+// the few sentences that quote exact values.
+
+const MONEY_FIELDS = new Set([
+  'price', 'cost_price', 'value', 'max_discount', 'min_subtotal',
+  'shipping_fee', 'free_shipping_threshold',
+])
+
+export function formatChangeValue(field, value) {
+  if (value === null || value === undefined) return '—'
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (MONEY_FIELDS.has(String(field)) && typeof value === 'number' && Number.isFinite(value)) {
+    return `₱${formatPesos(value)}`
+  }
+  if (typeof value === 'number') return String(value)
+  const text = String(value)
+  return text.length > 120 ? `${text.slice(0, 120)}...` : text
+}
+
+// stable, human rows for the "What changed" panel (field order follows the
+// backend diff, which follows the form's field order)
+export function changeLines(changes) {
+  if (!changes || typeof changes !== 'object' || Array.isArray(changes)) return []
+  return Object.entries(changes)
+    .filter(([, v]) => v && typeof v === 'object' && ('from' in v || 'to' in v))
+    .map(([field, v]) => ({
+      field,
+      label: humanizeField(field),
+      from: formatChangeValue(field, v.from),
+      to: formatChangeValue(field, v.to),
+    }))
+}
+
+export function changesSummary(changes) {
+  return changeLines(changes).map((l) => `${l.label}: ${l.from} -> ${l.to}`).join('; ')
+}
+
 function csvCell(value) {
   const s = value == null ? '' : String(value)
   return `"${s.replace(/"/g, '""')}"`
@@ -183,6 +224,7 @@ export function buildCsv(entries) {
     'Action (raw)',
     'Target (raw)',
     'Details (raw)',
+    'Changes',
     'Admin email (raw)',
     'Entry ID',
   ]
@@ -198,6 +240,7 @@ export function buildCsv(entries) {
       e.row.action || '',
       e.row.target || '',
       e.row.details || '',
+      changesSummary(e.row.changes),
       e.row.admin_email || '',
       e.row.id || '',
     ].map(csvCell).join(','))

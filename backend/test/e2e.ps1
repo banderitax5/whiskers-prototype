@@ -307,6 +307,23 @@ if ($probeId) {
     $cleared = Invoke-RestMethod -Uri "$base/api/products/$probeId"
     Step 'details: empty list clears sections' ($null -eq $cleared.item.details) "details=$($cleared.item.details)"
   } catch { Step 'details: empty list clears sections' $false "$($_.Exception.Response.StatusCode.value__)" }
+
+  # Phase B: a price patch must land an exact from -> to diff in the new
+  # audit_logs.changes column (owner-run migration; SKIP until applied)
+  try {
+    Invoke-RestMethod -Uri "$base/api/admin/products/$probeId" -Method Patch -Headers $stepUpH -ContentType 'application/json' `
+      -Body (@{ price = 2 } | ConvertTo-Json -Compress) | Out-Null
+    Start-Sleep -Milliseconds 300
+    $audit = Invoke-RestMethod -Uri "$base/api/admin/audit-logs?limit=20" -Headers $authH
+    $arow = @($audit.items | Where-Object { $_.action -eq 'update' -and $_.target -eq "product:$probeId" }) | Select-Object -First 1
+    if (-not $arow) {
+      Step 'audit: price patch writes an audit row' $false 'no audit row for probe product'
+    } elseif ($null -eq $arow.changes) {
+      Step 'audit: structured changes recorded' $false 'skipped: changes column not migrated yet' 'SKIP'
+    } else {
+      Step 'audit: structured changes recorded' (($arow.changes.price.from -eq 1) -and ($arow.changes.price.to -eq 2)) "from=$($arow.changes.price.from) to=$($arow.changes.price.to)"
+    }
+  } catch { Step 'audit: structured changes recorded' $false (Get-ErrBody $_) }
 }
 
 # ── Product admin self-service: name uniqueness + CSV export/import ────────
