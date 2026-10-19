@@ -66,16 +66,22 @@ async function flush() {
 }
 
 // the role control is an AdminRowDropdown whose menu portals to document.body
-async function pickRole(value) {
+async function openRoleMenu() {
   const trigger = document.querySelector('[aria-haspopup="listbox"]')
   if (!trigger) throw new Error('no role dropdown trigger')
   await act(async () => { trigger.click() })
-  await flush()
+  await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+  // each row renders desktop + mobile dropdown instances; only the clicked
+  // one may portal its menu (regression: a stray twin menu used to swallow clicks)
+  return document.querySelectorAll('[role="option"]').length
+}
+async function pickRole(value) {
+  await openRoleMenu()
   const opt = [...document.querySelectorAll('[role="option"]')]
     .find((o) => o.getAttribute('data-value') === value)
   if (!opt) throw new Error(`no option ${value}`)
   await act(async () => { opt.click() })
-  await flush()
+  await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
 }
 
 describe('AdminCustomers role assignment', () => {
@@ -84,7 +90,12 @@ describe('AdminCustomers role assignment', () => {
     const c = await render()
     expect(c.textContent).toMatch(/user/)
 
-    await pickRole('staff')
+    // exactly one menu: the row's desktop + mobile instances both mount,
+    // but only the clicked trigger portals (3 options, not 6)
+    expect(await openRoleMenu()).toBe(3)
+    const opt = document.querySelector('[role="option"][data-value="staff"]')
+    await act(async () => { opt.click() })
+    await flush()
 
     expect(apiPatchAuth).toHaveBeenCalledWith('/admin/customers/c1/role', { role: 'staff' }, 'test')
     expect(toast.success).toHaveBeenCalledWith('Role changed to staff')

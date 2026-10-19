@@ -263,6 +263,10 @@ function selectOptionCls(active) {
 }
 const SELECT_CHEVRON = <svg className="w-2.5 h-2.5 shrink-0 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg>;
 
+// the trigger that opened the current row menu (desktop table and mobile
+// card each render an AdminRowDropdown per row; only the clicked one portals)
+let lastClickedTrigger = null;
+
 export function AdminRowDropdown({ open, onToggle, onClose, value, options, onSelect, disabled }) {
   const triggerRef = useRef(null);
   const menuRef = useRef(null);
@@ -272,6 +276,12 @@ export function AdminRowDropdown({ open, onToggle, onClose, value, options, onSe
     if (!open) { setPos(null); return undefined; }
     const el = triggerRef.current;
     if (!el) return undefined;
+    // each row renders this dropdown twice (desktop table + mobile card,
+    // responsive CSS hides one). Both instances share the parent's open
+    // state, so only the instance that was actually clicked may portal its
+    // menu - otherwise the hidden twin's menu stacks over the visible one,
+    // steals focus and swallows clicks meant for the real options.
+    if (lastClickedTrigger !== el) { setPos(null); return undefined; }
     const r = el.getBoundingClientRect();
     const MENU_MAX = 220;
     // flip above the trigger when there is not enough room below
@@ -333,7 +343,7 @@ export function AdminRowDropdown({ open, onToggle, onClose, value, options, onSe
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`${value} — change status`}
-        onClick={(e) => { e.stopPropagation(); onToggle(); }}
+        onClick={(e) => { e.stopPropagation(); lastClickedTrigger = triggerRef.current; onToggle(); }}
         className={`w-[6rem] ${SELECT_TRIGGER}`}
       >
         <span className="truncate">{value}</span>
