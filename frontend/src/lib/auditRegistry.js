@@ -363,8 +363,9 @@ export const REGISTRY = {
   },
   update: {
     category: 'Products',
-    important: ({ parsed, changes }) => parsed.fields.some((f) => PRICE_FIELDS.has(f))
-      || Boolean(changes && 'price' in changes),
+    important: ({ parsed, changes }) => (changes
+      ? 'price' in changes
+      : parsed.fields.some((f) => PRICE_FIELDS.has(f))),
     describe: ({ who, parsed, label, changes }) => {
       const noun = label ? `the product "${label}"` : 'a deleted product'
       // an exact price diff (Phase B) beats the generic field list
@@ -686,10 +687,18 @@ export const REGISTRY = {
   // ---- store settings ------------------------------------------------------
   settings_update: {
     category: 'Settings',
-    important: ({ parsed }) => parsed.fields.some((f) => SETTINGS_MONEY_FIELDS.has(f)),
-    describe: ({ who, parsed }) => {
-      if (!parsed.fields.length) return `${who} updated the store settings`
-      const fields = parsed.fields.map(humanizeField)
+    // the PATCH submits every visible field, so both the sentence and the
+    // important flag must come from the diff - not from the submitted list
+    important: ({ parsed, changes }) => {
+      const changedKeys = changes ? Object.keys(changes) : []
+      const list = changedKeys.length ? changedKeys : parsed.fields
+      return list.some((f) => SETTINGS_MONEY_FIELDS.has(f))
+    },
+    describe: ({ who, parsed, changes }) => {
+      const changedKeys = changes ? Object.keys(changes) : []
+      const source = changedKeys.length ? changedKeys : parsed.fields
+      if (!source.length) return `${who} updated the store settings`
+      const fields = source.map(humanizeField)
       return `${who} updated the store settings: ${fields.join(', ')}`
     },
   },

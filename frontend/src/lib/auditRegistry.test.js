@@ -112,6 +112,39 @@ describe('describeEntry sentences (owner-facing examples)', () => {
     expect(e.important).toBe(false)
   })
 
+  it('settings sentence lists only diffed fields, not every submitted key', () => {
+    // the settings PATCH submits every visible field, so details carries all
+    // of them while changes holds only what actually differed
+    const e = describeEntry(
+      {
+        action: 'settings_update',
+        target: 'site_settings',
+        details: 'updated: store_name, tagline, contact_phone, contact_email, store_hours, logo_url, shipping_fee, free_shipping_threshold, payment_methods, maintenance_mode, low_stock_threshold',
+        changes: {
+          store_name: { from: 'Whiskers Pet Shop test', to: 'Whiskers Pet Shop' },
+          shipping_fee: { from: 90, to: 75 },
+        },
+      },
+      { who }
+    )
+    expect(e.sentence).toBe('You updated the store settings: Store name, Shipping fee.')
+    expect(e.important).toBe(true) // the diff touched money (shipping fee)
+  })
+
+  it('settings important flag follows the diff, not the submitted list', () => {
+    const e = describeEntry(
+      {
+        action: 'settings_update',
+        target: 'site_settings',
+        details: 'updated: shipping_fee, tagline',
+        changes: { tagline: { from: 'Old', to: 'New' } },
+      },
+      { who }
+    )
+    expect(e.sentence).toBe('You updated the store settings: Tagline.')
+    expect(e.important).toBe(false)
+  })
+
   it('marks shipping/payment settings updates important', () => {
     const e = describeEntry(
       { action: 'settings_update', target: 'site_settings', details: 'updated: shipping_fee, payment_methods' },
@@ -170,6 +203,20 @@ describe('describeEntry sentences (owner-facing examples)', () => {
       { who, label: 'Royal Canin Adult 10kg' }
     )
     expect(withLabel.sentence).toBe('You updated the product "Royal Canin Adult 10kg" (changed: Price).')
+  })
+
+  it('stock-only product updates are not important even when price was submitted', () => {
+    const e = describeEntry(
+      {
+        action: 'update',
+        target: 'product:p1',
+        details: 'price, stock_quantity',
+        changes: { stock_quantity: { from: 10, to: 20 } },
+      },
+      { who, label: 'Alpha Pro 10kg' }
+    )
+    expect(e.sentence).toBe('You updated the product "Alpha Pro 10kg" (changed: Stock quantity).')
+    expect(e.important).toBe(false)
   })
 
   it('product delete is important and handles missing labels', () => {
