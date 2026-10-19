@@ -177,8 +177,11 @@ if (@($prof).Count -eq 0) {
     Step 'profiles row created' $true
   } catch { Step 'profiles row created' ($false) (Get-ErrBody $_) }
 } else { Step 'profiles row exists' $true $prof[0].role }
+# promote to admin and give the temp account a display name, so the
+# audit actor-name resolution has something to show (plain values pass
+# through decryptText unchanged - same pattern as the unit fixtures)
 Invoke-RestMethod -Uri "$SU/rest/v1/profiles?id=eq.$uid" -Method Patch -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } -ContentType 'application/json' `
-  -Body (@{ role = 'admin' } | ConvertTo-Json -Compress) | Out-Null
+  -Body (@{ role = 'admin'; first_name = 'E2E'; last_name = 'Probe Admin' } | ConvertTo-Json -Compress) | Out-Null
 
 # owner-independent draft check: the public payload must never contain a row
 # the admin list still marks draft (scheduled rows are served in-window by
@@ -322,6 +325,12 @@ if ($probeId) {
       Step 'audit: structured changes recorded' $false 'skipped: changes column not migrated yet' 'SKIP'
     } else {
       Step 'audit: structured changes recorded' (($arow.changes.price.from -eq 1) -and ($arow.changes.price.to -eq 2)) "from=$($arow.changes.price.from) to=$($arow.changes.price.to)"
+    }
+    # the list response resolves actor emails to account names (best-effort)
+    if ($arow) {
+      Step 'audit: actor name resolved' ($arow.actor_name -eq 'E2E Probe Admin') "actor_name=$($arow.actor_name)"
+    } else {
+      Step 'audit: actor name resolved' $false 'no audit row for probe product'
     }
   } catch { Step 'audit: structured changes recorded' $false (Get-ErrBody $_) }
 }

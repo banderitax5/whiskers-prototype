@@ -319,7 +319,7 @@ export default function ContentHistoryDialog({ entity, onClose }) {
                         {name}
                       </span>
                     )}
-                    <span className="font-semibold text-gray-800 dark:text-slate-200">{row.actor || "Unknown"}</span>
+                    <span className="font-semibold text-gray-800 dark:text-slate-200">{row.actor_name || row.actor || 'Unknown'}</span>
                     <span className="text-gray-500 dark:text-slate-400">{new Date(row.created_at).toLocaleString()}</span>
                   </summary>
                   <SnapshotView snapshot={row.snapshot} />

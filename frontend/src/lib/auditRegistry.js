@@ -737,6 +737,7 @@ export function describeEntry(row, ctx = {}) {
     hidden: Boolean(entry?.hidden),
     parsed,
     target,
+    who,
     row,
   }
 }

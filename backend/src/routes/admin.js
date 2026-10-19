@@ -24,6 +24,7 @@ import { sanitizeSettings, sanitizeFaq, sanitizePolicy, mergeSettings } from '..
 import { invalidateSettingsCache } from '../utils/shopSettings.js'
 import { missingColumnOf, isSchemaPendingError } from '../utils/pgErrors.js'
 import { sanitizeChanges } from '../utils/auditChanges.js'
+import { withActorNames } from '../utils/actorNames.js'
 import { effectiveUnitPrice, lineMargin } from '../utils/orderCosting.js'
 import { sendOrderStatusEmail, sendSupportReplyEmail, maskEmail } from '../utils/mailer.js'
 import { recordContentHistory, diffChanges, historyLabel } from '../utils/contentHistory.js'
@@ -1327,7 +1328,8 @@ router.get('/audit-logs', requireAdmin, async (req, res) => {
       .order('created_at', { ascending: false })
       .limit(limit)
     if (error) throw error
-    res.json({ items: data || [] })
+    // actor_name: resolved account name for the admin_email actor (best-effort)
+    res.json({ items: await withActorNames(data || []) })
   } catch (err) {
     logger.error({ err }, 'Admin audit logs error')
     res.status(500).json({ error: 'Server error' })
@@ -2416,7 +2418,8 @@ router.get('/content-history', requireAdmin, async (req, res) => {
       if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
       throw error
     }
-    res.json({ items: data || [], total: count ?? 0 })
+    // actor_name: resolved account name for the history actor email
+    res.json({ items: await withActorNames(data || [], 'actor'), total: count ?? 0 })
   } catch (err) {
     logger.error({ err }, 'Content history list error')
     res.status(500).json({ error: 'Failed to load content history' })

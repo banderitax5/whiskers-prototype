@@ -77,6 +77,7 @@ const SAMPLE = [
   {
     id: 'row-role',
     admin_email: 'juan@example.com',
+    actor_name: 'Juan Dela Cruz',
     action: 'role_change',
     target: `user:${U1}`,
     details: 'role -> staff (step-up verified)',
@@ -134,6 +135,9 @@ describe('Audit logs page', () => {
     const text = container.textContent
     expect(text).toContain('You updated the store settings: Store name, Shipping fee.')
     expect(text).toContain('changed the role of "Juan Dela Cruz" to staff')
+    // actor emails are shown as account names when the backend resolved them
+    expect(text).toContain('Juan Dela Cruz changed the role')
+    expect(text).not.toContain('juan@example.com')
     expect(text).toContain('You deleted a product that is no longer in the catalog.')
     expect(text).toContain("You changed an order's status to Shipped.")
     // step-up rows are a security category, off until the owner asks for them

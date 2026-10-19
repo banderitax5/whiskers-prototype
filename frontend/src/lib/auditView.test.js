@@ -186,11 +186,16 @@ describe('formatChangeValue / changeLines / changesSummary', () => {
 })
 
 describe('whoFor / shortId', () => {
-  it('maps the session email to You and blanks to Someone', () => {
+  it('prefers You, then the resolved account name, then the email', () => {
     expect(whoFor('Admin@Example.com', 'admin@example.com')).toBe('You')
+    // session match wins even when a name is available
+    expect(whoFor('Admin@Example.com', 'admin@example.com', 'Admin Person')).toBe('You')
+    expect(whoFor('juan@example.com', 'admin@example.com', 'Juan Dela Cruz')).toBe('Juan Dela Cruz')
+    // blank/whitespace names fall back to the email
+    expect(whoFor('juan@example.com', 'admin@example.com', '  ')).toBe('juan@example.com')
     expect(whoFor('other@example.com', 'admin@example.com')).toBe('other@example.com')
-    expect(whoFor('unknown', 'admin@example.com')).toBe('Someone')
-    expect(whoFor(null, 'admin@example.com')).toBe('Someone')
+    expect(whoFor('unknown', 'admin@example.com', 'X')).toBe('Someone')
+    expect(whoFor(null, 'admin@example.com', 'X')).toBe('Someone')
   })
 
   it('shortens long ids', () => {

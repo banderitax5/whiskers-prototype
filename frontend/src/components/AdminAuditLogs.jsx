@@ -241,7 +241,7 @@ const AdminAuditLogs = () => {
     let label = null
     if (t.kind === 'user' && t.id) label = resolved.userName(t.id)
     if (t.kind === 'product' && t.id) label = resolved.productName(t.id)
-    const who = whoFor(row.admin_email, sessionEmail)
+    const who = whoFor(row.admin_email, sessionEmail, row.actor_name)
     return describeEntry(row, { who, label })
   }), [logs, sessionEmail, resolved])
 
@@ -256,17 +256,17 @@ const AdminAuditLogs = () => {
   }, [entries, activeFilters, sortDir])
 
   const personOptions = useMemo(() => {
-    const seen = new Map()
+    const seen = new Map() // lowercased email -> display label (name when known)
     for (const row of logs) {
       const email = String(row.admin_email || '').toLowerCase()
       if (!email || email === 'unknown' || seen.has(email)) continue
-      seen.set(email, email)
+      seen.set(email, row.actor_name || email)
     }
     return [
       { value: 'all', label: 'All people' },
-      ...[...seen.keys()].map((email) => ({
+      ...[...seen.entries()].map(([email, label]) => ({
         value: email,
-        label: email === String(sessionEmail || '').toLowerCase() ? 'You' : email,
+        label: email === String(sessionEmail || '').toLowerCase() ? 'You' : label,
       })),
     ]
   }, [logs, sessionEmail])
@@ -432,7 +432,7 @@ const AdminAuditLogs = () => {
                             >
                               <div className="flex items-center justify-between gap-2 text-[10px] text-gray-500 dark:text-slate-400">
                                 <WhenCell e={e} />
-                                <span className="truncate">{whoFor(e.row.admin_email, sessionEmail)}</span>
+                                <span className="truncate">{e.who}</span>
                               </div>
                               <p className="text-sm text-gray-900 dark:text-slate-100 mt-1">{e.sentence}</p>
                               <EntryChips e={e} />
@@ -494,7 +494,7 @@ const AdminAuditLogs = () => {
                                 <tr className="border-b border-gray-100 dark:border-[#1e3a5f] hover:bg-yellow-50 dark:hover:bg-[#162d4a]/50 transition-colors align-top">
                                   <td className="py-3 px-4"><WhenCell e={e} /></td>
                                   <td className="py-3 px-4 text-xs font-medium text-gray-700 dark:text-slate-300 break-words">
-                                    {whoFor(e.row.admin_email, sessionEmail)}
+                                    {e.who}
                                   </td>
                                   <td className="py-3 px-4">
                                     <p className="text-sm text-gray-900 dark:text-slate-100">{e.sentence}</p>

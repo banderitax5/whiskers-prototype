@@ -233,7 +233,7 @@ export function buildCsv(entries) {
     lines.push([
       exactLabel(e.row.created_at),
       e.row.created_at || '',
-      e.row.admin_email || '',
+      e.who || e.row.admin_email || '',
       e.sentence,
       e.category,
       e.important ? 'yes' : 'no',
@@ -339,9 +339,12 @@ export function createResolver() {
   }
 }
 
-export function whoFor(adminEmail, sessionEmail) {
+// display label for the actor behind a row: "You" for the signed-in admin,
+// the resolved account name when the backend supplied one, else the email
+export function whoFor(adminEmail, sessionEmail, actorName) {
   const email = String(adminEmail || '')
   if (!email || email === 'unknown') return 'Someone'
   if (sessionEmail && email.toLowerCase() === String(sessionEmail).toLowerCase()) return 'You'
+  if (actorName && String(actorName).trim()) return String(actorName).trim()
   return email
 }

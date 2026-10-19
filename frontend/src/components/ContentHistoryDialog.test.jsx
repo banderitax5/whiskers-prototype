@@ -39,19 +39,30 @@ function button(container, text) {
 }
 
 const items = [
-  { id: 1, action: 'create', actor: 'owner@example.com', created_at: '2026-10-14T10:00:00Z', snapshot: { label: 'Menu' } },
-  { id: 2, action: 'archive', actor: 'owner@example.com', created_at: '2026-10-14T11:00:00Z', snapshot: { label: 'Menu' } },
+  { id: 1, action: 'create', actor: 'owner@example.com', actor_name: 'Owner Person', created_at: '2026-10-14T10:00:00Z', snapshot: { label: 'Menu' } },
+  { id: 2, action: 'archive', actor: 'owner@example.com', actor_name: 'Owner Person', created_at: '2026-10-14T11:00:00Z', snapshot: { label: 'Menu' } },
 ]
 
 describe('ContentHistoryDialog', () => {
-  it('lists entries with action labels and actor, filtered by entity', async () => {
+  it('lists entries with action labels and the resolved actor name', async () => {
     apiGetAuth.mockResolvedValue({ items, total: 2 })
     const { c } = await render('nav_items')
     await flush()
     expect(c.textContent).toMatch(/Created/)
     expect(c.textContent).toMatch(/Archived/)
-    expect(c.textContent).toMatch(/owner@example\.com/)
+    expect(c.textContent).toMatch(/Owner Person/)
+    expect(c.textContent).not.toMatch(/owner@example\.com/)
     expect(apiGetAuth.mock.calls[0][0]).toContain('entity=nav_items')
+  })
+
+  it('falls back to the actor email when no name resolved (legacy rows)', async () => {
+    apiGetAuth.mockResolvedValue({
+      items: [{ id: 9, action: 'create', actor: 'old@example.com', created_at: '2026-10-14T10:00:00Z', snapshot: { label: 'X' } }],
+      total: 1,
+    })
+    const { c } = await render('banners')
+    await flush()
+    expect(c.textContent).toMatch(/old@example\.com/)
   })
 
   it('shows the empty state when nothing is recorded', async () => {
