@@ -8,6 +8,9 @@
 //      replaces an SDK.
 //   3. Without BREVO_API_KEY + MAIL_FROM_EMAIL (dev, CI, E2E) calls are
 //      skipped without touching the network - no key means no side effects.
+//      MAIL_DISABLED=1 is the explicit kill-switch for test/E2E runs: an
+//      empty BREVO_API_KEY pre-set is unreliable on Windows (PowerShell
+//      drops empty env vars, so dotenv re-loads the real key from .env).
 //   4. PII hygiene: recipient addresses are never logged in full; only a
 //      masked form (a***@d***.com) plus the business id appears in logs.
 //
@@ -26,6 +29,8 @@ const BREVO_ENDPOINT = 'https://api.brevo.com/v3/smtp/email'
 const TIMEOUT_MS = 5000
 
 function isMailConfigured() {
+  // explicit off-switch for E2E/probes (wins over a key present in .env)
+  if (process.env.MAIL_DISABLED === '1') return false
   return Boolean(process.env.BREVO_API_KEY && process.env.MAIL_FROM_EMAIL)
 }
 
