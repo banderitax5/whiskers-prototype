@@ -909,7 +909,7 @@ router.delete('/products/:id', requireAdmin, async (req, res) => {
       .from('product')
       .delete()
       .eq('prod_id', req.params.id)
-      .select('image_url')
+      .select('image_url, prod_name, price, category, brand')
     if (delErr) {
       // race backstop: an order slipped in between the check and the delete
       if (delErr.code === '23503') {
@@ -930,7 +930,19 @@ router.delete('/products/:id', requireAdmin, async (req, res) => {
     }
 
     res.json({ success: true })
-    logAudit({ adminEmail: req.userEmail, action: 'delete', target: `product:${req.params.id}` })
+    // snapshot before the row is gone: the audit page can no longer fetch
+    // the product for a name, and "Details not recorded" helps no one
+    logAudit({
+      adminEmail: req.userEmail,
+      action: 'delete',
+      target: `product:${req.params.id}`,
+      changes: {
+        prod_name: deleted[0].prod_name,
+        price: deleted[0].price,
+        category: deleted[0].category,
+        brand: deleted[0].brand,
+      },
+    })
   } catch (err) {
     logger.error({ err }, 'Admin product delete error')
     res.status(500).json({ error: 'Server error' })
@@ -1230,18 +1242,39 @@ router.delete('/orders/:id', requireAdmin, async (req, res) => {
   if (!requireUuidParam(req, res)) return
   const orderId = req.params.id
   try {
+    // line count first: the details rows are about to be deleted
+    const { count: items } = await supabaseAdmin
+      .from('order_details')
+      .select('order_id', { count: 'exact', head: true })
+      .eq('order_id', orderId)
     // delete payment
     await supabaseAdmin.from('payment').delete().eq('order_id', orderId)
     // delete order_details
     await supabaseAdmin.from('order_details').delete().eq('order_id', orderId)
     // delete the order itself
-    const { data: deleted, error } = await supabaseAdmin.from('orders').delete().eq('order_id', orderId).select('order_id')
+    const { data: deleted, error } = await supabaseAdmin
+      .from('orders')
+      .delete()
+      .eq('order_id', orderId)
+      .select('customer_name, total_amount, status')
     if (error) throw error
     if (!deleted || deleted.length === 0) {
       return res.status(404).json({ error: 'Order not found' })
     }
     res.json({ success: true })
-    logAudit({ adminEmail: req.userEmail, action: 'delete', target: `order:${orderId}` })
+    // snapshot what was destroyed so the audit entry is readable later
+    const row = deleted[0]
+    logAudit({
+      adminEmail: req.userEmail,
+      action: 'delete',
+      target: `order:${orderId}`,
+      changes: {
+        customer_name: row.customer_name,
+        total_amount: row.total_amount,
+        status: row.status,
+        items: items ?? 0,
+      },
+    })
   } catch (err) {
     logger.error({ err }, 'Admin order delete error')
     res.status(500).json({ error: 'Server error' })
@@ -1256,13 +1289,19 @@ router.delete('/payments/:id', requireAdmin, async (req, res) => {
       .from('payment')
       .delete()
       .eq('payment_id', req.params.id)
-      .select('payment_id')
+      .select('order_id, amount, method')
     if (error) throw error
     if (!deleted || deleted.length === 0) {
       return res.status(404).json({ error: 'Payment not found' })
     }
     res.json({ success: true })
-    logAudit({ adminEmail: req.userEmail, action: 'delete', target: `payment:${req.params.id}` })
+    const row = deleted[0]
+    logAudit({
+      adminEmail: req.userEmail,
+      action: 'delete',
+      target: `payment:${req.params.id}`,
+      changes: { order_id: row.order_id, amount: row.amount, method: row.method },
+    })
   } catch (err) {
     logger.error({ err }, 'Admin payment delete error')
     res.status(500).json({ error: 'Server error' })
@@ -2976,6 +3015,9 @@ router.post('/promos', requireAdmin, async (req, res) => {
   if (scope !== 'sitewide' && !target_id) {
     return res.status(400).json({ error: 'target_id is required for category/product scope' })
   }
+  if (starts_at && ends_at && new Date(ends_at) <= new Date(starts_at)) {
+    return res.status(400).json({ error: 'Ends at must come after starts at' })
+  }
 
   const promoCode = String(code).trim().toUpperCase()
 
@@ -3071,6 +3113,13 @@ router.patch('/promos/:code', requireAdmin, async (req, res) => {
 
   try {
     const { data: prev } = await supabaseAdmin.from('promos').select('*').eq('code', code).maybeSingle()
+    // merged window check: a PATCH that only moves one of the two dates
+    // still has to leave ends after starts
+    const effStart = updates.starts_at !== undefined ? updates.starts_at : prev?.starts_at
+    const effEnd = updates.ends_at !== undefined ? updates.ends_at : prev?.ends_at
+    if (effStart && effEnd && new Date(effEnd) <= new Date(effStart)) {
+      return res.status(400).json({ error: 'Ends at must come after starts at' })
+    }
     const { data, error } = await supabaseAdmin
       .from('promos')
       .update(updates)

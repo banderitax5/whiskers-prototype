@@ -5,6 +5,7 @@ import { AdminPage, StatusPill, EmptyState, btnPrimary, btnGhost, ConfirmDialog,
 import ImagePicker from "./ImagePicker.jsx"
 import ProductPicker from "./ProductPicker.jsx"
 import ContentHistoryDialog from "./ContentHistoryDialog.jsx"
+import { dateWindowError } from "../lib/scheduleWindow.js"
 import {
   useSelection, useLongPress, useReorderDrag, RowCheckBox, SelectionBar, SelectAllRow,
   GripHandle, bulkApply, bulkSummary, barBtnAccent, barBtnDanger, barBtnPlain,
@@ -159,6 +160,11 @@ function BannerDialog({ title, placement, initial, onClose, onSubmit }) {
     setError("")
     if (form.link_type !== "none" && !String(form.link_target || "").trim()) {
       setError("Choose where this banner should link, or switch back to “No link”.")
+      return
+    }
+    const winErr = dateWindowError(form.starts_at, form.ends_at)
+    if (winErr) {
+      setError(winErr)
       return
     }
     setSaving(true)

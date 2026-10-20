@@ -4,6 +4,7 @@ import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from '..
 import { AdminPage, AdminTable, EmptyState, StatCard, btnPrimary, StatusPill, ConfirmDialog, AdminSelect } from './adminTheme';
 import ProductPicker from './ProductPicker.jsx';
 import { formatPesos } from '../lib/cartLogic';
+import { dateWindowError, END_BEFORE_START } from '../lib/scheduleWindow';
 import { BsGift, BsPlusLg, BsPencilSquare, BsTrash } from 'react-icons/bs';
 import toast from 'react-hot-toast';
 
@@ -180,6 +181,7 @@ useEffect(() => {
     if (formData.max_discount !== '' && Number(formData.max_discount) < 0) return 'Maximum discount must be at least 0.';
     if (formData.usage_limit !== '' && Number(formData.usage_limit) < 1) return 'Usage limit must be at least 1.';
     if (formData.per_user_limit !== '' && Number(formData.per_user_limit) < 1) return 'Per-user limit must be at least 1.';
+    if (dateWindowError(formData.starts_at, formData.ends_at)) return END_BEFORE_START;
     return '';
   }
 

@@ -4,6 +4,7 @@ import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from "..
 import { AdminPage, StatusPill, EmptyState, btnPrimary, btnGhost, ConfirmDialog, AdminSelect } from "./adminTheme.jsx"
 import ProductPicker from "./ProductPicker.jsx"
 import ContentHistoryDialog from "./ContentHistoryDialog.jsx"
+import { dateWindowError } from "../lib/scheduleWindow.js"
 import {
   useSelection, useLongPress, useReorderDrag, RowCheckBox, SelectionBar, SelectAllRow,
   GripHandle, bulkApply, bulkSummary, barBtnAccent, barBtnDanger, barBtnPlain,
@@ -103,6 +104,11 @@ function SectionDialog({ initial, onClose, onSubmit }) {
   async function handleSubmit(e) {
     e.preventDefault()
     setError("")
+    const winErr = dateWindowError(form.starts_at, form.ends_at)
+    if (winErr) {
+      setError(winErr)
+      return
+    }
     setSaving(true)
     try {
       let config = {}

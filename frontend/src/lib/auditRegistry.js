@@ -88,6 +88,12 @@ const FIELD_LABELS = {
   name: 'Name',
   icon: 'Icon',
   type_id: 'Type',
+  customer_name: 'Customer',
+  total_amount: 'Order total',
+  amount: 'Amount paid',
+  method: 'Payment method',
+  items: 'Items',
+  order_id: 'Order',
 }
 
 export function humanizeField(field) {
@@ -392,10 +398,40 @@ export const REGISTRY = {
     },
   },
   delete: {
-    category: 'Products',
+    // one action code covers product, order and payment deletes - the
+    // sentence and chip must follow the target, not assume a product
+    category: (row) => {
+      const t = parseTarget(row.target)
+      if (t.kind === 'order') return 'Orders'
+      if (t.kind === 'payment') return 'Payments'
+      return 'Products'
+    },
     important: true,
-    describe: ({ who, label }) => {
-      const noun = label ? `the product "${label}"` : 'a product that is no longer in the catalog'
+    describe: ({ who, target, label, changes }) => {
+      if (target.kind === 'order') {
+        const cust = changes?.customer_name?.to
+        const total = changes?.total_amount?.to
+        const items = changes?.items?.to
+        const bits = []
+        if (cust) bits.push(`from "${cust}"`)
+        if (typeof total === 'number') bits.push(`worth ₱${formatPesos(total)}`)
+        if (typeof items === 'number') bits.push(`${items} item${items === 1 ? '' : 's'}`)
+        return bits.length ? `${who} deleted the order ${bits.join(', ')}` : `${who} deleted an order`
+      }
+      if (target.kind === 'payment') {
+        const amt = changes?.amount?.to
+        const method = changes?.method?.to
+        const bits = []
+        if (typeof amt === 'number') bits.push(`worth ₱${formatPesos(amt)}`)
+        if (method) bits.push(`via ${method}`)
+        return bits.length ? `${who} deleted the payment record ${bits.join(', ')}` : `${who} deleted a payment record`
+      }
+      // the row is gone, so the live label resolver comes back empty - the
+      // delete-time snapshot still has the name
+      const snap = changes?.prod_name?.to
+      const noun = label
+        ? `the product "${label}"`
+        : (snap ? `the product "${snap}"` : 'a product that is no longer in the catalog')
       return `${who} deleted ${noun}`
     },
   },

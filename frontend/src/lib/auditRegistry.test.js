@@ -225,6 +225,50 @@ describe('describeEntry sentences (owner-facing examples)', () => {
     expect(e.important).toBe(true)
     const named = describeEntry({ action: 'delete', target: 'product:p1' }, { who, label: 'Treats' })
     expect(named.sentence).toBe('You deleted the product "Treats".')
+    const snap = describeEntry(
+      { action: 'delete', target: 'product:p1', changes: { prod_name: { from: null, to: 'Treats' } } },
+      { who, label: null }
+    )
+    expect(snap.sentence).toBe('You deleted the product "Treats".')
+  })
+
+  it('order delete reads like an order and carries its snapshot', () => {
+    const e = describeEntry(
+      {
+        action: 'delete',
+        target: 'order:32832dc6-bf49-4f6f-8778-8e04ecf86ae2',
+        changes: {
+          customer_name: { from: null, to: 'Juan Dela Cruz' },
+          total_amount: { from: null, to: 1234.5 },
+          status: { from: null, to: 'Pending' },
+          items: { from: null, to: 3 },
+        },
+      },
+      { who, label: null }
+    )
+    expect(e.sentence).toBe('You deleted the order from "Juan Dela Cruz", worth ₱1,234.50, 3 items.')
+    expect(e.category).toBe('Orders')
+    expect(e.important).toBe(true)
+    const bare = describeEntry({ action: 'delete', target: 'order:o1' }, { who, label: null })
+    expect(bare.sentence).toBe('You deleted an order.')
+    expect(bare.category).toBe('Orders')
+  })
+
+  it('payment delete reads like a payment', () => {
+    const e = describeEntry(
+      {
+        action: 'delete',
+        target: 'payment:pay1',
+        changes: {
+          order_id: { from: null, to: '32832dc6-bf49-4f6f-8778-8e04ecf86ae2' },
+          amount: { from: null, to: 265 },
+          method: { from: null, to: 'gcash' },
+        },
+      },
+      { who, label: null }
+    )
+    expect(e.sentence).toBe('You deleted the payment record worth ₱265.00, via gcash.')
+    expect(e.category).toBe('Payments')
   })
 
   it('order status and support reply sentences', () => {
