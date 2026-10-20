@@ -3,9 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('../lib/api', () => ({
   apiGetAllPages: vi.fn(),
   apiGet: vi.fn(),
+  apiGetAuth: vi.fn(),
 }))
 
-import { apiGetAllPages, apiGet } from '../lib/api.js'
+import { apiGetAllPages, apiGet, apiGetAuth } from '../lib/api.js'
 import {
   buildCsv, changeLines, changesSummary, createResolver, dayKey, dayLabel, exactLabel,
   filterEntries, formatChangeValue, groupByDay, hasActiveFilters, inDateRange, relativeLabel,
@@ -167,6 +168,12 @@ describe('formatChangeValue / changeLines / changesSummary', () => {
     expect(formatChangeValue('alt_text', 'x'.repeat(200))).toHaveLength(123)
   })
 
+  it('formats raw ISO timestamps as Manila date-times', () => {
+    const iso = '2026-10-16T18:59:36.85+00:00'
+    expect(formatChangeValue('archived_at', iso)).toBe(exactLabel(new Date(iso)))
+    expect(formatChangeValue('archived_at', iso)).not.toContain('T18:')
+  })
+
   it('turns a changes map into labelled lines and a one-line summary', () => {
     const lines = changeLines({ price: { from: 265, to: 299 }, is_active: { from: true, to: false } })
     expect(lines).toEqual([
@@ -264,5 +271,37 @@ describe('createResolver', () => {
     await resolver.resolve([{ target: 'site_settings' }, { target: 'hero' }], 'tok')
     expect(apiGetAllPages).not.toHaveBeenCalled()
     expect(apiGet).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the admin product row for archived products', async () => {
+    apiGetAllPages.mockResolvedValue({ items: [] })
+    apiGet.mockRejectedValue(new Error('404')) // public detail hides archived
+    apiGetAuth.mockResolvedValue({ item: { prod_name: 'Archived Dog Food 5kg' } })
+    const resolver = createResolver()
+    const { productName } = await resolver.resolve(
+      [{ target: 'product:22222222-2222-2222-2222-222222222222' }],
+      'tok'
+    )
+    expect(apiGetAuth).toHaveBeenCalledWith('/admin/products/22222222-2222-2222-2222-222222222222', 'tok')
+    expect(productName('22222222-2222-2222-2222-222222222222')).toBe('Archived Dog Food 5kg')
+  })
+
+  it('resolves the requester behind a support target', async () => {
+    apiGetAllPages.mockImplementation(async (path) => {
+      if (path === '/admin/supports') {
+        return {
+          items: [{ support_id: '99999999-9999-9999-9999-999999999999', firstName: 'Juan', lastName: 'Dela Cruz' }],
+        }
+      }
+      return { items: [] }
+    })
+    const resolver = createResolver()
+    const { supportName } = await resolver.resolve(
+      [{ target: 'support:99999999-9999-9999-9999-999999999999' }],
+      'tok'
+    )
+    expect(apiGetAllPages).toHaveBeenCalledWith('/admin/supports', 'tok', { pageSize: 100, maxPages: 10 })
+    expect(supportName('99999999-9999-9999-9999-999999999999')).toBe('Juan Dela Cruz')
+    expect(supportName('unknown')).toBeNull()
   })
 })

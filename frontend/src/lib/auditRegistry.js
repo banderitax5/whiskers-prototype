@@ -374,6 +374,15 @@ export const REGISTRY = {
       if (label && changes?.price?.from != null && changes?.price?.to != null) {
         return `${who} changed the price of ${noun} from ₱${formatPesos(changes.price.from)} to ₱${formatPesos(changes.price.to)}`
       }
+      // archive/restore (archived_at is the source of truth; is_active is
+      // implied by archiving and left out of the suffix)
+      if (changes?.archived_at) {
+        const other = Object.keys(changes).filter((k) => k !== 'archived_at' && k !== 'is_active')
+        const suffix = other.length ? ` (changed: ${other.map(humanizeField).join(', ')})` : ''
+        const archNoun = label ? `the product "${label}"` : 'a product'
+        if (changes.archived_at.to == null) return `${who} restored ${archNoun}${suffix}`
+        return `${who} archived ${archNoun}${suffix}`
+      }
       // the structured diff (exact changed fields) beats the details list,
       // which carries every submitted column - not only what actually changed
       const changedKeys = changes ? Object.keys(changes) : []
@@ -418,8 +427,12 @@ export const REGISTRY = {
       if (t.kind === 'support') return 'Support'
       return 'Other'
     },
-    describe: ({ who, parsed, target, changes }) => {
-      if (target.kind === 'support') return `${who} replied to a support request`
+    describe: ({ who, parsed, target, changes, label }) => {
+      if (target.kind === 'support') {
+        return label
+          ? `${who} replied to the support request from "${label}"`
+          : `${who} replied to a support request`
+      }
       const to = changes?.status?.to != null
         ? statusWord(changes.status.to)
         : (parsed.changes[0] ? statusWord(parsed.changes[0].to) : 'a new status')

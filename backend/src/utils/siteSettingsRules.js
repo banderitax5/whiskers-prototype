@@ -213,6 +213,48 @@ export function enabledPaymentMethods(settings = {}) {
   return (full.payment_methods || []).filter((m) => m && m.enabled)
 }
 
+// one readable line describing what changed between two payment_methods
+// arrays, e.g. "GCash: QR image added; PayMaya: turned off". The raw arrays
+// are huge JSON blobs - useless in the audit log's "What changed" panel.
+export function summarizePaymentMethods(before, after) {
+  const toArr = (v) => {
+    if (Array.isArray(v)) return v
+    if (typeof v === 'string') {
+      try {
+        const parsed = JSON.parse(v)
+        return Array.isArray(parsed) ? parsed : []
+      } catch { return [] }
+    }
+    return []
+  }
+  const keyOf = (m) => String(m?.id ?? m?.label ?? '')
+  const b = toArr(before)
+  const a = toArr(after)
+  const parts = []
+  for (const m of a) {
+    if (!m || typeof m !== 'object') continue
+    const old = b.find((x) => keyOf(x) === keyOf(m))
+    // identify the method by the name the admin knew before the change
+    const label = old?.label || m.label || keyOf(m) || 'method'
+    if (!old) { parts.push(`${label}: added`); continue }
+    const bits = []
+    if (Boolean(old.enabled) !== Boolean(m.enabled)) bits.push(m.enabled ? 'turned on' : 'turned off')
+    if (String(old.label ?? '') !== String(m.label ?? '')) bits.push(`renamed to ${m.label || ''}`)
+    if (String(old.qr_url ?? '') !== String(m.qr_url ?? '')) {
+      bits.push(m.qr_url ? (old.qr_url ? 'QR image changed' : 'QR image added') : 'QR image removed')
+    }
+    if (String(old.instructions ?? '') !== String(m.instructions ?? '')) {
+      bits.push(m.instructions ? 'instructions updated' : 'instructions cleared')
+    }
+    if (bits.length) parts.push(`${label}: ${bits.join(', ')}`)
+  }
+  for (const m of b) {
+    if (!m || typeof m !== 'object') continue
+    if (!a.some((x) => keyOf(x) === keyOf(m))) parts.push(`${m.label || keyOf(m)}: removed`)
+  }
+  return parts.length ? parts.join('; ') : 'no change'
+}
+
 // ── FAQs and policy pages (Phase 6 "remaining content") ─────────────────────
 
 export function sanitizeFaq(input = {}) {

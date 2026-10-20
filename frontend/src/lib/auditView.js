@@ -3,7 +3,7 @@
 // target resolver that turns uuids into readable names. Pure functions take
 // an injectable `now` so tests are deterministic.
 
-import { apiGet, apiGetAllPages } from './api'
+import { apiGet, apiGetAuth, apiGetAllPages } from './api'
 import { formatPesos } from './cartLogic'
 import { humanizeField } from './auditRegistry'
 
@@ -185,6 +185,11 @@ export function formatChangeValue(field, value) {
     return `₱${formatPesos(value)}`
   }
   if (typeof value === 'number') return String(value)
+  // raw ISO timestamps (e.g. archived_at) read as Manila date-times, not 2026-10-16T18:59:36.85+00:00
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) {
+    const d = new Date(value)
+    if (!Number.isNaN(d.getTime())) return exactLabel(d)
+  }
   const text = String(value)
   return text.length > 120 ? `${text.slice(0, 120)}...` : text
 }
@@ -274,8 +279,10 @@ export function downloadCsv(filename, text) {
 export function createResolver() {
   const userNames = new Map() // uuid -> display name
   const productNames = new Map() // uuid -> name or null (null = deleted)
+  const supportNames = new Map() // support_id -> requester display name
   let userFetch = null
   let productFetch = null
+  let supportFetch = null
 
   function loadUsers(token) {
     if (!userFetch) {
@@ -294,7 +301,7 @@ export function createResolver() {
     return userFetch
   }
 
-  function loadProducts(ids) {
+  function loadProducts(ids, token) {
     const missing = ids.filter((id) => !productNames.has(id))
     if (missing.length === 0) return Promise.resolve()
     if (!productFetch) productFetch = new Map()
@@ -307,7 +314,14 @@ export function createResolver() {
           const item = data?.item || data
           productNames.set(id, item?.prod_name || null)
         } catch {
-          productNames.set(id, null)
+          // the public detail endpoint hides archived/inactive products - the
+          // admin row (which includes them) is the fallback for those
+          try {
+            const data = await apiGetAuth(`/admin/products/${id}`, token)
+            productNames.set(id, data?.item?.prod_name || null)
+          } catch {
+            productNames.set(id, null)
+          }
         }
       })()
       productFetch.set(id, job)
@@ -316,32 +330,55 @@ export function createResolver() {
     return Promise.all(jobs)
   }
 
+  function loadSupports(token) {
+    if (!supportFetch) {
+      supportFetch = (async () => {
+        try {
+          const { items } = await apiGetAllPages('/admin/supports', token, { pageSize: 100, maxPages: 10 })
+          for (const s of items || []) {
+            const name = [s.firstName, s.lastName].filter(Boolean).join(' ').trim()
+            if (s.support_id && name) supportNames.set(s.support_id, name)
+          }
+        } catch {
+          // best-effort; the sentence falls back to "a support request"
+        }
+      })()
+    }
+    return supportFetch
+  }
+
   return {
     async resolve(rows, token) {
       const userIds = new Set()
       const productIds = new Set()
+      const supportIds = new Set()
       for (const row of rows) {
         const t = String(row.target || '')
-        const m = t.match(/^(user|product):([0-9a-f-]{36})$/i)
+        const m = t.match(/^(user|product|support):([0-9a-f-]{36})$/i)
         if (!m) continue
         if (m[1] === 'user') userIds.add(m[2])
-        else productIds.add(m[2])
+        else if (m[1] === 'product') productIds.add(m[2])
+        else supportIds.add(m[2])
       }
       const jobs = []
       if (userIds.size) jobs.push(loadUsers(token))
       // cap lookups so a huge log cannot fire hundreds of requests
-      if (productIds.size) jobs.push(loadProducts([...productIds].slice(0, 40)))
+      if (productIds.size) jobs.push(loadProducts([...productIds].slice(0, 40), token))
+      if (supportIds.size) jobs.push(loadSupports(token))
       await Promise.all(jobs)
       return {
         userName: (id) => userNames.get(id) || null,
         productName: (id) => (productNames.has(id) ? productNames.get(id) : null),
+        supportName: (id) => supportNames.get(id) || null,
       }
     },
     clear() {
       userNames.clear()
       productNames.clear()
+      supportNames.clear()
       userFetch = null
       productFetch = null
+      supportFetch = null
     },
   }
 }

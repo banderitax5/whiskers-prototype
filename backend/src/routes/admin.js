@@ -20,7 +20,7 @@ import { sanitizeAltText, mediaPageParams, buildUsageIndex } from '../utils/medi
 import { sanitizeBanner, PLACEMENTS } from '../utils/bannerRules.js'
 import { sanitizeSection } from '../utils/sectionRules.js'
 import { sanitizeNavItem, sanitizeCategoryBatch, sanitizeCategoryRemoval, NAV_SECTIONS } from '../utils/navRules.js'
-import { sanitizeSettings, sanitizeFaq, sanitizePolicy, mergeSettings } from '../utils/siteSettingsRules.js'
+import { sanitizeSettings, sanitizeFaq, sanitizePolicy, mergeSettings, summarizePaymentMethods } from '../utils/siteSettingsRules.js'
 import { invalidateSettingsCache } from '../utils/shopSettings.js'
 import { missingColumnOf, isSchemaPendingError } from '../utils/pgErrors.js'
 import { sanitizeChanges } from '../utils/auditChanges.js'
@@ -932,6 +932,26 @@ router.delete('/products/:id', requireAdmin, async (req, res) => {
     logAudit({ adminEmail: req.userEmail, action: 'delete', target: `product:${req.params.id}` })
   } catch (err) {
     logger.error({ err }, 'Admin product delete error')
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// GET /api/admin/products/:id - full row for admin tools. Unlike the public
+// detail endpoint this includes archived/inactive products, which the Audit
+// Logs page needs to resolve product names after an archive/restore.
+router.get('/products/:id', async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('product')
+      .select('prod_id, prod_name, category, brand, price, stock_quantity, is_active, image_url, description, details, archived_at, cost_price, supplier')
+      .eq('prod_id', req.params.id)
+      .maybeSingle()
+    if (error) throw error
+    if (!data) return res.status(404).json({ error: 'Product not found' })
+    res.json({ item: req.userRole === 'admin' ? data : stripCostFields(data) })
+  } catch (err) {
+    logger.error({ err }, 'Admin product detail error')
     res.status(500).json({ error: 'Server error' })
   }
 })
@@ -2552,16 +2572,25 @@ router.patch('/settings', requireAdmin, async (req, res) => {
     invalidateSettingsCache()
     invalidateContentCache()
     res.json({ settings: mergeSettings(saved.data || {}, {}), updated_at: saved.updated_at, seeded: true })
+    const changes = diffChanges(current?.data || {}, merged, Object.keys(clean.values))
+    // payment methods are a JSON array - a raw before/after dump is unreadable
+    // in the audit panel; store a one-line human summary instead
+    if (changes?.payment_methods) {
+      changes.payment_methods = {
+        from: null,
+        to: summarizePaymentMethods(current?.data?.payment_methods, merged?.payment_methods),
+      }
+    }
     logAudit({
       adminEmail: req.userEmail,
       action: 'settings_update',
       target: 'site_settings',
       details: `updated: ${Object.keys(clean.values).join(', ')}`,
-      changes: diffChanges(current?.data || {}, merged, Object.keys(clean.values)),
+      changes,
     })
     recordContentHistory('site_settings', 'site_settings', 'update', {
       name: 'Store settings',
-      changes: diffChanges(current?.data || {}, merged, Object.keys(clean.values)),
+      changes,
     }, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Settings update error')

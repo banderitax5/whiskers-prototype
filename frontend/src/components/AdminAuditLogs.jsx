@@ -190,7 +190,7 @@ const AdminAuditLogs = () => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [sessionEmail, setSessionEmail] = useState(null)
-  const [resolved, setResolved] = useState({ userName: () => null, productName: () => null })
+  const [resolved, setResolved] = useState({ userName: () => null, productName: () => null, supportName: () => null })
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [sortDir, setSortDir] = useState('desc')
@@ -239,8 +239,9 @@ const AdminAuditLogs = () => {
   const entries = useMemo(() => logs.map((row) => {
     const t = parseTarget(row.target)
     let label = null
-    if (t.kind === 'user' && t.id) label = resolved.userName(t.id)
-    if (t.kind === 'product' && t.id) label = resolved.productName(t.id)
+  if (t.kind === 'user' && t.id) label = resolved.userName(t.id)
+  if (t.kind === 'product' && t.id) label = resolved.productName(t.id)
+  if (t.kind === 'support' && t.id) label = resolved.supportName(t.id)
     const who = whoFor(row.admin_email, sessionEmail, row.actor_name)
     return describeEntry(row, { who, label })
   }), [logs, sessionEmail, resolved])

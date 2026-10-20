@@ -242,6 +242,47 @@ describe('describeEntry sentences (owner-facing examples)', () => {
     expect(support.category).toBe('Support')
   })
 
+  it('support replies name the requester when it resolves', () => {
+    const support = describeEntry(
+      { action: 'status', target: 'support:99999999-9999-9999-9999-999999999999', details: 'support reply sent' },
+      { who, label: 'Juan Dela Cruz' }
+    )
+    expect(support.sentence).toBe('You replied to the support request from "Juan Dela Cruz".')
+  })
+
+  it('archive and restore read as distinct product sentences', () => {
+    const restore = describeEntry(
+      {
+        action: 'update',
+        target: 'product:22222222-2222-2222-2222-222222222222',
+        details: 'archived_at',
+        changes: { archived_at: { from: '2026-10-16T18:59:36.85+00:00', to: null } },
+      },
+      { who, label: 'Royal Canin Adult 10kg' }
+    )
+    expect(restore.sentence).toBe('You restored the product "Royal Canin Adult 10kg".')
+    // archiving also flips is_active - implied, not listed as extra noise
+    const archive = describeEntry(
+      {
+        action: 'update',
+        target: 'product:22222222-2222-2222-2222-222222222222',
+        details: 'archived_at, is_active',
+        changes: {
+          archived_at: { from: null, to: '2026-10-20T03:00:00+00:00' },
+          is_active: { from: true, to: false },
+        },
+      },
+      { who, label: 'Royal Canin Adult 10kg' }
+    )
+    expect(archive.sentence).toBe('You archived the product "Royal Canin Adult 10kg".')
+    // unresolvable label still reads sanely (never "restored a deleted product")
+    const noLabel = describeEntry(
+      { action: 'update', target: 'product:x', details: 'archived_at', changes: { archived_at: { from: 'ts', to: null } } },
+      { who, label: null }
+    )
+    expect(noLabel.sentence).toBe('You restored a product.')
+  })
+
   it('role change and user delete use resolved names', () => {
     const role = describeEntry(
       { action: 'role_change', target: 'user:u1', details: 'role -> admin (step-up verified)' },

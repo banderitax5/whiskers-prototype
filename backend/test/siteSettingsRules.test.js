@@ -7,6 +7,7 @@ import {
   mergeSettings,
   publicSettings,
   enabledPaymentMethods,
+  summarizePaymentMethods,
 } from '../src/utils/siteSettingsRules.js'
 
 describe('siteSettingsRules: sanitizeSettings', () => {
@@ -105,5 +106,37 @@ describe('siteSettingsRules: merge + public + enabled', () => {
   test('enabledPaymentMethods filters disabled and keeps order', () => {
     const s = { payment_methods: [{ id: 'gcash', enabled: false }, { id: 'cod', enabled: true }] }
     assert.deepEqual(enabledPaymentMethods(s).map((m) => m.id), ['cod'])
+  })
+})
+
+describe('siteSettingsRules: summarizePaymentMethods', () => {
+  const before = [
+    { id: 'gcash', label: 'GCash', qr_url: null, enabled: true, instructions: 'Send proof' },
+    { id: 'paymaya', label: 'PayMaya', qr_url: null, enabled: true, instructions: '' },
+  ]
+
+  test('QR image added reads as one line', () => {
+    const after = before.map((m) => (m.id === 'gcash' ? { ...m, qr_url: 'https://x/qr.png' } : m))
+    assert.equal(summarizePaymentMethods(before, after), 'GCash: QR image added')
+  })
+
+  test('enabled toggle, rename, addition and removal are each one phrase', () => {
+    const after = [
+      { id: 'gcash', label: 'GCash Pay', qr_url: null, enabled: false, instructions: 'Send proof' },
+      { id: 'cod', label: 'COD', qr_url: null, enabled: true, instructions: '' },
+    ]
+    assert.equal(
+      summarizePaymentMethods(before, after),
+      'GCash: turned off, renamed to GCash Pay; COD: added; PayMaya: removed'
+    )
+  })
+
+  test('no change and JSON-string inputs', () => {
+    assert.equal(summarizePaymentMethods(before, before), 'no change')
+    const after = [
+      { id: 'gcash', label: 'GCash', qr_url: 'https://x/qr.png', enabled: true, instructions: 'Send proof' },
+      { id: 'paymaya', label: 'PayMaya', qr_url: null, enabled: true, instructions: '' },
+    ]
+    assert.equal(summarizePaymentMethods(JSON.stringify(before), JSON.stringify(after)), 'GCash: QR image added')
   })
 })
