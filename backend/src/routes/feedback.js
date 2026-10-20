@@ -4,6 +4,7 @@ import { supabaseAdmin } from '../config/supabase.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { feedbackLimiter } from '../middleware/rateLimiter.js'
 import { isUuid } from '../utils/uuid.js'
+import { decryptText } from '../utils/encryption.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -45,8 +46,8 @@ router.get('/product/:prodId', async (req, res) => {
         .in('id', userIds)
       if (profiles) {
         for (const p of profiles) {
-          const fn = p.first_name || ''
-          const ln = p.last_name || ''
+          const fn = decryptText(p.first_name) || ''
+          const ln = decryptText(p.last_name) || ''
           nameMap[p.id] = (fn || ln) ? `${fn} ${ln}`.trim() : 'Anonymous'
         }
       }
