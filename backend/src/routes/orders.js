@@ -6,6 +6,7 @@ import { getShippingRules } from '../utils/shopSettings.js'
 import { sendOrderReceipt, maskEmail } from '../utils/mailer.js'
 import { isSchemaPendingError } from '../utils/pgErrors.js'
 import { validatePromo, buildDiscountAmounts, pickBestPromo } from '../utils/promoEngine.js'
+import { normalizeMobilePhone, sanitizeAddressLine, buildOrderAddress } from '../utils/addressRules.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -24,15 +25,53 @@ function buildCartItemsForPromo(validatedItems, dbProducts) {
 }
 
 // POST /api/orders — create a new order from cart items
-// body: { items, paymentMethod, shippingFee, customerName, phone, address, promo_code }
+// body: { items, paymentMethod, shippingFee, customerName, phone,
+//         address | addressLine1, addressLine2, city, province, postalCode,
+//         promo_code }
 router.post('/', orderLimiter, async (req, res) => {
-  const { items, paymentMethod, customerName, phone, address, promo_code } = req.body ?? {}
+  const {
+    items,
+    paymentMethod,
+    customerName,
+    phone,
+    address,
+    addressLine1,
+    addressLine2,
+    city,
+    province,
+    postalCode,
+    promo_code,
+  } = req.body ?? {}
 
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'At least one item is required' })
   }
   if (!paymentMethod) {
     return res.status(400).json({ error: 'paymentMethod is required' })
+  }
+
+  // delivery contact - validated before anything else touches the DB.
+  // Phone: PH mobile only (normalized). Address: checkout sends structured
+  // fields which are validated per line and joined here; older callers may
+  // still send the pre-joined address string (letters + length enforced).
+  const phoneCheck = normalizeMobilePhone(phone)
+  if (!phoneCheck.ok) {
+    return res.status(400).json({ error: phoneCheck.error })
+  }
+
+  let orderAddress = ''
+  if (typeof addressLine1 === 'string' && addressLine1.trim()) {
+    const built = buildOrderAddress({ addressLine1, addressLine2, city, province, postalCode })
+    if (!built.ok) {
+      return res.status(400).json({ error: built.error })
+    }
+    orderAddress = built.value || ''
+  } else if (address != null && address !== '') {
+    const legacy = sanitizeAddressLine(address, { maxLength: 600 })
+    if (!legacy.ok) {
+      return res.status(400).json({ error: legacy.error })
+    }
+    orderAddress = legacy.value || ''
   }
 
   // owner-editable shipping (site settings), falling back to the built-in
@@ -203,8 +242,8 @@ router.post('/', orderLimiter, async (req, res) => {
           status: 'Pending',
           total_amount: totalAmount,
           customer_name: customerName || '',
-          phone: phone || '',
-          address: address || '',
+          phone: phoneCheck.value || '',
+          address: orderAddress,
         })
         .select('order_id')
         .single()
@@ -346,7 +385,7 @@ router.post('/', orderLimiter, async (req, res) => {
       total: totalAmount,
       paymentMethod,
       customerName,
-      address,
+      address: orderAddress,
     })
     logger.info(
       { orderId, receiptSent: receipt.sent, reason: receipt.reason, to: maskEmail(req.userEmail) },

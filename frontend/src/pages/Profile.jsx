@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import supabase from '../lib/supabase'
 import { philippinesData } from '../data/philippinesData.js'
+import { phoneError, addressLineError, postalError } from '../lib/addressValidation.js'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -71,25 +72,19 @@ function Profile() {
   }
 
   function validatePhone(value) {
-    const digits = value.replace(/[^0-9]/g, '')
-    if (!digits) return 'Phone number is required.'
-    if (digits.length < 11) return 'Phone number must have at least 11 digits.'
-    if (digits.length > 15) return 'Phone number must have at most 15 digits.'
-    return ''
+    return phoneError(value, { required: true })
   }
 
   function validateAddress(value) {
-    const v = value.trim()
-    if (!v) return '' // optional
-    if (v.length < 5) return 'Address must be at least 5 characters.'
-    return ''
+    return addressLineError(value, { required: false }) // optional at profile
+  }
+
+  function validateAddressLine2(value) {
+    return addressLineError(value, { required: false })
   }
 
   function validatePostalCode(value) {
-    const v = value.trim()
-    if (!v) return '' // optional
-    if (!/^[0-9]{4}$/.test(v)) return 'Postal code must be exactly 4 digits.'
-    return ''
+    return postalError(value, { required: false })
   }
 
   function validateAll() {
@@ -98,6 +93,7 @@ function Profile() {
     errors.lastName = validateName(profile.lastName || '', 'Last name')
     errors.phone = validatePhone(profile.phone || '')
     errors.addressLine1 = validateAddress(profile.addressLine1 || '')
+    errors.addressLine2 = validateAddressLine2(profile.addressLine2 || '')
     errors.postalCode = validatePostalCode(profile.postalCode || '')
     if (!profile.province) errors.province = 'Province is required.'
     if (profile.province && !profile.city) errors.city = 'City is required.'
@@ -106,7 +102,7 @@ function Profile() {
   }
 
   // ordered list of field names for scroll-to-first-error
-  const FIELD_ORDER = ['firstName', 'lastName', 'phone', 'addressLine1', 'province', 'city', 'postalCode']
+  const FIELD_ORDER = ['firstName', 'lastName', 'phone', 'addressLine1', 'addressLine2', 'province', 'city', 'postalCode']
 
   function scrollToFirstError(errors) {
     const first = FIELD_ORDER.find(k => errors[k])
@@ -355,11 +351,17 @@ function Profile() {
             <div>
               <label className={labelClass}>Address Line 2 (optional)</label>
               <input
-                className={inputClass}
+                data-field="addressLine2"
+                className={`${inputClass} ${fieldErrors.addressLine2 ? 'border-red-500' : ''}`}
                 placeholder="e.g. Apt 4B, Floor 2 (optional)"
                 value={profile?.addressLine2 ?? ''}
-                onChange={(e)=>setProfile(p=>({...p,addressLine2:e.target.value}))}
+                onChange={(e)=>{
+                  const value = e.target.value
+                  setProfile(p=>({...p,addressLine2:value}))
+                  setFieldErrors(p=>({...p,addressLine2:validateAddressLine2(value)}))
+                }}
               />
+              {fieldErrors.addressLine2 && <p className="text-red-500 text-xs mt-1">{fieldErrors.addressLine2}</p>}
             </div>
 
             {/* Province + City */}

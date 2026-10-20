@@ -6,6 +6,7 @@ import ProductThumb from '../components/ProductThumb.jsx'
 import { trackEvent } from '../lib/appEvents.js'
 import { philippinesData } from '../data/philippinesData.js'
 import { paymentMethodLabel } from '../lib/orderDoc.js'
+import { phoneError, addressLineError, postalError } from '../lib/addressValidation.js'
 import supabase from '../lib/supabase'
 import {
   cartTotals,
@@ -27,7 +28,7 @@ const DEFAULT_PAYMENT_OPTIONS = [
 ]
 const SELECTION_KEY = 'whiskers.cart.selectedIds'
 
-const FIELD_ORDER = ['fullName', 'phone', 'addressLine1', 'city', 'province', 'postalCode']
+const FIELD_ORDER = ['fullName', 'phone', 'addressLine1', 'addressLine2', 'city', 'province', 'postalCode']
 
 function readStoredSelection() {
   try {
@@ -264,14 +265,16 @@ function Checkout() {
     const errs = {}
     if (!form.fullName.trim()) errs.fullName = 'Full name is required.'
     else if (form.fullName.trim().length < 2) errs.fullName = 'Name must be at least 2 characters.'
-    const digits = form.phone.replace(/[^0-9]/g, '')
-    if (!digits) errs.phone = 'Phone number is required.'
-    else if (digits.length < 11) errs.phone = 'Phone must have at least 11 digits.'
-    if (!form.addressLine1.trim()) errs.addressLine1 = 'Address is required.'
+    const phoneMsg = phoneError(form.phone, { required: true })
+    if (phoneMsg) errs.phone = phoneMsg
+    const line1Msg = addressLineError(form.addressLine1, { required: true })
+    if (line1Msg) errs.addressLine1 = line1Msg
+    const line2Msg = addressLineError(form.addressLine2, { required: false })
+    if (line2Msg) errs.addressLine2 = line2Msg
     if (!form.city.trim()) errs.city = 'City is required.'
     if (!form.province.trim()) errs.province = 'Province is required.'
-    if (!form.postalCode.trim()) errs.postalCode = 'Postal code is required.'
-    else if (!/^[0-9]{4}$/.test(form.postalCode.trim())) errs.postalCode = 'Postal code must be exactly 4 digits.'
+    const postalMsg = postalError(form.postalCode, { required: true })
+    if (postalMsg) errs.postalCode = postalMsg
     return errs
   }
 
@@ -321,7 +324,11 @@ function Checkout() {
           paymentMethod: form.paymentMethod,
           customerName: form.fullName,
           phone: form.phone,
-          address: [form.addressLine1, form.addressLine2, form.city, form.province, form.postalCode].filter(Boolean).join(', '),
+          addressLine1: form.addressLine1,
+          addressLine2: form.addressLine2,
+          city: form.city,
+          province: form.province,
+          postalCode: form.postalCode,
           promo_code: form.promoCode.trim() || undefined,
         }),
       })
@@ -499,7 +506,17 @@ function Checkout() {
             </div>
             <div>
               <label htmlFor="co-addressLine2" className={labelClass}>Address Line 2 <span className="text-gray-400">(optional)</span></label>
-              <input id="co-addressLine2" value={form.addressLine2} onChange={(e) => onChange('addressLine2', e.target.value)} placeholder="Building, floor, unit" className={`${inputClass} w-full`} />
+              <input
+                id="co-addressLine2"
+                data-field="addressLine2"
+                value={form.addressLine2}
+                onChange={(e) => onChange('addressLine2', e.target.value)}
+                placeholder="Building, floor, unit"
+                aria-invalid={fieldErrors.addressLine2 ? 'true' : undefined}
+                aria-describedby={fieldErrors.addressLine2 ? 'co-addressLine2-err' : undefined}
+                className={`${inputClass} w-full ${fieldErrors.addressLine2 ? 'border-red-500' : ''}`}
+              />
+              {fieldErrors.addressLine2 && <p id="co-addressLine2-err" className="text-xs text-red-500 mt-1">{fieldErrors.addressLine2}</p>}
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>

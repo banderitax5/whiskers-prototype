@@ -68,6 +68,28 @@ $orderId = $order.order_id
 $p1 = Invoke-RestMethod -Uri "$SU/rest/v1/product?select=stock_quantity&prod_id=eq.$prodId" -Headers @{ apikey = $SK; Authorization = "Bearer $SK" }
 Step 'stock decrement' ([int]$p1[0].stock_quantity -eq ($stock0 - 1)) "$($p1[0].stock_quantity) (want $($stock0-1))"
 
+# Layer-1 address/phone validation: junk must 400 before anything is written
+try {
+  Invoke-RestMethod -Uri "$base/api/orders" -Method Post -Headers $authH -ContentType 'application/json' `
+    -Body (@{ items = @(@{ productId = $prodId; quantity = 1 }); paymentMethod = 'GCash'; customerName = 'E2E Junk'; phone = '12312312312'; address = '1 Test Street' } | ConvertTo-Json -Depth 5 -Compress) | Out-Null
+  Step 'order: junk phone rejected' $false 'got 2xx'
+} catch { Step 'order: junk phone rejected' ($_.Exception.Response.StatusCode.value__ -eq 400) (Get-ErrBody $_) }
+try {
+  Invoke-RestMethod -Uri "$base/api/orders" -Method Post -Headers $authH -ContentType 'application/json' `
+    -Body (@{ items = @(@{ productId = $prodId; quantity = 1 }); paymentMethod = 'GCash'; customerName = 'E2E Junk'; phone = '09171234567'; address = '123123123' } | ConvertTo-Json -Depth 5 -Compress) | Out-Null
+  Step 'order: junk address rejected' $false 'got 2xx'
+} catch { Step 'order: junk address rejected' ($_.Exception.Response.StatusCode.value__ -eq 400) (Get-ErrBody $_) }
+try {
+  Invoke-RestMethod -Uri "$base/api/profile" -Method Put -Headers $authH -ContentType 'application/json' `
+    -Body (@{ phone = '12312312312' } | ConvertTo-Json -Compress) | Out-Null
+  Step 'profile: junk phone rejected' $false 'got 2xx'
+} catch { Step 'profile: junk phone rejected' ($_.Exception.Response.StatusCode.value__ -eq 400) (Get-ErrBody $_) }
+try {
+  Invoke-RestMethod -Uri "$base/api/profile" -Method Put -Headers $authH -ContentType 'application/json' `
+    -Body (@{ addressLine1 = '123123123' } | ConvertTo-Json -Compress) | Out-Null
+  Step 'profile: junk address rejected' $false 'got 2xx'
+} catch { Step 'profile: junk address rejected' ($_.Exception.Response.StatusCode.value__ -eq 400) (Get-ErrBody $_) }
+
 # â”€â”€ 5. GET orders includes prod_id + feedback field â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 $myOrders = Invoke-RestMethod -Uri "$base/api/orders" -Headers $authH
 $o = $myOrders.items | Where-Object { $_.order_id -eq $orderId } | Select-Object -First 1

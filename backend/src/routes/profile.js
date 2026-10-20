@@ -1,37 +1,35 @@
 import { Router } from 'express'
 import { encryptText, decryptText } from '../utils/encryption.js'
 import { authMiddleware } from '../middleware/auth.js'
+import {
+  normalizeMobilePhone,
+  sanitizeAddressLine,
+  sanitizePlaceName,
+  sanitizePostalCode,
+  stripControlChars,
+} from '../utils/addressRules.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
 
 const PROFILE_COLUMNS = 'id, email, first_name, last_name, phone, address_line1, address_line2, city, province, postal_code, country, role'
 
-// field length limits to prevent storage abuse
+// field length limits to prevent storage abuse (address/phone/postal have
+// dedicated rules in utils/addressRules.js)
 const LIMITS = {
   name: 100,
-  phone: 20,
-  address: 200,
   city: 100,
   province: 100,
-  postalCode: 20,
   country: 100,
 }
 
-// trims whitespace and caps length, returns null for empty strings
+// strips control characters, trims whitespace and caps length,
+// returns null for empty strings
 function sanitizeField(value, maxLen) {
   if (typeof value !== 'string') return null
-  const trimmed = value.trim()
+  const trimmed = stripControlChars(value).replace(/\s+/g, ' ').trim()
   if (!trimmed) return null
   return trimmed.slice(0, maxLen)
-}
-
-// strips everything except digits, +, -, (, ), and spaces
-function sanitizePhone(value) {
-  if (typeof value !== 'string') return null
-  const cleaned = value.replace(/[^0-9+\-() ]/g, '').trim()
-  if (!cleaned) return null
-  return cleaned.slice(0, LIMITS.phone)
 }
 
 function formatProfile(u) {
@@ -111,15 +109,26 @@ router.get('/', authMiddleware, async (req, res) => {
 router.put('/', authMiddleware, async (req, res) => {
   const { firstName, lastName, phone, addressLine1, addressLine2, city, province, postalCode, country } = req.body ?? {}
   try {
+    // validate everything before the upsert so a 400 never leaves a
+    // partially-written profile behind
+    const phoneCheck = normalizeMobilePhone(phone)
+    const line1 = sanitizeAddressLine(addressLine1)
+    const line2 = sanitizeAddressLine(addressLine2)
+    const cityV = sanitizePlaceName(city, LIMITS.city)
+    const provV = sanitizePlaceName(province, LIMITS.province)
+    const postalV = sanitizePostalCode(postalCode)
+    const failed = [phoneCheck, line1, line2, cityV, provV, postalV].find((r) => !r.ok)
+    if (failed) return res.status(400).json({ error: failed.error })
+
     const updates = {
       id: req.userId,
       email: encryptText(req.userEmail),
-      phone: encryptText(sanitizePhone(phone)),
-      address_line1: encryptField(addressLine1, LIMITS.address),
-      address_line2: encryptField(addressLine2, LIMITS.address),
-      city: encryptField(city, LIMITS.city),
-      province: encryptField(province, LIMITS.province),
-      postal_code: encryptField(postalCode, LIMITS.postalCode),
+      phone: encryptText(phoneCheck.value),
+      address_line1: encryptText(line1.value),
+      address_line2: encryptText(line2.value),
+      city: encryptText(cityV.value),
+      province: encryptText(provV.value),
+      postal_code: encryptText(postalV.value),
     }
     const fn = sanitizeField(firstName, LIMITS.name)
     const ln = sanitizeField(lastName, LIMITS.name)
@@ -146,11 +155,5 @@ router.put('/', authMiddleware, async (req, res) => {
     res.status(500).json({ error: 'Server error' })
   }
 })
-
-// helper that sanitizes then encrypts a field
-function encryptField(value, maxLen) {
-  const sanitized = sanitizeField(value, maxLen)
-  return encryptText(sanitized)
-}
 
 export default router
