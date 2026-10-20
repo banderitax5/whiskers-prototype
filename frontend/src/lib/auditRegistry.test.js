@@ -256,6 +256,28 @@ describe('describeEntry sentences (owner-facing examples)', () => {
     expect(del.sentence).toBe('You deleted an account.')
   })
 
+  it('sign-in rows read as when/where security entries', () => {
+    // the backend stores sanitizeChanges output: { from: null, to } pairs
+    const row = describeEntry(
+      {
+        action: 'sign_in',
+        target: 'user:u1',
+        changes: {
+          role: { from: null, to: 'admin' },
+          ip: { from: null, to: '127.0.0.1' },
+          user_agent: { from: null, to: 'Mozilla/5.0' },
+        },
+      },
+      { who }
+    )
+    expect(row.sentence).toBe('You signed in to the admin panel from 127.0.0.1.')
+    expect(row.category).toBe('Security')
+    expect(row.important).toBe(true)
+    // no ip recorded still reads cleanly
+    const noIp = describeEntry({ action: 'sign_in', changes: { role: { from: null, to: 'staff' } } }, { who })
+    expect(noIp.sentence).toBe('You signed in to the admin panel.')
+  })
+
   it('banner create/archive/reorder read with placement names', () => {
     const create = describeEntry(
       { action: 'banner_create', target: 'b1', details: 'hero "Blue banner" draft' },

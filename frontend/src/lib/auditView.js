@@ -200,11 +200,16 @@ export function changeLines(changes) {
       label: humanizeField(field),
       from: formatChangeValue(field, v.from),
       to: formatChangeValue(field, v.to),
+      // value-only entries (no starting value - e.g. a sign-in's ip/device)
+      // read as "Label: value" instead of "Label: - -> value"
+      scalar: v.from == null && v.to != null,
     }))
 }
 
 export function changesSummary(changes) {
-  return changeLines(changes).map((l) => `${l.label}: ${l.from} -> ${l.to}`).join('; ')
+  return changeLines(changes)
+    .map((l) => (l.scalar ? `${l.label}: ${l.to}` : `${l.label}: ${l.from} -> ${l.to}`))
+    .join('; ')
 }
 
 function csvCell(value) {

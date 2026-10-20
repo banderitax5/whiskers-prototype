@@ -33,6 +33,30 @@ router.post('/login', loginLimiter, async (req, res) => {
     if (error) {
       return res.status(401).json({ error: 'Invalid email or password.' })
     }
+    // audit trail: a staff/admin sign-in is a security event - record when
+    // and where (IP + device). Customer logins stay out of the audit log.
+    try {
+      const { data: prof } = await supabaseAdmin
+        .from('profiles')
+        .select('role')
+        .eq('id', data.session.user.id)
+        .maybeSingle()
+      const role = prof?.role
+      if (role === 'admin' || role === 'staff') {
+        await logAudit({
+          adminEmail: email.trim(),
+          action: 'sign_in',
+          target: `user:${data.session.user.id}`,
+          changes: {
+            role,
+            ip: req.ip || null,
+            user_agent: (req.get('user-agent') || '').slice(0, 300) || null,
+          },
+        })
+      }
+    } catch (auditErr) {
+      logger.error({ err: auditErr }, 'Sign-in audit failed')
+    }
     res.json({ session: data.session })
   } catch (err) {
     logger.error({ err }, 'Login error')

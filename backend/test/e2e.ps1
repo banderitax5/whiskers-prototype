@@ -335,6 +335,25 @@ if ($probeId) {
   } catch { Step 'audit: structured changes recorded' $false (Get-ErrBody $_) }
 }
 
+# sign-in audit: logging in through the API records when + where (ip, device)
+# for panel roles; customer logins must never land in the audit log
+try {
+  Invoke-RestMethod -Uri "$base/api/auth/login" -Method Post -ContentType 'application/json' `
+    -Body (@{ email = $email; password = $pw } | ConvertTo-Json -Compress) | Out-Null
+  Start-Sleep -Milliseconds 300
+  $srows = Invoke-RestMethod -Uri "$SU/rest/v1/audit_logs?select=action,admin_email,changes&action=eq.sign_in&admin_email=eq.$email&order=created_at.desc&limit=1" `
+    -Headers @{ apikey = $SK; Authorization = "Bearer $SK" }
+  $srow = @($srows) | Select-Object -First 1
+  if (-not $srow) {
+    Step 'audit: sign-in recorded with when/where' $false 'no sign_in audit row for the admin login'
+  } else {
+    # sanitizeChanges stores each value as { from: null, to }
+    Step 'audit: sign-in recorded with when/where' `
+      ((($srow.changes.role.to -eq 'admin') -or ($srow.changes.role.to -eq 'staff')) -and ($null -ne $srow.changes.ip.to) -and ($null -ne $srow.changes.user_agent.to)) `
+      "role=$($srow.changes.role.to) ip=$($srow.changes.ip.to)"
+  }
+} catch { Step 'audit: sign-in recorded with when/where' $false (Get-ErrBody $_) }
+
 # ── Product admin self-service: name uniqueness + CSV export/import ────────
 # name-uniqueness: creating a second product with the details probe's name
 # must 409 (the details probe product is still live at this point)

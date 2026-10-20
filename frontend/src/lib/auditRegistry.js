@@ -58,6 +58,8 @@ const FIELD_LABELS = {
   supplier: 'Supplier',
   is_active: 'Visibility',
   archived_at: 'Archived',
+  ip: 'IP address',
+  user_agent: 'Device / browser',
   title: 'Title',
   subtitle: 'Subtitle',
   alt: 'Image description',
@@ -456,6 +458,17 @@ export const REGISTRY = {
     hidden: true,
     important: true,
     describe: ({ who }) => `${who} entered a wrong password at a confirmation prompt`,
+  },
+  sign_in: {
+    category: 'Security',
+    important: true,
+    describe: ({ who, changes }) => {
+      // changes store { from: null, to } pairs (sanitizeChanges contract);
+      // tolerate a bare scalar too so hand-built rows still read correctly
+      const raw = changes?.ip
+      const ip = raw && typeof raw === 'object' ? raw.to : raw
+      return `${who} signed in to the admin panel${ip ? ` from ${ip}` : ''}`
+    },
   },
 
   // ---- media library -----------------------------------------------------

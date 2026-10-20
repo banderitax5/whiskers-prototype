@@ -170,8 +170,8 @@ describe('formatChangeValue / changeLines / changesSummary', () => {
   it('turns a changes map into labelled lines and a one-line summary', () => {
     const lines = changeLines({ price: { from: 265, to: 299 }, is_active: { from: true, to: false } })
     expect(lines).toEqual([
-      { field: 'price', label: 'Price', from: '₱265.00', to: '₱299.00' },
-      { field: 'is_active', label: 'Visibility', from: 'Yes', to: 'No' },
+      { field: 'price', label: 'Price', from: '₱265.00', to: '₱299.00', scalar: false },
+      { field: 'is_active', label: 'Visibility', from: 'Yes', to: 'No', scalar: false },
     ])
     expect(changesSummary({ price: { from: 265, to: 299 } })).toBe('Price: ₱265.00 -> ₱299.00')
   })
@@ -182,6 +182,18 @@ describe('formatChangeValue / changeLines / changesSummary', () => {
     expect(changeLines({})).toEqual([])
     expect(changeLines([1, 2])).toEqual([])
     expect(changeLines({ weird: 'bare' })).toEqual([])
+  })
+
+  it('value-only diffs (sign-in ip / device / role) summarize without a from arrow', () => {
+    const changes = {
+      ip: { from: null, to: '::1' },
+      user_agent: { from: null, to: 'Mozilla/5.0' },
+      role: { from: null, to: 'admin' },
+    }
+    const lines = changeLines(changes)
+    expect(lines.map((l) => l.scalar)).toEqual([true, true, true])
+    expect(lines[0]).toMatchObject({ field: 'ip', label: 'IP address', to: '::1' })
+    expect(changesSummary(changes)).toBe('IP address: ::1; Device / browser: Mozilla/5.0; Role: admin')
   })
 })
 
