@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { randomUUID } from 'crypto'
 import { supabaseAdmin } from '../config/supabase.js'
 import { authMiddleware } from '../middleware/auth.js'
-import { feedbackLimiter } from '../middleware/rateLimiter.js'
+import { feedbackLimiter, productLimiter } from '../middleware/rateLimiter.js'
 import { isUuid } from '../utils/uuid.js'
 import { decryptText } from '../utils/encryption.js'
 import logger from '../utils/logger.js'
@@ -13,7 +13,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 // PUBLIC: GET /api/feedback/product/:prodId — all reviews for a product
 // no auth required; returns ratings, comments, dates, and reviewer names
-router.get('/product/:prodId', async (req, res) => {
+router.get('/product/:prodId', productLimiter, async (req, res) => {
   const prodId = String(req.params.prodId || '').trim()
   if (!isUuid(prodId)) {
     return res.status(404).json({ error: 'Product not found' })
