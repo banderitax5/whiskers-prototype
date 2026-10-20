@@ -1,17 +1,51 @@
 import { Router } from 'express'
 import { authMiddleware } from '../middleware/auth.js'
-import { orderLimiter } from '../middleware/rateLimiter.js'
+import { orderLimiter, payLimiter } from '../middleware/rateLimiter.js'
 import { supabaseAdmin } from '../config/supabase.js'
 import { getShippingRules } from '../utils/shopSettings.js'
 import { sendOrderReceipt, maskEmail } from '../utils/mailer.js'
 import { isSchemaPendingError } from '../utils/pgErrors.js'
 import { validatePromo, buildDiscountAmounts, pickBestPromo } from '../utils/promoEngine.js'
 import { normalizeMobilePhone, sanitizeAddressLine, buildOrderAddress } from '../utils/addressRules.js'
+import {
+  isGatewayMethod,
+  isGatewayOrderDue,
+  expireGatewayOrder,
+  sweepGatewayExpiry,
+  loadReceiptPayload,
+} from '../utils/gatewayPayment.js'
+import { logAudit } from './admin.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
 
 router.use(authMiddleware)
+
+const PAYMENT_COLUMNS_BASE = 'order_id, amount, method, payment_date'
+
+// payment read that sheds the gateway lifecycle columns before the migration
+// lands (same pattern as the M3 order_details fallback)
+async function fetchPayments(queryFn) {
+  let res = await queryFn(`${PAYMENT_COLUMNS_BASE}, status, paid_at`)
+  if (res.error && isSchemaPendingError(res.error)) {
+    res = await queryFn(PAYMENT_COLUMNS_BASE)
+  }
+  if (res.error) logger.error({ err: res.error }, 'payment fetch error')
+  return res.data || []
+}
+
+// system actor for automatic transitions (the audit log asks "who changed
+// this order" - the gateway TTL did, on a read). Best-effort by design:
+// logAudit never rejects.
+function auditGatewayExpiry(orderId) {
+  return logAudit({
+    adminEmail: 'system',
+    action: 'status',
+    target: `order:${orderId}`,
+    details: 'payment expired automatically (gateway TTL)',
+    changes: { status: { from: 'Pending', to: 'Cancelled' } },
+  })
+}
 
 function buildCartItemsForPromo(validatedItems, dbProducts) {
   const catMap = new Map((dbProducts || []).map((p) => [p.prod_id, p.category ?? null]))
@@ -49,6 +83,11 @@ router.post('/', orderLimiter, async (req, res) => {
   if (!paymentMethod) {
     return res.status(400).json({ error: 'paymentMethod is required' })
   }
+
+  // cashless methods run through the (simulated) gateway: the order is created
+  // Pending, money + receipt + cart-clear follow payment confirmation. COD is
+  // fully synchronous, exactly as before.
+  const isGateway = isGatewayMethod(paymentMethod)
 
   // delivery contact - validated before anything else touches the DB.
   // Phone: PH mobile only (normalized). Address: checkout sends structured
@@ -291,11 +330,25 @@ router.post('/', orderLimiter, async (req, res) => {
       }
       if (detErr) throw detErr
 
-      const { error: payErr } = await supabaseAdmin.from('payment').insert({
+      // lifecycle: gateway methods start 'pending' (money arrives on the pay
+      // page); COD is recorded 'succeeded' - nothing is outstanding, the cash
+      // is collected on delivery
+      const paymentRow = {
         order_id: orderId,
         amount: totalAmount,
         method: paymentMethod,
-      })
+        status: isGateway ? 'pending' : 'succeeded',
+      }
+      let { error: payErr } = await supabaseAdmin.from('payment').insert(paymentRow)
+      if (payErr && isSchemaPendingError(payErr)) {
+        // pre-payment-status migration: shed the lifecycle columns, checkout survives
+        logger.info({ err: payErr }, 'payment status columns missing - insert without them')
+        ;({ error: payErr } = await supabaseAdmin.from('payment').insert({
+          order_id: orderId,
+          amount: totalAmount,
+          method: paymentMethod,
+        }))
+      }
       if (payErr) throw payErr
 
       if (promoResult && promoRow) {
@@ -365,7 +418,9 @@ router.post('/', orderLimiter, async (req, res) => {
       throw innerErr
     }
 
-    if (productIds.length > 0) {
+    // gateway orders keep the cart until money arrives (abandon = retry with
+    // the cart intact; expiry restores stock). COD clears at creation as before.
+    if (!isGateway && productIds.length > 0) {
       await supabaseAdmin
         .from('cart_items')
         .delete()
@@ -373,35 +428,47 @@ router.post('/', orderLimiter, async (req, res) => {
         .in('product_id', productIds)
     }
 
-    // receipt email (owner-requested extension - not in the paper): the order
-    // is fully committed at this point, so the mail is pure bonus. It never
-    // blocks or fails the response; without BREVO_API_KEY it is a no-op.
-    const receipt = await sendOrderReceipt(req.userEmail, {
-      orderId,
-      createdAt: new Date().toISOString(),
-      items: validatedItems.map((i) => ({
-        name: productMap.get(i.productId)?.prod_name || 'Item',
-        quantity: i.quantity,
-        unitPrice: i.price,
-        subtotal: i.subtotal,
-      })),
-      discountTotal: promoResult?.discountAmount || 0,
-      shippingFee: shipping,
-      total: totalAmount,
-      paymentMethod,
-      customerName,
-      address: orderAddress,
-    })
-    logger.info(
-      { orderId, receiptSent: receipt.sent, reason: receipt.reason, to: maskEmail(req.userEmail) },
-      receipt.sent ? 'Order receipt emailed' : 'Order receipt not emailed'
-    )
+    // receipt email (owner-requested extension - not in the paper): COD only
+    // at creation. Gateway methods send theirs when payment succeeds, so a
+    // customer who abandons never gets a receipt for money they did not pay.
+    // It never blocks or fails the response; without BREVO_API_KEY it is a no-op.
+    if (!isGateway) {
+      const receipt = await sendOrderReceipt(req.userEmail, {
+        orderId,
+        createdAt: new Date().toISOString(),
+        items: validatedItems.map((i) => ({
+          name: productMap.get(i.productId)?.prod_name || 'Item',
+          quantity: i.quantity,
+          unitPrice: i.price,
+          subtotal: i.subtotal,
+        })),
+        discountTotal: promoResult?.discountAmount || 0,
+        shippingFee: shipping,
+        total: totalAmount,
+        paymentMethod,
+        customerName,
+        address: orderAddress,
+      })
+      logger.info(
+        { orderId, receiptSent: receipt.sent, reason: receipt.reason, to: maskEmail(req.userEmail) },
+        receipt.sent ? 'Order receipt emailed' : 'Order receipt not emailed'
+      )
+      return res.status(201).json({
+        order_id: orderId,
+        status: 'Pending',
+        total_amount: totalAmount,
+        receipt_email_sent: Boolean(receipt.sent),
+      })
+    }
 
     res.status(201).json({
       order_id: orderId,
       status: 'Pending',
       total_amount: totalAmount,
-      receipt_email_sent: Boolean(receipt.sent),
+      // where the customer finishes paying (PayMongo's hosted checkout URL
+      // replaces this when the real gateway is wired in)
+      checkout_url: `/pay/simulate?order=${orderId}`,
+      payment_status: 'pending',
     })
   } catch (err) {
     if (err.stockConflict) {
@@ -526,15 +593,19 @@ router.get('/', async (req, res) => {
       detailsMap.get(d.order_id).push(d)
     }
 
-    const { data: payments } = await req.db
-      .from('payment')
-      .select('order_id, amount, method, payment_date')
-      .in('order_id', orderIds)
+    const payments = await fetchPayments((cols) =>
+      req.db.from('payment').select(cols).in('order_id', orderIds)
+    )
 
     const paymentMap = new Map()
-    for (const p of (payments || [])) {
+    for (const p of payments) {
       if (!paymentMap.has(p.order_id)) paymentMap.set(p.order_id, p)
     }
+
+    // lazy gateway expiry: unpaid past the TTL -> cancelled + restocked.
+    // This stack has no cron, so every read is a sweep trigger.
+    const expiredIds = await sweepGatewayExpiry(orders, paymentMap)
+    for (const id of expiredIds) auditGatewayExpiry(id)
 
     const { data: feedbackRows, error: fbErr } = await supabaseAdmin
       .from('feedback')
@@ -608,11 +679,21 @@ router.get('/:id', async (req, res) => {
       .in('prod_id', prodIds)
     const prodMap = new Map((products || []).map((p) => [p.prod_id, p]))
 
-    const { data: paymentRows } = await req.db
-      .from('payment')
-      .select('order_id, amount, method, payment_date')
-      .eq('order_id', orderId)
-      .limit(1)
+    const paymentRows = await fetchPayments((cols) =>
+      req.db.from('payment').select(cols).eq('order_id', orderId).limit(1)
+    )
+    const payment = paymentRows[0] || null
+
+    // the detail page is the natural trigger when a customer revisits an
+    // abandoned order (or when the pay page reloads after the window closed)
+    if (payment && isGatewayOrderDue(order, payment)) {
+      const ran = await expireGatewayOrder(order)
+      if (ran) {
+        order.status = 'Cancelled'
+        payment.status = 'expired'
+        auditGatewayExpiry(order.order_id)
+      }
+    }
 
     const { data: feedbackRows } = await supabaseAdmin
       .from('feedback')
@@ -639,13 +720,192 @@ router.get('/:id', async (req, res) => {
             subtotal: d.subtotal,
           }
         }),
-        payment: (paymentRows && paymentRows[0]) || null,
+        payment,
         feedback: feedbackRows || [],
       },
     })
   } catch (err) {
     logger.error({ err }, 'Order detail error')
     res.status(500).json({ error: 'Failed to load order' })
+  }
+})
+
+// POST /api/orders/:id/simulate-payment — the simulated gateway's outcome
+// callback (stands in for PayMongo's webhook: same transition rules, minus
+// signature verification - the caller already proved order ownership, and the
+// order row holds the authoritative amount).
+// body: { result: 'success' | 'fail' }
+router.post('/:id/simulate-payment', payLimiter, async (req, res) => {
+  const orderId = String(req.params.id || '').trim()
+  if (!/^[A-Za-z0-9-]{1,64}$/.test(orderId)) {
+    return res.status(400).json({ error: 'Invalid order id' })
+  }
+  const result = String(req.body?.result || '')
+  if (result !== 'success' && result !== 'fail') {
+    return res.status(400).json({ error: "result must be 'success' or 'fail'" })
+  }
+
+  try {
+    // ownership through the caller's RLS-scoped client
+    const { data: order, error } = await req.db
+      .from('orders')
+      .select('order_id, status, created_at, total_amount')
+      .eq('order_id', orderId)
+      .eq('id', req.userId)
+      .maybeSingle()
+    if (error) throw error
+    if (!order) return res.status(404).json({ error: 'Order not found' })
+
+    // service read: the status column and the write itself bypass client RLS
+    const payRes = await supabaseAdmin
+      .from('payment')
+      .select('order_id, method, status, amount')
+      .eq('order_id', orderId)
+      .limit(1)
+    if (payRes.error) {
+      if (isSchemaPendingError(payRes.error)) {
+        return res.status(503).json({ error: 'Payment gateway is not available yet', code: 'MIGRATION_REQUIRED' })
+      }
+      throw payRes.error
+    }
+    const payment = payRes.data?.[0]
+    if (!payment) return res.status(404).json({ error: 'Payment record not found' })
+    if (!isGatewayMethod(payment.method)) {
+      return res.status(400).json({ error: 'This order does not use an online payment method' })
+    }
+
+    // already settled (double click / refresh) - idempotent, never a second
+    // receipt; product ids still come back so the client can finish clearing
+    // its local cart if the first response was lost
+    if (String(payment.status || '').toLowerCase() === 'succeeded') {
+      const dupPayload = await loadReceiptPayload(orderId)
+      return res.json({
+        ok: true,
+        already_paid: true,
+        payment_status: 'succeeded',
+        order_status: order.status,
+        receipt_email_sent: false,
+        product_ids: dupPayload ? dupPayload.items.map((i) => i.prod_id).filter(Boolean) : [],
+      })
+    }
+
+    if (order.status === 'Cancelled') {
+      return res.status(409).json({ error: 'This order was cancelled.', code: 'ORDER_CANCELLED' })
+    }
+
+    // past the abandonment window: expire now (stock comes back) and refuse
+    if (isGatewayOrderDue(order, payment)) {
+      const ran = await expireGatewayOrder(order)
+      if (ran) auditGatewayExpiry(order.order_id)
+      return res.status(409).json({
+        error: 'This order has expired. Please place a new order.',
+        code: 'ORDER_EXPIRED',
+      })
+    }
+
+    if (result === 'fail') {
+      const { error: failErr } = await supabaseAdmin
+        .from('payment')
+        .update({ status: 'failed' })
+        .eq('order_id', orderId)
+        .neq('status', 'succeeded')
+      if (failErr) {
+        if (isSchemaPendingError(failErr)) {
+          return res.status(503).json({ error: 'Payment gateway is not available yet', code: 'MIGRATION_REQUIRED' })
+        }
+        throw failErr
+      }
+      // the order stays Pending: the customer can retry from the pay page,
+      // and expiry still owns it if the window runs out
+      return res.json({ ok: true, payment_status: 'failed', order_status: order.status })
+    }
+
+    // SUCCESS. Claim the order transition first - expiry targets the same row
+    // with the same guard, so exactly one of us wins. Staff may have advanced
+    // an unpaid order already; Shipped/Delivered orders accept late payment
+    // without a status flip, Cancelled never does.
+    let orderStatusNow = order.status
+    if (order.status === 'Pending' || order.status === 'Processing') {
+      const { data: claimed, error: claimErr } = await supabaseAdmin
+        .from('orders')
+        .update({ status: 'Processing' })
+        .eq('order_id', orderId)
+        .in('status', ['Pending', 'Processing'])
+        .select('status')
+      if (claimErr) throw claimErr
+      if (!claimed || claimed.length === 0) {
+        const { data: fresh } = await supabaseAdmin
+          .from('orders')
+          .select('status')
+          .eq('order_id', orderId)
+          .maybeSingle()
+        if (fresh?.status === 'Cancelled') {
+          return res.status(409).json({
+            error: 'This order has expired. Please place a new order.',
+            code: 'ORDER_EXPIRED',
+          })
+        }
+        orderStatusNow = fresh?.status || order.status
+      } else {
+        orderStatusNow = claimed[0].status
+      }
+    }
+
+    // mark paid (neq guard = claim the receipt email: a concurrent duplicate
+    // confirmation finds 0 rows and skips the mail)
+    const { data: marked, error: markErr } = await supabaseAdmin
+      .from('payment')
+      .update({
+        status: 'succeeded',
+        paid_at: new Date().toISOString(),
+        gateway_ref: `sim_${orderId.slice(0, 8)}_${Date.now().toString(36)}`,
+      })
+      .eq('order_id', orderId)
+      .neq('status', 'succeeded')
+      .select('payment_id')
+    if (markErr) {
+      if (isSchemaPendingError(markErr)) {
+        return res.status(503).json({ error: 'Payment gateway is not available yet', code: 'MIGRATION_REQUIRED' })
+      }
+      throw markErr
+    }
+    const firstClaim = (marked || []).length > 0
+
+    const payload = await loadReceiptPayload(orderId)
+    const productIds = payload ? payload.items.map((i) => i.prod_id).filter(Boolean) : []
+    let receiptEmailed = false
+    if (firstClaim && payload) {
+      // never throws; without BREVO_API_KEY it is a no-op
+      const receipt = await sendOrderReceipt(req.userEmail, payload)
+      receiptEmailed = Boolean(receipt.sent)
+      logger.info(
+        { orderId, receiptSent: receipt.sent, reason: receipt.reason, to: maskEmail(req.userEmail) },
+        receipt.sent ? 'Payment receipt emailed' : 'Payment receipt not emailed'
+      )
+      // the cart the checkout page kept until money arrived - cleared here,
+      // server-side, exactly once
+      if (productIds.length > 0) {
+        await supabaseAdmin
+          .from('cart_items')
+          .delete()
+          .eq('user_id', req.userId)
+          .in('product_id', productIds)
+      }
+    }
+
+    res.json({
+      ok: true,
+      payment_status: 'succeeded',
+      order_status: orderStatusNow,
+      receipt_email_sent: receiptEmailed,
+      // returned on every success (even a duplicate) so the client can clear
+      // its local cart state honestly
+      product_ids: productIds,
+      ...(firstClaim ? {} : { already_paid: true }),
+    })
+  } catch (err) {
+    logger.error({ err, orderId }, 'Payment confirmation error')
+    res.status(500).json({ error: 'Failed to confirm payment' })
   }
 })
 

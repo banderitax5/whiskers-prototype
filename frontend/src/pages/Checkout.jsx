@@ -342,10 +342,19 @@ function Checkout() {
         throw new Error(data.error || 'Failed to place order')
       }
 
-      const { order_id, receipt_email_sent: receiptEmailed } = await res.json()
+      const { order_id, checkout_url: checkoutUrl, receipt_email_sent: receiptEmailed } = await res.json()
       placedRef.current = true
-      clearCart(orderedIds, { immediate: true })
       try { sessionStorage.removeItem(SELECTION_KEY) } catch { /* ignore */ }
+      if (checkoutUrl) {
+        // gateway order: the cart stays until money arrives (abandon = retry
+        // with the cart intact; expiry returns the stock) - the pay page
+        // clears it on success. No receipt claim here either: that email only
+        // goes out when payment succeeds.
+        pushNotification('Order placed. Complete your payment to confirm it.', 'info')
+        navigate(checkoutUrl)
+        return
+      }
+      clearCart(orderedIds, { immediate: true })
       pushNotification('Order placed successfully!')
       trackEvent('checkout_complete', { order_id, total: totals.totalCents / 100, items: checkoutItems.length })
       navigate(`/orders/${order_id}`, { state: { receiptEmailed: Boolean(receiptEmailed) } })
@@ -588,13 +597,11 @@ function Checkout() {
             ))}
           </div>
           <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            {selectedPayment?.instructions
-              ? selectedPayment.instructions
-              : form.paymentMethod === 'cod'
-                ? 'Pay in cash when your order arrives.'
-                : `You will receive payment instructions for ${paymentMethodLabel(form.paymentMethod)} after placing the order.`}
+            {form.paymentMethod === 'cod'
+              ? selectedPayment?.instructions || 'Pay in cash when your order arrives.'
+              : `You will be redirected to a secure payment page after placing your order to complete payment with ${paymentMethodLabel(form.paymentMethod)}. Your order stays pending until the payment is confirmed.`}
           </p>
-          {selectedPayment?.qr_url && (
+          {form.paymentMethod === 'cod' && selectedPayment?.qr_url && (
             <img
               src={selectedPayment.qr_url}
               alt={`${selectedPayment.label} QR code`}

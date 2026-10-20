@@ -29,6 +29,7 @@ import { effectiveUnitPrice, lineMargin } from '../utils/orderCosting.js'
 import { sendOrderStatusEmail, sendSupportReplyEmail, maskEmail } from '../utils/mailer.js'
 import { recordContentHistory, diffChanges, historyLabel } from '../utils/contentHistory.js'
 import { defaultRowsFor, RESTORE_SCOPES } from '../utils/siteContentDefaults.js'
+import { sweepGatewayExpiry } from '../utils/gatewayPayment.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -956,20 +957,30 @@ router.get('/products/:id', async (req, res) => {
   }
 })
 
-// GET /api/admin/payments - paginated payments with buyer name and order status
+// GET /api/admin/payments - paginated payments with buyer name, order status
+// and payment lifecycle status (paid/pending/failed/expired)
 router.get('/payments', async (req, res) => {
   try {
     const { page, pageSize, from, to } = parsePagination(req.query)
 
-    const { data: payments, error: payErr, count } = await supabaseAdmin
+    const PAYMENT_COLUMNS = 'payment_id, amount, method, payment_date, order_id'
+    let payRes = await supabaseAdmin
       .from('payment')
-      .select('payment_id, amount, method, payment_date, order_id', { count: 'exact' })
+      .select(`${PAYMENT_COLUMNS}, status`, { count: 'exact' })
       .order('payment_date', { ascending: false })
       .range(from, to)
-    if (payErr) throw payErr
+    if (payRes.error && isSchemaPendingError(payRes.error)) {
+      payRes = await supabaseAdmin
+        .from('payment')
+        .select(PAYMENT_COLUMNS, { count: 'exact' })
+        .order('payment_date', { ascending: false })
+        .range(from, to)
+    }
+    if (payRes.error) throw payRes.error
+    const payments = payRes.data
 
     if (!payments || payments.length === 0) {
-      return res.json({ items: [], page, pageSize, total: count ?? 0 })
+      return res.json({ items: [], page, pageSize, total: payRes.count ?? 0 })
     }
 
     // batch-fetch only the orders and profiles we need for this page
@@ -997,12 +1008,15 @@ router.get('/payments', async (req, res) => {
         amount: p.amount,
         method: p.method,
         status: order?.status || 'Unknown',
+        // lifecycle status, distinct from the order status above; null until
+        // the payment-status migration lands
+        payment_status: p.status ?? null,
         payment_date: p.payment_date,
         firstName: decryptText(profile?.first_name),
         lastName: decryptText(profile?.last_name),
       }
     })
-    res.json({ items, page, pageSize, total: count ?? 0 })
+    res.json({ items, page, pageSize, total: payRes.count ?? 0 })
   } catch (err) {
     logger.error({ err }, 'Admin payments error')
     res.status(500).json({ error: 'Server error' })
@@ -1055,9 +1069,17 @@ router.get('/orders', async (req, res) => {
     }
     if (detailsRes.error) throw detailsRes.error
 
+    const PAYMENT_COLUMNS_BASE = 'order_id, amount, method, payment_date'
     const [profilesRes, paymentsRes] = await Promise.all([
       supabaseAdmin.from('profiles').select('id, first_name, last_name').in('id', userIds),
-      supabaseAdmin.from('payment').select('order_id, amount, method, payment_date').in('order_id', orderIds),
+      (async () => {
+        let r = await supabaseAdmin.from('payment').select(`${PAYMENT_COLUMNS_BASE}, status, paid_at`).in('order_id', orderIds)
+        if (r.error && isSchemaPendingError(r.error)) {
+          r = await supabaseAdmin.from('payment').select(PAYMENT_COLUMNS_BASE).in('order_id', orderIds)
+        }
+        if (r.error) logger.error({ err: r.error }, 'admin orders payment fetch error')
+        return r
+      })(),
     ])
 
     const profileMap = new Map((profilesRes.data || []).map(p => [p.id, p]))
@@ -1077,6 +1099,19 @@ router.get('/orders', async (req, res) => {
     const paymentMap = new Map()
     for (const p of (paymentsRes.data || [])) {
       if (!paymentMap.has(p.order_id)) paymentMap.set(p.order_id, p)
+    }
+
+    // lazy gateway expiry (the admin list is a read trigger too) + audit as
+    // the system actor so the transition is traceable on the audit page
+    const expiredIds = await sweepGatewayExpiry(orders, paymentMap)
+    for (const id of expiredIds) {
+      logAudit({
+        adminEmail: 'system',
+        action: 'status',
+        target: `order:${id}`,
+        details: 'payment expired automatically (gateway TTL)',
+        changes: { status: { from: 'Pending', to: 'Cancelled' } },
+      })
     }
 
     const isAdminCaller = req.userRole === 'admin'

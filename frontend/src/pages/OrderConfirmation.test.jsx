@@ -56,6 +56,7 @@ vi.mock('../lib/orderDoc.js', () => ({
   fulfillmentPill: () => ({ label: 'Pending', className: 'x' }),
   deliveryPill: () => ({ label: 'Not yet shipped', className: 'x' }),
   isOnlinePayment: () => false,
+  awaitingGatewayPayment: () => false,
 }))
 
 import OrderConfirmation from './OrderConfirmation.jsx'

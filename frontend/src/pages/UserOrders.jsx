@@ -2,6 +2,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useShop } from '../context/ShopContext.jsx'
 import { formatPesos } from '../lib/cartLogic'
+import { awaitingGatewayPayment } from '../lib/orderDoc'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -267,6 +268,11 @@ function UserOrders() {
                   <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${STATUS_COLOR[order.status] || 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>
                     {order.status}
                   </span>
+                  {awaitingGatewayPayment(order) && (
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                      Awaiting payment
+                    </span>
+                  )}
                   <span className="text-xs text-gray-500 dark:text-gray-400">
                     {order.created_at ? new Date(order.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
                   </span>
@@ -325,6 +331,14 @@ function UserOrders() {
                       <p className="font-semibold text-[#0b2e59] dark:text-yellow-300">PHP {formatPesos(Number(order.payment?.amount || order.total_amount))}</p>
                     </div>
                     <div className="sm:col-span-2 flex flex-wrap gap-2">
+                      {awaitingGatewayPayment(order) && (
+                        <Link
+                          to={`/pay/simulate?order=${order.order_id}`}
+                          className="inline-flex items-center justify-center px-4 h-11 rounded-lg bg-[#0b2e59] text-sm font-semibold text-white hover:bg-[#15407a] transition-colors"
+                        >
+                          Complete payment
+                        </Link>
+                      )}
                       <Link
                         to={`/orders/${order.order_id}`}
                         className="inline-flex items-center justify-center px-4 h-11 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"

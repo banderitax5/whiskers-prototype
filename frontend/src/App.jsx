@@ -18,6 +18,7 @@ const Support = lazy(() => import('./pages/Support.jsx'))
 const PolicyPage = lazy(() => import('./pages/PolicyPage.jsx'))
 const OrderConfirmation = lazy(() => import('./pages/OrderConfirmation.jsx'))
 const OfficialReceipt = lazy(() => import('./pages/OfficialReceipt.jsx'))
+const PaymentSimulate = lazy(() => import('./pages/PaymentSimulate.jsx'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword.jsx'))
 const NotFound = lazy(() => import('./pages/NotFound.jsx'))
 
@@ -190,6 +191,16 @@ const router = createBrowserRouter([
       { path: 'products/:prod_id', element: <ProductDetail /> },
       { path: 'cart', element: <Cart /> },
       { path: 'checkout', element: <Checkout /> },
+      {
+        // simulated payment gateway pay page (stands in for PayMongo's
+        // hosted checkout); owns order id via ?order=
+        path: 'pay/simulate',
+        element: (
+          <RequireAuth>
+            <PaymentSimulate />
+          </RequireAuth>
+        ),
+      },
       {
         path: 'orders',
         element: (

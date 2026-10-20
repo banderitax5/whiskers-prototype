@@ -55,6 +55,18 @@ export const orderLimiter = rateLimit({
   keyGenerator: clientKey,
 })
 
+// 40 payment confirmations per hour per IP (simulated gateway: pay / fail /
+// retry clicks). Separate from orderLimiter so a walkthrough never spends the
+// order-creation quota on confirmations.
+export const payLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 40,
+  message: { error: 'Too many payment attempts. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+})
+
 // 60 cart operations per minute per IP
 export const cartLimiter = rateLimit({
   windowMs: 60 * 1000,

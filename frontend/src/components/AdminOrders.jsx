@@ -453,6 +453,27 @@ const AdminOrders = () => {
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div><span className="text-gray-500 dark:text-slate-400">Method: </span><span className="font-semibold text-gray-800 dark:text-slate-200 uppercase">{viewingOrder.payment?.method || 'N/A'}</span></div>
                   <div><span className="text-gray-500 dark:text-slate-400">Amount: </span><span className="font-bold text-[#0b2e59] dark:text-yellow-300">PHP {formatPesos(Number(viewingOrder.payment?.amount || viewingOrder.total_amount))}</span></div>
+                  <div className="col-span-2 flex flex-wrap items-center gap-2">
+                    <span className="text-gray-500 dark:text-slate-400">Status: </span>
+                    {(() => {
+                      const ps = String(viewingOrder.payment?.status || '').toLowerCase();
+                      const map = {
+                        succeeded: ['success', 'Paid'],
+                        pending: ['progress', 'Pending'],
+                        failed: ['danger', 'Failed'],
+                        expired: ['neutral', 'Expired'],
+                      };
+                      const hit = map[ps];
+                      return hit
+                        ? <StatusPill kind={hit[0]}>{hit[1]}</StatusPill>
+                        : <span className="text-xs text-gray-400 dark:text-slate-500">—</span>;
+                    })()}
+                    {String(viewingOrder.payment?.status || '').toLowerCase() === 'succeeded' && (viewingOrder.payment?.paid_at || viewingOrder.payment?.payment_date) && (
+                      <span className="text-xs text-gray-500 dark:text-slate-400">
+                        {new Date(viewingOrder.payment.paid_at || viewingOrder.payment.payment_date).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

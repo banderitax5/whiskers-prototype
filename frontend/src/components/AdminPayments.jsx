@@ -2,10 +2,20 @@ import React, { useState, useEffect, useMemo } from 'react';
 import supabase from '../lib/supabase';
 import { apiGetAllPages, apiDeleteAuth } from '../lib/api';
 import { formatPesos } from '../lib/cartLogic';
-import { AdminPage, AdminTable, EmptyState, StatCard, ConfirmDialog } from './adminTheme';
+import { AdminPage, AdminTable, EmptyState, StatCard, ConfirmDialog, StatusPill } from './adminTheme';
 import { BsCreditCard, BsSearch, BsTrash, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 import { useRole } from '../context/RoleContext';
 import toast from 'react-hot-toast';
+
+// payment lifecycle labels (payment.status); null = pre-migration rows
+const PAYMENT_LABEL = { succeeded: 'Paid', pending: 'Pending', failed: 'Failed', expired: 'Expired' };
+const PAYMENT_KIND = { succeeded: 'success', pending: 'progress', failed: 'danger', expired: 'neutral' };
+
+function paymentStatusCell(p) {
+  const s = String(p.payment_status || '').toLowerCase();
+  if (!PAYMENT_LABEL[s]) return <span className="text-xs text-gray-400 dark:text-slate-500">—</span>;
+  return <StatusPill kind={PAYMENT_KIND[s]}>{PAYMENT_LABEL[s]}</StatusPill>;
+}
 
 const AdminPayments = () => {
   const [payments, setPayments] = useState([]);
@@ -132,6 +142,10 @@ const AdminPayments = () => {
           va = (a.status || '').toLowerCase();
           vb = (b.status || '').toLowerCase();
           break;
+        case 'payment_status':
+          va = (a.payment_status || '').toLowerCase();
+          vb = (b.payment_status || '').toLowerCase();
+          break;
         default:
           va = a[sortKey] ?? '';
           vb = b[sortKey] ?? '';
@@ -179,7 +193,8 @@ const AdminPayments = () => {
     { key: 'method', label: 'Method', sortable: true,
       render: (p) => <span className="px-3 py-1 rounded-full border border-gray-300 dark:border-[#1e3a5f] bg-white dark:bg-[#162d4a] text-gray-800 dark:text-slate-200 text-[10px] font-black uppercase tracking-widest">{p.method}</span>,
     },
-    { key: 'status', label: 'Status', sortable: true,
+    { key: 'payment_status', label: 'Payment', sortable: true, render: paymentStatusCell },
+    { key: 'status', label: 'Order', sortable: true,
       render: (p) => <span className="px-3 py-1 rounded-full border border-gray-300 dark:border-[#1e3a5f] bg-white dark:bg-[#162d4a] text-gray-800 dark:text-slate-200 text-[10px] font-black uppercase tracking-widest">{p.status}</span>,
     },
     { key: 'payment_date', label: 'Date', sortable: true,
@@ -276,7 +291,7 @@ const AdminPayments = () => {
         rows={filteredPayments}
         rowKey={(p) => p.payment_id}
         loading={loading}
-        colSpan={9}
+        colSpan={10}
         sortKey={sortKey}
         sortDir={sortDir}
         onSort={handleSort}
@@ -293,6 +308,9 @@ const AdminPayments = () => {
             <div className="text-xs text-gray-500 dark:text-slate-400">
               PHP {formatPesos(Number(p.amount || 0))}
               <span className="ml-1.5">· {p.method}</span>
+              {p.payment_status && PAYMENT_LABEL[String(p.payment_status).toLowerCase()] && (
+                <span className="ml-1.5">· {PAYMENT_LABEL[String(p.payment_status).toLowerCase()]}</span>
+              )}
               {p.payment_date && <span className="ml-1.5">· {new Date(p.payment_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span>}
             </div>
             <div className="flex items-center gap-2 pt-1.5 mt-1.5 border-t border-gray-50 dark:border-[#1e3a5f]/40">

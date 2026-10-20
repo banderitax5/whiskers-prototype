@@ -63,13 +63,24 @@ export function summarize(order) {
 }
 
 // pill styles shared by both documents (label, tailwind classes)
-// the backend inserts a payment row at order time for every method, so the
-// row existing does NOT mean money was received. Be honest about the state:
-// COD is collected on delivery; online methods record intent, not settlement.
+// The payment status column (simulated gateway) decides for online methods;
+// rows written before the status migration fall back to the old
+// "payment exists = pending" reading. COD never changes: the cash is
+// collected on delivery.
 export function paymentPill(order) {
   const method = String(order?.payment?.method || '').toLowerCase()
   if (method === 'cod') {
     return { label: 'PAY ON DELIVERY', className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300' }
+  }
+  const status = String(order?.payment?.status || '').toLowerCase()
+  if (status === 'succeeded') {
+    return { label: 'PAID', className: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' }
+  }
+  if (status === 'failed') {
+    return { label: 'PAYMENT FAILED', className: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' }
+  }
+  if (status === 'expired') {
+    return { label: 'PAYMENT EXPIRED', className: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' }
   }
   if (order?.payment) {
     return { label: 'PAYMENT PENDING', className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' }
@@ -81,6 +92,16 @@ export function paymentPill(order) {
 export function isOnlinePayment(order) {
   const method = String(order?.payment?.method || '').toLowerCase()
   return method === 'gcash' || method === 'paymaya'
+}
+
+// true while an online order still needs the shopper to pay: pending after
+// checkout or retrying after a failure both count; a cancelled or expired
+// order does not (the status guard drops it out)
+export function awaitingGatewayPayment(order) {
+  if (!order || order.status !== 'Pending') return false
+  if (!isOnlinePayment(order)) return false
+  if (!order.payment) return false
+  return String(order.payment.status || '').toLowerCase() !== 'succeeded'
 }
 
 export function fulfillmentPill(status) {

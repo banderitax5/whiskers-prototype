@@ -5,6 +5,7 @@ import { extractSizeLabel, getBaseName } from '../lib/productUtils.js'
 import {
   fetchOrderById, peso, orderCode, trackingCode, formatOrderDateTime,
   etaWindow, CARRIER, paymentMethodLabel, summarize, paymentPill, fulfillmentPill, deliveryPill, isOnlinePayment,
+  awaitingGatewayPayment,
 } from '../lib/orderDoc.js'
 import { BsArrowLeft, BsDownload, BsCopy, BsCheckLg, BsQuestionCircle } from 'react-icons/bs'
 
@@ -62,6 +63,8 @@ function OrderConfirmation() {
   // below never appears on a refresh or a later visit, so the page can never
   // claim a receipt was emailed when it was not
   const receiptEmailed = Boolean(location.state?.receiptEmailed)
+  // set only when the pay page confirmed payment in this navigation
+  const paymentSucceeded = Boolean(location.state?.paymentSucceeded)
   const [order, setOrder] = useState(null)
   const [state, setState] = useState('loading')
   const [error, setError] = useState('')
@@ -118,6 +121,7 @@ function OrderConfirmation() {
   const pay = paymentPill(order)
   const fulfill = fulfillmentPill(order.status)
   const delivery = deliveryPill(order.status)
+  const payStatus = String(order?.payment?.status || '').toLowerCase()
 
   return (
     <div className="lg:mx-auto lg:max-w-7xl py-5 sm:py-6">
@@ -128,10 +132,37 @@ function OrderConfirmation() {
         <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
           Thank you for shopping with Whiskers! Your order has been placed and is currently being processed.
         </p>
+        {paymentSucceeded && (
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 px-3 py-2.5 text-sm text-emerald-800 dark:text-emerald-300" role="status">
+            <BsCheckLg className="mt-0.5 shrink-0" />
+            <span>Payment confirmed — your order is now being processed.</span>
+          </div>
+        )}
         {receiptEmailed && (
           <div className="mt-3 flex items-start gap-2 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 px-3 py-2.5 text-sm text-emerald-800 dark:text-emerald-300" role="status">
             <BsCheckLg className="mt-0.5 shrink-0" />
             <span>A payment receipt has been emailed to your email address. You can also print or download the receipt below.</span>
+          </div>
+        )}
+        {awaitingGatewayPayment(order) && (
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-lg border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-2.5 text-sm text-amber-900 dark:text-amber-200" role="status">
+            <div>
+              <p className="font-semibold">
+                {payStatus === 'failed' ? 'Last payment attempt failed' : 'Waiting for payment'}
+              </p>
+              <p className="text-xs mt-0.5">
+                {payStatus === 'failed'
+                  ? 'Your order is still pending — complete payment to confirm it.'
+                  : 'Complete your payment to confirm this order.'}
+                {' '}Unpaid orders are cancelled automatically after the payment window and items return to stock.
+              </p>
+            </div>
+            <Link
+              to={`/pay/simulate?order=${order.order_id}`}
+              className="shrink-0 inline-flex items-center justify-center min-h-[40px] rounded-lg bg-[#0b2e59] px-4 text-xs font-black uppercase tracking-widest text-white hover:bg-[#15407a] transition-colors"
+            >
+              Complete payment
+            </Link>
           </div>
         )}
       </div>
@@ -156,8 +187,11 @@ function OrderConfirmation() {
           <section className={CARD}>
             <h2 className={CARD_TITLE}>Customer &amp; Shipping Details</h2>
             <Row label="Shipping Address">{order.address || 'N/A'}</Row>
-            {isOnlinePayment(order) && (
-              <Row label="Paid On">{formatOrderDateTime(order.payment?.payment_date || order.created_at)}</Row>
+            {/* only a real settlement shows a paid timestamp (paid_at from the
+                gateway, payment_date as fallback) - an unpaid online order
+                never claims a Paid On */}
+            {isOnlinePayment(order) && payStatus === 'succeeded' && (
+              <Row label="Paid On">{formatOrderDateTime(order.payment?.paid_at || order.payment?.payment_date || order.created_at)}</Row>
             )}
             <Row label="Payment Method">{paymentMethodLabel(order.payment?.method)}</Row>
             <Row label="Phone Number">{order.phone || 'N/A'}</Row>
