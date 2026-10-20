@@ -8,6 +8,7 @@ import { setProductSeo } from '../lib/seo.js'
 import ProductImage from '../components/ProductImage.jsx'
 import ProductCard from '../components/ProductCard.jsx'
 import ProductInfoAccordion from '../components/ProductInfoAccordion.jsx'
+import ProductReviews from '../components/ProductReviews.jsx'
 import { normalizeProduct, formatPrice, getStockStatus, toCartPayload, useLowStockThreshold } from '../lib/productDisplay.js'
 import { saleFor, useActivePromos } from '../lib/promoDisplay.js'
 import { parseDetails } from '../lib/productInfo.js'
@@ -303,6 +304,9 @@ function ProductDetail() {
           </div>
         </section>
       )}
+
+      {/* customer reviews */}
+      <ProductReviews productId={p.prod_id} />
 
       {/* related products */}
       {related.length > 0 && (

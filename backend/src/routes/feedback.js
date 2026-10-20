@@ -3,12 +3,70 @@ import { randomUUID } from 'crypto'
 import { supabaseAdmin } from '../config/supabase.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { feedbackLimiter } from '../middleware/rateLimiter.js'
+import { isUuid } from '../utils/uuid.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
-router.use(authMiddleware)
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// PUBLIC: GET /api/feedback/product/:prodId — all reviews for a product
+// no auth required; returns ratings, comments, dates, and reviewer names
+router.get('/product/:prodId', async (req, res) => {
+  const prodId = String(req.params.prodId || '').trim()
+  if (!isUuid(prodId)) {
+    return res.status(404).json({ error: 'Product not found' })
+  }
+  try {
+    const page = Math.max(1, parseInt(req.query.page) || 1)
+    const pageSize = Math.min(20, Math.max(1, parseInt(req.query.pageSize) || 10))
+    const from = (page - 1) * pageSize
+    const to = from + pageSize - 1
+
+    const { data, error, count } = await supabaseAdmin
+      .from('feedback')
+      .select(
+        'feed_id, rating, comments, date_submittted, id',
+        { count: 'exact' }
+      )
+      .eq('prod_id', prodId)
+      .order('date_submittted', { ascending: false })
+      .range(from, to)
+
+    if (error) throw error
+
+    // hydrate reviewer names from profiles (service role can read encrypted names)
+    const userIds = [...new Set((data || []).map(r => r.id).filter(Boolean))]
+    let nameMap = {}
+    if (userIds.length > 0) {
+      const { data: profiles } = await supabaseAdmin
+        .from('profiles')
+        .select('id, first_name, last_name')
+        .in('id', userIds)
+      if (profiles) {
+        for (const p of profiles) {
+          const fn = p.first_name || ''
+          const ln = p.last_name || ''
+          nameMap[p.id] = (fn || ln) ? `${fn} ${ln}`.trim() : 'Anonymous'
+        }
+      }
+    }
+
+    const items = (data || []).map(r => ({
+      ...r,
+      reviewer_name: nameMap[r.id] || 'Anonymous',
+    }))
+
+    res.json({ items, page, pageSize, total: count ?? 0 })
+  } catch (err) {
+    logger.error({ err: err.message }, 'Public product reviews fetch error')
+    res.status(500).json({ error: 'Failed to load reviews' })
+  }
+})
+
+// private routes below require auth
+router.use(authMiddleware)
+router.use(feedbackLimiter)
 
 // POST /api/feedback — save product reviews for the caller's own order
 // body: { orderId, items: [{ prodId, rating, comments? }] }
