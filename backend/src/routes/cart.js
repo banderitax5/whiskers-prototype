@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { authMiddleware } from '../middleware/auth.js'
 import { cartLimiter } from '../middleware/rateLimiter.js'
+import { supabaseAdmin } from '../config/supabase.js'
 import { isUuid } from '../utils/uuid.js'
 import { normalizeQuantity, MAX_LINE_QUANTITY } from '../utils/shopRules.js'
 import logger from '../utils/logger.js'
@@ -91,17 +92,21 @@ router.post('/', async (req, res) => {
 
     if (existing) {
       const merged = Math.min(Number(existing.quantity || 0) + qty, stock)
-      const { data, error } = await req.db
+      // service-role writes with explicit user_id: authenticated PostgREST
+      // writes on cart_items are revoked by migration 2026-10-20 and RLS
+      // scoping no longer applies to this client
+      const { data, error } = await supabaseAdmin
         .from('cart_items')
         .update(snapshotFromProduct(product, merged))
         .eq('id', existing.id)
+        .eq('user_id', req.userId)
         .select()
         .single()
       if (error) throw error
       return res.json({ item: data })
     }
 
-    const { data, error } = await req.db
+    const { data, error } = await supabaseAdmin
       .from('cart_items')
       .insert({ user_id: req.userId, ...snapshotFromProduct(product, qty) })
       .select()
@@ -118,10 +123,11 @@ router.post('/', async (req, res) => {
           .maybeSingle()
         if (row) {
           const merged = Math.min(Number(row.quantity || 0) + qty, stock)
-          const { data: updated, error: updErr } = await req.db
+          const { data: updated, error: updErr } = await supabaseAdmin
             .from('cart_items')
             .update(snapshotFromProduct(product, merged))
             .eq('id', row.id)
+            .eq('user_id', req.userId)
             .select()
             .single()
           if (updErr) throw updErr
@@ -157,10 +163,11 @@ router.put('/:productId', async (req, res) => {
       return res.status(400).json({ error: `Only ${stock} left in stock` })
     }
 
-    const { data, error } = await req.db
+    const { data, error } = await supabaseAdmin
       .from('cart_items')
       .update({ quantity: Math.min(raw, MAX_LINE_QUANTITY) })
       .eq('product_id', productId)
+      .eq('user_id', req.userId)
       .select('id')
     if (error) throw error
     if (!data || data.length === 0) {
@@ -182,9 +189,10 @@ router.delete('/', async (req, res) => {
   }
 
   try {
-    const { error } = await req.db
+    const { error } = await supabaseAdmin
       .from('cart_items')
       .delete()
+      .eq('user_id', req.userId)
       .in('product_id', productIds)
     if (error) throw error
     res.json({ success: true })

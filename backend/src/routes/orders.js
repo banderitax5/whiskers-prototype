@@ -230,10 +230,14 @@ router.post('/', orderLimiter, async (req, res) => {
       }
     }
 
+    // all order writes below run as service_role: authenticated PostgREST
+    // writes on orders/order_details/payment/cart_items are revoked by
+    // migration 2026-10-20_revoke_client_table_writes.sql (the validated
+    // API is the only way in)
     let orderId = null
     const decremented = []
     try {
-      const { data: order, error: orderErr } = await req.db
+      const { data: order, error: orderErr } = await supabaseAdmin
         .from('orders')
         .insert({
           id: req.userId,
@@ -279,15 +283,15 @@ router.post('/', orderLimiter, async (req, res) => {
         }))
       }
 
-      let { error: detErr } = await req.db.from('order_details').insert(detailRows)
+      let { error: detErr } = await supabaseAdmin.from('order_details').insert(detailRows)
       if (detErr && isSchemaPendingError(detErr)) {
         logger.info({ err: detErr }, 'M3 columns missing - retrying order_details insert without snapshots')
         detailRows = validatedItems.map(baseDetail)
-        ;({ error: detErr } = await req.db.from('order_details').insert(detailRows))
+        ;({ error: detErr } = await supabaseAdmin.from('order_details').insert(detailRows))
       }
       if (detErr) throw detErr
 
-      const { error: payErr } = await req.db.from('payment').insert({
+      const { error: payErr } = await supabaseAdmin.from('payment').insert({
         order_id: orderId,
         amount: totalAmount,
         method: paymentMethod,
@@ -327,9 +331,9 @@ router.post('/', orderLimiter, async (req, res) => {
     } catch (innerErr) {
       logger.error({ err: innerErr }, 'Order creation failed, cleaning up')
       if (orderId) {
-        await req.db.from('payment').delete().eq('order_id', orderId)
-        await req.db.from('order_details').delete().eq('order_id', orderId)
-        await req.db.from('orders').delete().eq('order_id', orderId)
+        await supabaseAdmin.from('payment').delete().eq('order_id', orderId)
+        await supabaseAdmin.from('order_details').delete().eq('order_id', orderId)
+        await supabaseAdmin.from('orders').delete().eq('order_id', orderId)
       }
       for (const item of decremented) {
         try {
@@ -362,9 +366,10 @@ router.post('/', orderLimiter, async (req, res) => {
     }
 
     if (productIds.length > 0) {
-      await req.db
+      await supabaseAdmin
         .from('cart_items')
         .delete()
+        .eq('user_id', req.userId)
         .in('product_id', productIds)
     }
 

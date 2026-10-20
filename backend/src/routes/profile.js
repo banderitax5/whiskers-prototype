@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { encryptText, decryptText } from '../utils/encryption.js'
 import { authMiddleware } from '../middleware/auth.js'
+import { supabaseAdmin } from '../config/supabase.js'
 import {
   normalizeMobilePhone,
   sanitizeAddressLine,
@@ -137,7 +138,10 @@ router.put('/', authMiddleware, async (req, res) => {
     const co = sanitizeField(country, LIMITS.country)
     if (co) updates.country = encryptText(co)
 
-    const { error: upsertError } = await req.db
+    // service-role write: authenticated PostgREST writes are revoked by
+    // migration 2026-10-20_revoke_client_table_writes.sql so the validated
+    // API is the only way in
+    const { error: upsertError } = await supabaseAdmin
       .from('profiles')
       .upsert(updates, { onConflict: 'id' })
     if (upsertError) throw upsertError
