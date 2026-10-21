@@ -163,6 +163,9 @@ function Checkout() {
   // set once an order is placed so clearing the cart cannot trigger the
   // "no selection" redirect on the way to the confirmation page
   const placedRef = useRef(false)
+  // idempotency key: generated once per component mount, sent with POST /orders
+  // prevents double-order on network retry or double-click (backend upserts on key)
+  const idempotencyKeyRef = useRef(crypto.randomUUID())
   const accessToken = session?.access_token
 
   // prefill delivery details from the saved profile
@@ -312,6 +315,7 @@ function Checkout() {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
+          'Idempotency-Key': idempotencyKeyRef.current,
         },
         body: JSON.stringify({
           // the server recomputes prices and shipping; these are display hints

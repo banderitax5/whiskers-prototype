@@ -82,39 +82,19 @@ router.post('/', async (req, res) => {
     const { product, stock } = loaded
     const qty = normalizeQuantity(req.body?.quantity, stock)
 
-    // check if this product is already in the user's cart
-    const { data: existing, error: findErr } = await req.db
-      .from('cart_items')
-      .select('id, quantity')
-      .eq('product_id', productId)
-      .maybeSingle()
-    if (findErr) throw findErr
-
-    if (existing) {
-      const merged = Math.min(Number(existing.quantity || 0) + qty, stock)
-      // service-role writes with explicit user_id: authenticated PostgREST
-      // writes on cart_items are revoked by migration 2026-10-20 and RLS
-      // scoping no longer applies to this client
-      const { data, error } = await supabaseAdmin
-        .from('cart_items')
-        .update(snapshotFromProduct(product, merged))
-        .eq('id', existing.id)
-        .eq('user_id', req.userId)
-        .select()
-        .single()
-      if (error) throw error
-      return res.json({ item: data })
-    }
-
+    // atomic upsert: merge on conflict (user_id, product_id)
+    const snapshot = { user_id: req.userId, ...snapshotFromProduct(product, qty) }
     const { data, error } = await supabaseAdmin
       .from('cart_items')
-      .insert({ user_id: req.userId, ...snapshotFromProduct(product, qty) })
+      .upsert(snapshot, {
+        onConflict: 'user_id,product_id',
+        ignoreDuplicates: false,
+      })
       .select()
       .single()
 
     if (error) {
-      // 23505 = unique violation on (user_id, product_id): a concurrent add
-      // inserted the row between our select and insert — merge instead
+      // if upsert somehow fails (e.g., stock check needed), fall back to merge
       if (error.code === '23505') {
         const { data: row } = await req.db
           .from('cart_items')
@@ -151,9 +131,24 @@ router.put('/:productId', async (req, res) => {
   }
 
   try {
-    const loaded = await loadPurchasableProduct(req, productId)
-    if (loaded.error) return res.status(loaded.status).json({ error: loaded.error })
-    const { stock } = loaded
+    // fresh stock read via service-role (bypasses RLS) to avoid stale cache
+    const { data: product, error: prodErr } = await supabaseAdmin
+      .from('product')
+      .select('prod_id, prod_name, price, stock_quantity, is_active')
+      .eq('prod_id', productId)
+      .maybeSingle()
+    if (prodErr) throw prodErr
+    if (!product || product.is_active === false) {
+      return res.status(404).json({ error: 'Product not found or no longer available' })
+    }
+    const price = Number(product.price)
+    if (!(price > 0)) {
+      return res.status(400).json({ error: `"${product.prod_name}" is not yet priced and cannot be added to the cart` })
+    }
+    const stock = Number(product.stock_quantity || 0)
+    if (stock <= 0) {
+      return res.status(400).json({ error: `"${product.prod_name}" is out of stock` })
+    }
 
     const raw = Math.floor(Number(req.body?.quantity))
     if (!Number.isFinite(raw) || raw < 1) {

@@ -115,35 +115,31 @@ router.post('/', feedbackLimiter, async (req, res) => {
     let inserted = 0
     let updated = 0
     for (const it of items) {
+      const row = {
+        rating: Number(it.rating),
+        comments: (it.comments || '').trim() || null,
+        date_submittted: new Date().toISOString(),
+      }
+      // check existing first (small race window, unique constraint prevents duplicates)
       const { data: existing } = await supabaseAdmin
         .from('feedback')
         .select('feed_id')
         .eq('order_id', orderId)
         .eq('prod_id', it.prodId)
         .limit(1)
-      const row = {
-        rating: Number(it.rating),
-        comments: (it.comments || '').trim() || null,
-        date_submittted: new Date().toISOString(),
-      }
-      if (existing && existing.length > 0) {
-        const { error } = await supabaseAdmin
-          .from('feedback')
-          .update(row)
-          .eq('feed_id', existing[0].feed_id)
-        if (error) throw error
-        updated += 1
-      } else {
-        const { error } = await supabaseAdmin.from('feedback').insert({
+      // upsert on (order_id, prod_id) — unique constraint ensures one review per product per order
+      const { error } = await supabaseAdmin
+        .from('feedback')
+        .upsert({
           feed_id: randomUUID(),
           id: req.userId,
           order_id: orderId,
           prod_id: it.prodId,
           ...row,
-        })
-        if (error) throw error
-        inserted += 1
-      }
+        }, { onConflict: 'order_id,prod_id' })
+      if (error) throw error
+      if (existing && existing.length > 0) updated += 1
+      else inserted += 1
     }
     res.status(201).json({ inserted, updated, message: 'Reviews saved' })
   } catch (err) {

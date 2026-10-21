@@ -206,6 +206,59 @@ router.post('/', orderLimiter, async (req, res) => {
     }
     const cartItemsForPromo = buildCartItemsForPromo(validatedItems, promoTargets)
 
+    // Idempotency: a client-supplied key makes order creation retry-safe. This
+    // lookup runs BEFORE promo reservation/application so a replayed request
+    // never burns a promo use or touches stock a second time.
+    const idempotencyKey = String(req.headers['idempotency-key'] || '').trim()
+
+    const findIdempotentOrder = async () => {
+      const { data: existing, error: existErr } = await supabaseAdmin
+        .from('orders')
+        .select('order_id, status, total_amount')
+        .eq('id', req.userId)
+        .eq('idempotency_key', idempotencyKey)
+        .maybeSingle()
+      if (existErr) {
+        if (isSchemaPendingError(existErr)) return null
+        throw existErr
+      }
+      return existing || null
+    }
+
+    // Replays reflect the order that was actually stored, never the current
+    // request's totals, and never re-send a receipt.
+    const replayResponse = async (existing) => {
+      const { data: pay } = await supabaseAdmin
+        .from('payment')
+        .select('method')
+        .eq('order_id', existing.order_id)
+        .maybeSingle()
+      const gateway = Boolean(pay && isGatewayMethod(pay.method))
+      return gateway
+        ? {
+            order_id: existing.order_id,
+            status: existing.status,
+            total_amount: existing.total_amount,
+            checkout_url: `/pay/simulate?order=${existing.order_id}`,
+            payment_status: 'pending',
+          }
+        : {
+            order_id: existing.order_id,
+            status: existing.status,
+            total_amount: existing.total_amount,
+            receipt_email_sent: false,
+          }
+    }
+
+    if (idempotencyKey) {
+      try {
+        const existing = await findIdempotentOrder()
+        if (existing) return res.status(200).json(await replayResponse(existing))
+      } catch (idemErr) {
+        logger.warn({ err: idemErr }, 'idempotency lookup failed')
+      }
+    }
+
     if (promo_code && typeof promo_code === 'string') {
       const { data: promo, error: promoFetchErr } = await supabaseAdmin
         .from('promos')
@@ -256,11 +309,25 @@ router.post('/', orderLimiter, async (req, res) => {
           for (const row of usageRows || []) {
             usageCounts.set(row.promo_code, (usageCounts.get(row.promo_code) || 0) + 1)
           }
-          const best = pickBestPromo(activePromos, cartItemsForPromo, req.userId, usageCounts)
-          if (best && best.discountAmount > 0) {
-            promoResult = best
-            promoRow = best.promo
-            totalAmount -= best.discountAmount
+          // pick best and atomically reserve (max 2 attempts if limit raced)
+          let reservedPromo = null
+          for (let attempt = 0; attempt < 2; attempt++) {
+            const best = pickBestPromo(activePromos, cartItemsForPromo, req.userId, usageCounts)
+            if (!best || best.discountAmount <= 0) break
+            const { data: reserved, error: reserveErr } = await supabaseAdmin
+              .rpc('atomic_promo_increment', { p_code: best.code })
+            if (reserveErr) throw reserveErr
+            if (reserved && reserved.length > 0) {
+              reservedPromo = best
+              break
+            }
+            // limit reached: exclude this promo and try next best
+            activePromos.splice(activePromos.findIndex(p => p.code === best.code), 1)
+          }
+          if (reservedPromo) {
+            promoResult = reservedPromo
+            promoRow = reservedPromo.promo
+            totalAmount -= reservedPromo.discountAmount
           }
         }
       } catch (autoEx) {
@@ -273,23 +340,47 @@ router.post('/', orderLimiter, async (req, res) => {
     // writes on orders/order_details/payment/cart_items are revoked by
     // migration 2026-10-20_revoke_client_table_writes.sql (the validated
     // API is the only way in)
+
     let orderId = null
     const decremented = []
+
+    // helper to build the response for a freshly created order
+    const buildOrderResponse = (oid, isGatewayOrder, receiptSent) => {
+      const base = {
+        order_id: oid,
+        status: 'Pending',
+        total_amount: totalAmount,
+      }
+      if (isGatewayOrder) {
+        return { ...base, checkout_url: `/pay/simulate?order=${oid}`, payment_status: 'pending' }
+      }
+      return { ...base, receipt_email_sent: Boolean(receiptSent) }
+    }
+
     try {
+      const orderInsert = {
+        id: req.userId,
+        prod_id: validatedItems[0].productId,
+        orderDate: new Date().toISOString(),
+        status: 'Pending',
+        total_amount: totalAmount,
+        customer_name: customerName || '',
+        phone: phoneCheck.value || '',
+        address: orderAddress,
+      }
+      if (idempotencyKey) orderInsert.idempotency_key = idempotencyKey
+
       const { data: order, error: orderErr } = await supabaseAdmin
         .from('orders')
-        .insert({
-          id: req.userId,
-          prod_id: validatedItems[0].productId,
-          orderDate: new Date().toISOString(),
-          status: 'Pending',
-          total_amount: totalAmount,
-          customer_name: customerName || '',
-          phone: phoneCheck.value || '',
-          address: orderAddress,
-        })
+        .insert(orderInsert)
         .select('order_id')
         .single()
+      // Lost a concurrent race on the same key: the winner already created the
+      // order, so return that one instead of failing the checkout.
+      if (orderErr && orderErr.code === '23505' && idempotencyKey) {
+        const existing = await findIdempotentOrder()
+        if (existing) return res.status(200).json(await replayResponse(existing))
+      }
       if (orderErr) throw orderErr
       orderId = order.order_id
 
@@ -352,17 +443,23 @@ router.post('/', orderLimiter, async (req, res) => {
       if (payErr) throw payErr
 
       if (promoResult && promoRow) {
+        // atomic promo usage increment with limit check via RPC
+        const code = promoRow.code
+        const { data: reserved, error: reserveErr } = await supabaseAdmin
+          .rpc('atomic_promo_increment', { p_code: code })
+        if (reserveErr) throw reserveErr
+        if (!reserved || reserved.length === 0) {
+          // limit reached between validation and now
+          throw new Error('Promo code usage limit reached. Please try another code or remove it.')
+        }
+
         const { error: usageErr } = await supabaseAdmin.from('promo_usage').insert({
-          promo_code: promoRow.code,
+          promo_code: code,
           user_id: req.userId,
           order_id: orderId,
           discount_applied: promoResult.discountAmount,
         })
         if (usageErr) logger.warn({ err: usageErr }, 'promo_usage insert failed')
-        await supabaseAdmin
-          .from('promos')
-          .update({ usage_count: promoRow.usage_count + 1 })
-          .eq('code', promoRow.code)
       }
 
       for (const item of validatedItems) {
@@ -432,6 +529,7 @@ router.post('/', orderLimiter, async (req, res) => {
     // at creation. Gateway methods send theirs when payment succeeds, so a
     // customer who abandons never gets a receipt for money they did not pay.
     // It never blocks or fails the response; without BREVO_API_KEY it is a no-op.
+    let receiptSent = false
     if (!isGateway) {
       const receipt = await sendOrderReceipt(req.userEmail, {
         orderId,
@@ -453,23 +551,10 @@ router.post('/', orderLimiter, async (req, res) => {
         { orderId, receiptSent: receipt.sent, reason: receipt.reason, to: maskEmail(req.userEmail) },
         receipt.sent ? 'Order receipt emailed' : 'Order receipt not emailed'
       )
-      return res.status(201).json({
-        order_id: orderId,
-        status: 'Pending',
-        total_amount: totalAmount,
-        receipt_email_sent: Boolean(receipt.sent),
-      })
+      receiptSent = Boolean(receipt.sent)
     }
 
-    res.status(201).json({
-      order_id: orderId,
-      status: 'Pending',
-      total_amount: totalAmount,
-      // where the customer finishes paying (PayMongo's hosted checkout URL
-      // replaces this when the real gateway is wired in)
-      checkout_url: `/pay/simulate?order=${orderId}`,
-      payment_status: 'pending',
-    })
+    return res.status(201).json(buildOrderResponse(orderId, isGateway, receiptSent))
   } catch (err) {
     if (err.stockConflict) {
       return res.status(409).json({ error: 'Some items just sold out. Please review your cart and try again.' })
