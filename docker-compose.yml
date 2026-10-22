@@ -15,8 +15,10 @@ services:
     build:
       context: ./frontend
     container_name: petconnect-frontend
+    # Loopback only: host Caddy terminates TLS and proxies to 127.0.0.1:5173,
+    # so the container must never be reachable through another interface.
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
     depends_on:
       - backend
     restart: unless-stopped
