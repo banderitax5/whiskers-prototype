@@ -94,8 +94,8 @@ export async function sendOrderReceipt(to, order) {
 
 // lifecycle update for an existing order (PATCH /api/admin/orders/:id).
 // `previousStatus` lets the copy tell shoppers what actually changed.
-export async function sendOrderStatusEmail(to, { orderId, status, previousStatus, itemsCount }) {
-  const { subject, html, text } = buildOrderStatusEmail({ orderId, status, previousStatus, itemsCount })
+export async function sendOrderStatusEmail(to, { orderId, status, previousStatus, itemsCount, items }) {
+  const { subject, html, text } = buildOrderStatusEmail({ orderId, status, previousStatus, itemsCount, items })
   return sendMail({ to, subject, html, text })
 }
 

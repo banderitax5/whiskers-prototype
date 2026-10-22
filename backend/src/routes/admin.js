@@ -1215,17 +1215,24 @@ router.patch('/orders/:id', async (req, res) => {
     })
 
     if (current.status !== status) {
-      const { count } = await supabaseAdmin
+      const { data: items } = await supabaseAdmin
         .from('order_details')
-        .select('order_id', { count: 'exact', head: true })
+        .select('quantity, unit_price, subtotal, prod_id, product!inner(prod_name)')
         .eq('order_id', req.params.id)
+      const itemsCount = items?.length ?? 0
       await notifyCustomer(
         current.id,
         (to) => sendOrderStatusEmail(to, {
           orderId: req.params.id,
           status,
           previousStatus: current.status,
-          itemsCount: count ?? 0,
+          itemsCount,
+          items: (items ?? []).map((i) => ({
+            name: i.product?.prod_name || 'Item',
+            quantity: i.quantity,
+            unitPrice: i.unit_price,
+            subtotal: i.subtotal,
+          })),
         }),
         'order status update'
       )

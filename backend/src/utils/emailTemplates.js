@@ -196,12 +196,13 @@ const STATUS_COPY = {
   },
 }
 
-export function buildOrderStatusEmail({ orderId, status, previousStatus, itemsCount }) {
+export function buildOrderStatusEmail({ orderId, status, previousStatus, itemsCount, items }) {
   const copy = STATUS_COPY[status] || {
     heading: `Your order is now ${status}`,
     body: 'Your order status has been updated. Sign in to your account to view the details.',
   }
-  const count = Number(itemsCount) || 0
+  const safeItems = (items ?? []).filter((i) => i && i.name)
+  const count = safeItems.length || Number(itemsCount) || 0
   const itemsLine = count === 1 ? '1 item' : `${count} items`
 
   const subject = `${copy.heading} - ${STORE_NAME} order ${orderCode(orderId)}`
@@ -209,7 +210,7 @@ export function buildOrderStatusEmail({ orderId, status, previousStatus, itemsCo
     ? `Status updated: ${previousStatus} - ${status}.`
     : `Current status: ${status}.`
 
-  const text = [
+  const textLines = [
     'Hi there,',
     '',
     copy.body,
@@ -217,10 +218,33 @@ export function buildOrderStatusEmail({ orderId, status, previousStatus, itemsCo
     `Order: ${orderCode(orderId)}`,
     `${transition} (${itemsLine})`,
     '',
+  ]
+  if (safeItems.length > 0) {
+    textLines.push('Items:', ...safeItems.map((i) => `- ${i.name} x${i.quantity} - PHP ${php(i.subtotal)}`), '')
+  }
+  textLines.push(
     `Sign in to your ${STORE_NAME} account any time to track this order and see your receipt.`,
     '',
     `${STORE_NAME} - thank you for shopping with us!`,
-  ].join('\n')
+  )
+  const text = textLines.join('\n')
+
+  const row = (label, value, strong = false) =>
+    `<tr><td style="padding:4px 0;color:#5b6472;font-size:14px;">${label}</td>` +
+    `<td style="padding:4px 0;text-align:right;font-size:14px;${strong ? 'font-weight:700;' : ''}">${value}</td></tr>`
+
+  const itemRows = safeItems.length > 0
+    ? safeItems
+        .map(
+          (i) =>
+            `<tr>` +
+            `<td style="padding:6px 0;border-bottom:1px solid #eceff3;font-size:14px;color:#1c2430;">${i.name}<br>` +
+            `<span style="color:#8a94a3;font-size:12px;">x${i.quantity}</span></td>` +
+            `<td style="padding:6px 0;border-bottom:1px solid #eceff3;text-align:right;font-size:14px;color:#1c2430;vertical-align:top;">PHP ${php(i.subtotal)}</td>` +
+            `</tr>`
+        )
+        .join('')
+    : ''
 
   const html = shell(
     'Order update',
@@ -235,6 +259,11 @@ export function buildOrderStatusEmail({ orderId, status, previousStatus, itemsCo
         <tr><td style="padding:0 14px 10px;font-size:13px;color:#5b6472;">Items</td>
             <td style="padding:0 14px 10px;font-size:13px;color:#1c2430;text-align:right;">${itemsLine}</td></tr>
       </table>
+      ${itemRows ? `
+      <table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+        ${itemRows}
+      </table>
+      ` : ''}
       <p style="margin:0;font-size:12px;color:#8a94a3;">Sign in to your ${STORE_NAME} account any time to track this order and view your receipt.</p>
     `
   )
