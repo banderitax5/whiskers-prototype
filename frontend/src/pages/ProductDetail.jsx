@@ -192,14 +192,14 @@ function ProductDetail() {
       <Breadcrumbs product={p} />
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-        {/* main product image */}
-        <ProductImage
-          src={p.image}
-          alt={p.name}
-          className="rounded-xl border border-gray-200 dark:border-gray-600 p-4 h-64 sm:h-96"
-          imgClassName="max-h-full w-full"
-          loading="eager"
-        />
+{/* main product image */}
+          <ProductImage
+            src={p.image}
+            alt={p.name}
+            className="rounded-xl border border-gray-200 dark:border-gray-600 p-4 h-64 sm:h-96 overflow-hidden"
+            imgClassName="max-h-full w-full object-contain"
+            loading="eager"
+          />
 
         {/* details */}
         <div className="flex flex-col">

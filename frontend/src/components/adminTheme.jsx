@@ -296,6 +296,10 @@ export function AdminRowDropdown({ open, onToggle, onClose, value, options, onSe
     if (menuEl) {
       const first = menuEl.querySelector('button');
       if (first) first.focus();
+      // cap dropdown height so it never overflows the viewport
+      const style = menuEl.style;
+      style.maxHeight = '240px';
+      style.overflowY = 'auto';
     }
 
     const onKey = (e) => {
@@ -404,6 +408,10 @@ export function AdminSelect({ value, options, onChange, disabled, ariaLabel, cla
     if (menuEl) {
       const active = menuEl.querySelector('[aria-selected="true"]') || menuEl.querySelector('button');
       if (active) active.focus();
+      // cap dropdown height so it never overflows the viewport
+      const style = menuEl.style;
+      style.maxHeight = '240px';
+      style.overflowY = 'auto';
     }
     const onKey = (e) => {
       if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); triggerRef.current?.focus(); return; }
