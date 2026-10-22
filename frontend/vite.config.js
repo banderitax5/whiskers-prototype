@@ -64,7 +64,7 @@ export default defineConfig(({ mode }) => {
       },
     ],
     server: {
-      allowedHosts: ['.trycloudflare.com'],
+      allowedHosts: ['.trycloudflare.com', 'whiskerspet.me'],
       proxy: {
         '/api': {
           target: env.VITE_PROXY_TARGET || 'http://localhost:4141',

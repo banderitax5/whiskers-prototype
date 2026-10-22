@@ -1,0 +1,259 @@
+flowchart TD
+  start(["User opens Whiskers site"]) --> entry["Vite serves React SPA<br/>ErrorBoundary - ShopProvider - PetsProvider"]
+  entry --> guard{"Route accessed?"}
+
+  guard -->|"Public route"| pub["Render public page:<br/>Home, Menu, Product detail,<br/>Cart, Checkout, About, Reset"]
+  guard -->|"Protected route"| sess{"Supabase session<br/>exists?"}
+  guard -->|"/admin"| rolecall["GET /api/me/role<br/>with Bearer token"]
+
+  sess -->|"No"| home["Redirect to /"]
+  sess -->|"Yes"| prot["Render page:<br/>Orders, Pets, Profile,<br/>Support, Receipt"]
+
+  rolecall -->|"No token, 401 or 403"| home
+  rolecall -->|"Network error"| retry["Retry role check<br/>up to 3 times"]
+  rolecall -->|"200 OK"| staffadmin{"Role is staff<br/>or admin?"}
+  retry -->|"OK on retry"| staffadmin
+  retry -->|"3 failures"| roleerr["Access error page<br/>Reload button"]
+  staffadmin -->|"No"| home
+  staffadmin -->|"Yes"| panel["Render AdminLayout<br/>and sidebar"]
+  panel --> adminonly{"Admin-only route?<br/>dashboard, customers,<br/>promos, audit-logs"}
+  adminonly -->|"Yes but role is staff"| staffland["Redirect to /admin/orders"]
+  adminonly -->|"Yes and role is admin"| admtools["Dashboard, Customers,<br/>Promos, Audit logs"]
+  adminonly -->|"No, shared back office"| stafftools["Orders, Products,<br/>Payments, Support"]
+
+  subgraph AUTH["Authentication"]
+    openlogin["Login modal opens"] --> loginform[/"Email + password"/]
+    loginform --> inputok{"Fields valid?"}
+    inputok -->|"No"| inputerr["Inline field errors"]
+    inputerr --> loginform
+    inputok -->|"Yes"| lim{"Under 5 login attempts<br/>per 15 minutes per IP?"}
+    lim -->|"No"| e429l["429 too many attempts"]
+    lim -->|"Yes"| creds["POST /api/auth/login<br/>Supabase checks credentials"]
+    creds --> credok{"Credentials accepted?"}
+    credok -->|"No"| badlogin["401 invalid email or password"]
+    credok -->|"Yes"| setsession["Store session in Supabase client<br/>SIGNED_IN event fires"]
+    setsession --> loadcart["Cart context loads cart"]
+
+    signup["Signup modal"] --> sigval{"Names 2-50 letters,<br/>password 8+ chars?"}
+    sigval -->|"No"| sigerr["400 field error"]
+    sigval -->|"Yes"| siglim{"Under 10 signups<br/>per hour per IP?"}
+    siglim -->|"No"| e429s["429 rejected"]
+    siglim -->|"Yes"| createuser["POST /api/auth/signup<br/>Supabase creates auth user"]
+    createuser --> dup{"Email already registered?"}
+    dup -->|"Yes"| duperr["409 account exists"]
+    dup -->|"No"| proftask["Wait for profile DB trigger<br/>retry up to 5 times"]
+    proftask --> profrow{"Profile row created?"}
+    profrow -->|"No"| upsert["Upsert profile row"]
+    profrow -->|"Yes"| enc["Encrypt name and email<br/>set role = user"]
+    upsert --> enc
+    enc --> created["201 session returned<br/>modal closes"]
+
+    forgot[/"Forgot password email"/] --> resetlink["Supabase reset link<br/>opens /reset"]
+    resetlink --> newpw["Update password on<br/>recovery session"]
+  end
+
+  subgraph STORE["Public storefront"]
+    pub --> site["GET /api/site-content"]
+    site --> schemak{"Content tables exist?"}
+    schemak -->|"No, migration pending"| fallback["Return seeded:false<br/>use built-in content"]
+    schemak -->|"Yes"| published["Published, in-window rows<br/>30 second memory cache"]
+    site --> sitedb[("site_banners, site_home_sections,<br/>site_nav_items")]
+
+    pub --> plist["GET /api/products<br/>search, category, brand, price"]
+    plist --> proddb[("PostgreSQL product table<br/>via Supabase")]
+    proddb -->|"is_active rows only"| pshown[/Product cards/]
+    pub --> pdetail["GET /api/products/:id"]
+    pdetail --> idok{"Valid UUID and<br/>product is active?"}
+    idok -->|"No"| notfound["404 Product not found"]
+    idok -->|"Yes"| detail["Product detail plus<br/>4 related items"]
+  end
+
+  subgraph CART["Cart"]
+    addbtn["User clicks Add to cart"] --> signedin{"Signed in?"}
+    signedin -->|"No"| loginprompt["Open login modal + toast"]
+    signedin -->|"Yes"| optimistic["Update cart UI at once"]
+    optimistic --> postcart["POST /api/cart with access token"]
+    postcart --> limcart{"Under 60 cart calls<br/>per minute?"}
+    limcart -->|"No"| e429c["429 rejected"]
+    limcart -->|"Yes"| tokok{"Bearer token valid?"}
+    tokok -->|"No"| e401["401 - open login modal"]
+    tokok -->|"Yes"| uuidok{"productId is a UUID?"}
+    uuidok -->|"No"| e400["400 invalid productId"]
+    uuidok -->|"Yes"| prodok{"Product exists, active,<br/>priced and in stock?"}
+    prodok -->|"No"| e400b["400 or 404 with reason"]
+    prodok -->|"Yes"| incart{"Already in cart?"}
+    incart -->|"Yes"| merge["Merge quantity,<br/>cap at stock"]
+    incart -->|"No"| insertrow["Insert cart_items row"]
+    insertrow -->|"unique violation 23505"| merge
+    insertrow -->|"ok"| saved["201 row saved from<br/>server-side product snapshot"]
+    merge --> savedok["200 row updated"]
+    saved --> savedok
+    savedok --> toastok["Success toast"]
+    postcart -->|"request fails"| rollback["Rollback UI + reload cart"]
+
+    remove["User removes item"] --> undotoast["Optimistic remove + Undo toast<br/>server DELETE after 5 seconds"]
+    undotoast --> cartdb[("cart_items table")]
+    loadcart --> cartget["GET /api/cart"] --> cartdb
+  end
+
+  subgraph CHECKOUT["Checkout"]
+    cartpage["Cart page: tick items"] --> sel{"Any available item selected?"}
+    sel -->|"No"| disabled["Checkout button disabled"]
+    sel -->|"Yes"| gocheck["Go to /checkout<br/>selection kept in sessionStorage"]
+    gocheck --> sess2{"Signed in?"}
+    sess2 -->|"No"| signprompt["Sign in to check out prompt"]
+    sess2 -->|"Yes"| hasitems{"Orderable items exist?"}
+    hasitems -->|"No"| backcart["Toast + redirect to /cart"]
+    hasitems -->|"Yes"| form[/"Delivery form: name, phone,<br/>address, payment method"/]
+    form --> localval{"All required fields valid?"}
+    localval -->|"No"| fielderr["Error summary +<br/>focus first invalid field"]
+    fielderr --> form
+    localval -->|"Yes"| recheck["Re-check price and stock"]
+    recheck --> changed{"Any price or stock change?"}
+    changed -->|"Yes"| problems["Show problem list<br/>link back to cart"]
+    changed -->|"No"| promoapply{"Promo code entered?"}
+    promoapply -->|"Yes"| promocheck["POST /api/orders/validate-promo"]
+    promocheck --> promopreview{"Promo accepted?"}
+    promopreview -->|"No"| promofail["Show promo error"]
+    promopreview -->|"Yes"| applied["Show discount preview"]
+    applied --> placeorder["POST /api/orders"]
+    promoapply -->|"No"| placeorder
+  end
+
+  subgraph ORDER["Order creation on the server"]
+    placeorder --> ordlim{"Under 20 orders<br/>per hour per IP?"}
+    ordlim -->|"No"| ord429["429 rejected"]
+    ordlim -->|"Yes"| ordauth{"Bearer token valid?"}
+    ordauth -->|"No"| ord401["401 sign in required"]
+    ordauth -->|"Yes"| baseval{"Items and payment<br/>method present?"}
+    baseval -->|"No"| ord400["400 bad request"]
+    baseval -->|"Yes"| loaditems["Reload product rows,<br/>prices come from DB"]
+    loaditems --> itemok{"Every item found, active,<br/>priced and in stock?"}
+    itemok -->|"No"| ord400
+    itemok -->|"Yes"| haspromo{"Promo code supplied?"}
+    haspromo -->|"Yes"| checkpromo["validatePromo: scope,<br/>dates, usage limits"]
+    checkpromo --> promovalid{"Promo valid?"}
+    promovalid -->|"No"| ord400p["400 with reason<br/>or 503 if promo tables missing"]
+    promovalid -->|"Yes"| calc["Total = shipping<br/>+ items - discount"]
+    haspromo -->|"No"| calc
+    calc --> ins["Insert orders, order_details,<br/>payment rows"]
+    ins --> promouse["Write promo_usage +<br/>increment usage_count"]
+    promouse --> dec["Decrement stock per item"]
+    dec --> stockok{"Stock still enough<br/>for every item?"}
+    stockok -->|"No"| rollbackord["Delete created rows, restore stock,<br/>revert promo - 409 sold out"]
+    ins -.->|"any insert fails"| rollbackord
+    stockok -->|"Yes"| ok201["201 order_id returned<br/>cart rows deleted"]
+  end
+
+  subgraph AFTER["Order history, receipt, reviews"]
+    ok201 --> clear["Clear cart + success toast"]
+    clear --> conf["Open /orders/:id confirmation"]
+    conf --> confget["GET /api/orders/:id"]
+    confget --> found{"Order belongs to user?"}
+    found -->|"No"| confnf["400 invalid id or 404"]
+    found -->|"Yes"| shown[/Status, items, payment, total/]
+    shown --> receipt["Printable /receipt/:orderId"]
+    history["GET /api/orders history"] --> orderlist[/Order list with feedback/]
+    orderlist --> buyagain["Buy again: re-add items,<br/>skip out-of-stock"]
+    buyagain -.->|"adds to cart"| addbtn
+    orderlist --> review[/"Star rating 1-5 + comment"/]
+    review --> fbpost["POST /api/feedback"]
+    fbpost --> fbval{"Rating is a whole 1-5 and<br/>order owned by user?"}
+    fbval -->|"No"| fberr["400 or 404"]
+    fbval -->|"Yes"| fbdb[("feedback table<br/>insert or update")]
+  end
+
+  subgraph RECS["Pet profiles and recommendations"]
+    pets["/pets page"] --> petsigned{"Signed in?"}
+    petsigned -->|"No"| petsignin["Sign in prompt"]
+    petsigned -->|"Yes"| petform[/"Species, life stage,<br/>health condition, allergies"/]
+    petform --> petsave["Save pet to localStorage<br/>keyed by user id"]
+    petsave --> rec["Load catalog<br/>GET /api/products, 60s cache"]
+    rec --> filter["Keep active, priced,<br/>in-stock items for species"]
+    filter --> cond{"Health condition set?"}
+    cond -->|"Yes"| specific["Prefer condition-specific tags<br/>fall back if none in stock"]
+    cond -->|"No"| general["Score on life stage<br/>and wellness"]
+    specific --> score["Score, sort, keep reasons"]
+    general --> score
+    score --> matches{"Any item with score above 0?"}
+    matches -->|"No"| nomatch["No matching products"]
+    matches -->|"Yes"| results[/Ranked recommendations/]
+    results -.->|"Add to cart"| addbtn
+  end
+
+  subgraph SUPPORT["Support thread"]
+    sup["/support page"] --> supform[/"Message, 1-2000 chars"/]
+    supform --> supval{"Length within limit?"}
+    supval -->|"No"| superr["400 rejected"]
+    supval -->|"Yes"| supdb["Insert or replace the<br/>single supports row"]
+    supdb --> staffreply["Staff replies via<br/>PATCH /api/admin/supports/:id"]
+    staffreply --> supget["GET /api/support shows reply"]
+  end
+
+  subgraph BACKOFFICE["Back-office API guard"]
+    action["Staff or admin clicks an action"] --> req["Request /api/admin endpoint"]
+    req --> authmw{"Bearer token valid?"}
+    authmw -->|"No"| adm401["401 Authentication required"]
+    authmw -->|"Yes"| staffgate{"Role allowed<br/>for this route?"}
+    staffgate -->|"No"| adm403["403 access denied"]
+    staffgate -->|"Yes"| isget{"HTTP GET?"}
+    isget -->|"Yes"| exec["Run endpoint"]
+    isget -->|"No"| stepup{"Fresh step-up token?"}
+    stepup -->|"Yes"| exec
+    stepup -->|"No"| modal["403 STEP_UP_REQUIRED<br/>StepUpModal opens"]
+    modal --> pw[/"Re-enter account password"/]
+    pw --> verify["POST /api/auth/step-up"]
+    verify --> stepulim{"Under 5 verification<br/>tries per 15 minutes?"}
+    stepulim -->|"No"| e429u["429 rejected"]
+    stepulim -->|"Yes"| pwok{"Password matches?"}
+    pwok -->|"No"| pwfail["401 + audit log stepup_failed<br/>stay on modal"]
+    pwfail --> pw
+    pwok -->|"Yes"| token["Cache step-up token<br/>audit log stepup_verified"]
+    token --> retryreq["Retry request with<br/>X-Step-Up-Token"]
+    retryreq --> exec
+    exec --> mut{"State-changing action?"}
+    mut -->|"Yes"| audit["logAudit writes<br/>audit_logs row"]
+    mut -->|"No, read only"| resp["JSON response returned"]
+  end
+
+  subgraph OPS["Back-office operations"]
+    stafftools --> op1["Update order status<br/>Pending to Delivered"]
+    stafftools --> op2["Edit products and stock,<br/>upload image with sharp<br/>to product-images bucket"]
+    stafftools --> op3["View payments,<br/>reply to support"]
+    admtools --> op4["Stats, analytics,<br/>sales reports"]
+    admtools --> op5["Change customer role,<br/>delete customer"]
+    admtools --> op6["Promo CRUD, delete<br/>orders and payments"]
+    admtools --> op7["Read audit logs"]
+    op1 --> action
+    op2 --> action
+    op3 --> action
+    op4 --> action
+    op5 --> action
+    op6 --> action
+    op7 --> action
+  end
+
+  subgraph TRACK["Analytics events"]
+    consent{"Cookie consent<br/>equals accepted?"}
+    consent -->|"No or undecided"| skip["Event not sent"]
+    consent -->|"Yes"| ev["POST /api/events with<br/>page + UTM metadata"]
+    ev --> evdb[("events table")]
+    ev -.->|"failure ignored"| skip
+  end
+
+  subgraph ERRORS["Global API error handling"]
+    badjson["Malformed JSON body"] --> err400["400 Invalid JSON body"]
+    bigbody["Body over 100kb"] --> err413["413 body too large"]
+    unknown["Unmatched route"] --> err404["404 JSON response"]
+    thrown["Unhandled exception"] --> err500["500 generic message<br/>logged, stack hidden"]
+    limited["Rate limit exceeded"] --> err429["429 per limiter"]
+  end
+
+  pub -.->|"user signs in or signs up"| openlogin
+  pub -.->|"user signs up"| signup
+  pub --> addbtn
+  addbtn --> cartpage
+  pub -.->|"staff or admin logs in"| panel
+  pub -.-> pets
+  pub -.-> sup
+  pub -.-> consent
