@@ -69,10 +69,12 @@ router.get('/product/:prodId', productLimiter, async (req, res) => {
 router.use(authMiddleware)
 router.use(feedbackLimiter)
 
-// POST /api/feedback — save product reviews for the caller's own order
+// POST /api/feedback �?" save product reviews for the caller's own order
 // body: { orderId, items: [{ prodId, rating, comments? }] }
 // re-reviewing the same product in the same order updates the existing row
-router.post('/', feedbackLimiter, async (req, res) => {
+// (feedbackLimiter is applied once above; applying it here too would charge
+// every submission twice and halve the effective limit)
+router.post('/', async (req, res) => {
   const { orderId, items } = req.body ?? {}
   if (!UUID_RE.test(String(orderId || ''))) {
     return res.status(400).json({ error: 'orderId must be a valid order id' })

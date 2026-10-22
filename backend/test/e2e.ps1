@@ -1,9 +1,9 @@
-# Run this suite against a freshly restarted backend. The in-memory rate
-# limiters are keyed per IP (everything is localhost here): one run consumes
-# ~7 of the 20 orders/hour and 2 of the 5 step-up/15min, so a re-run without
-# a restart can hit the order limiter near the end (auto-promo steps fail
-# with "Too many orders") or SKIP the step-up steps. Restart node on :4141
-# first and every run starts from a clean budget.
+# Run this suite against a freshly restarted backend. Rate limiters are
+# in-memory: authenticated limits are keyed by user, anonymous ones by IP.
+# One run consumes ~7 of the 100 orders/hour for its temp user (no longer a
+# concern) and 2 of the 15 step-up attempts/15min for the reused admin, so
+# several re-runs inside one 15-minute window can still SKIP the step-up
+# steps. Restart node on :4141 first and every run starts from a clean budget.
 $ErrorActionPreference = 'Stop'
 $base = 'http://localhost:4141'
 $envLines = Get-Content (Join-Path $PSScriptRoot '..\.env')
@@ -239,7 +239,7 @@ try {
   Step 'step-up issues token' ([bool]$stepUpRes.stepUpToken) "expiresAt=$($stepUpRes.expiresAt)"
   $stepUpH = @{ Authorization = "Bearer $AT"; 'X-Step-Up-Token' = $stepUpRes.stepUpToken }
 } catch {
-  # the step-up endpoint is rate limited (5 / 15 min / IP) - a re-run inside that
+  # the step-up endpoint is rate limited (15 / 15 min / account) - a re-run inside that
   # window is an environment limit, not a product failure, so report it as skipped
   $st = $_.Exception.Response.StatusCode.value__
   if ($st -eq 429) { Step 'step-up issues token' $false 'rate limited by an earlier run in the 15-minute window' 'SKIP' }
