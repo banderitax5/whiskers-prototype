@@ -29,6 +29,7 @@ vi.mock('react-router-dom', () => ({
   useParams: () => ({ orderId: orderRow.order_id }),
   useLocation: () => locationState,
   useNavigate: () => mockNavigate,
+  useSearchParams: () => [new URLSearchParams(), () => {}],
   Link: ({ to, children, ...rest }) => (
     <a href={to} {...rest}>
       {children}

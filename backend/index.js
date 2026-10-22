@@ -17,6 +17,7 @@ import eventsRoutes from './src/routes/events.js'
 import feedbackRoutes from './src/routes/feedback.js'
 import supportRoutes from './src/routes/support.js'
 import siteContentRoutes from './src/routes/siteContent.js'
+import paymentsRoutes from './src/routes/payments.js'
 
 const app = express()
 app.disable('x-powered-by')
@@ -48,6 +49,11 @@ app.use(helmet({
   xFrameOptions: { action: 'sameorigin' },
 }))
 app.use(cors({ origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/] }))
+
+// Payment webhooks verify a signature over the RAW body, so they must be
+// mounted before the JSON parser (which would consume/reshape the stream).
+app.use('/api/payments', paymentsRoutes)
+
 app.use(express.json({ limit: '100kb' }))
 
 app.get('/api/me/role', authMiddleware, (req, res) => {

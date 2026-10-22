@@ -13,7 +13,10 @@ import {
   expireGatewayOrder,
   sweepGatewayExpiry,
   loadReceiptPayload,
+  settleGatewayPayment,
+  cancelGatewayOrder,
 } from '../utils/gatewayPayment.js'
+import { payMongoConfigured, createCheckoutSession, siteUrl } from '../utils/payMongo.js'
 import { logAudit } from './admin.js'
 import logger from '../utils/logger.js'
 
@@ -45,6 +48,26 @@ function auditGatewayExpiry(orderId) {
     details: 'payment expired automatically (gateway TTL)',
     changes: { status: { from: 'Pending', to: 'Cancelled' } },
   })
+}
+
+// Creates the hosted checkout for an unpaid online order and remembers the
+// session id on the payment row. PayMongo's checkout_url is an external URL the
+// browser must be redirected to (never an SPA route).
+async function startGatewayCheckout({ orderId, method, amount }) {
+  const session = await createCheckoutSession({
+    orderId,
+    amount,
+    method,
+    successUrl: `${siteUrl()}/orders/${orderId}?payment=paymongo`,
+    cancelUrl: `${siteUrl()}/cart?payment=cancelled`,
+  })
+  const { error } = await supabaseAdmin
+    .from('payment')
+    .update({ gateway_ref: session.sessionId })
+    .eq('order_id', orderId)
+  if (error) logger.warn({ err: error, orderId }, 'could not store PayMongo session id')
+  logger.info({ orderId, sessionId: session.sessionId }, 'PayMongo checkout session created')
+  return session.checkoutUrl
 }
 
 function buildCartItemsForPromo(validatedItems, dbProducts) {
@@ -234,20 +257,51 @@ router.post('/', orderLimiter, async (req, res) => {
         .eq('order_id', existing.order_id)
         .maybeSingle()
       const gateway = Boolean(pay && isGatewayMethod(pay.method))
-      return gateway
-        ? {
-            order_id: existing.order_id,
-            status: existing.status,
-            total_amount: existing.total_amount,
-            checkout_url: `/pay/simulate?order=${existing.order_id}`,
+      if (!gateway) {
+        return {
+          order_id: existing.order_id,
+          status: existing.status,
+          total_amount: existing.total_amount,
+          receipt_email_sent: false,
+        }
+      }
+
+      const base = {
+        order_id: existing.order_id,
+        status: existing.status,
+        total_amount: existing.total_amount,
+      }
+
+      if (payMongoConfigured()) {
+        // only an unpaid order can be paid; a replay after payment just
+        // reports the order back without minting another session
+        if (existing.status !== 'Pending') return base
+        try {
+          return {
+            ...base,
+            checkout_url: await startGatewayCheckout({
+              orderId: existing.order_id,
+              method: pay.method,
+              amount: existing.total_amount,
+            }),
             payment_status: 'pending',
+            gateway: 'paymongo',
           }
-        : {
-            order_id: existing.order_id,
-            status: existing.status,
-            total_amount: existing.total_amount,
-            receipt_email_sent: false,
+        } catch (payEx) {
+          logger.error({ err: payEx, orderId: existing.order_id }, 'PayMongo replay failed')
+          return {
+            ...base,
+            payment_status: 'unavailable',
+            error: 'Could not restart the payment session. Please try again.',
           }
+        }
+      }
+
+      return {
+        ...base,
+        checkout_url: `/pay/simulate?order=${existing.order_id}`,
+        payment_status: 'pending',
+      }
     }
 
     if (idempotencyKey) {
@@ -554,7 +608,35 @@ router.post('/', orderLimiter, async (req, res) => {
       receiptSent = Boolean(receipt.sent)
     }
 
-    return res.status(201).json(buildOrderResponse(orderId, isGateway, receiptSent))
+    const response = buildOrderResponse(orderId, isGateway, receiptSent)
+    if (isGateway && payMongoConfigured()) {
+      try {
+        response.checkout_url = await startGatewayCheckout({
+          orderId,
+          method: paymentMethod,
+          amount: totalAmount,
+        })
+        response.gateway = 'paymongo'
+      } catch (payEx) {
+        // no session = no way to pay this order; cancel it so the ledger and
+        // the stock stay honest, then tell the shopper to retry
+        logger.error({ err: payEx, orderId }, 'PayMongo session creation failed')
+        await cancelGatewayOrder(orderId, { paymentStatus: 'failed' })
+        logAudit({
+          adminEmail: 'system',
+          action: 'status',
+          target: `order:${orderId}`,
+          details: 'order cancelled: payment provider unavailable',
+          changes: { status: { from: 'Pending', to: 'Cancelled' } },
+        })
+        return res.status(502).json({
+          error: 'Our payment provider is unavailable right now. Please try again.',
+          code: 'PAYMENT_PROVIDER_UNAVAILABLE',
+        })
+      }
+    }
+
+    return res.status(201).json(response)
   } catch (err) {
     if (err.stockConflict) {
       return res.status(409).json({ error: 'Some items just sold out. Please review your cart and try again.' })
@@ -815,6 +897,66 @@ router.get('/:id', async (req, res) => {
   }
 })
 
+// POST /api/orders/:id/payment-session — resume payment for an order that is
+// still Pending (closed tab, failed attempt, back button). Returns a fresh
+// hosted-checkout URL, or the simulated pay page when PayMongo is not
+// configured. Ownership is enforced by the caller's RLS-scoped read.
+router.post('/:id/payment-session', payLimiter, async (req, res) => {
+  const orderId = String(req.params.id || '').trim()
+  if (!/^[A-Za-z0-9-]{1,64}$/.test(orderId)) {
+    return res.status(400).json({ error: 'Invalid order id' })
+  }
+
+  try {
+    const { data: order, error } = await req.db
+      .from('orders')
+      .select('order_id, status, created_at, total_amount')
+      .eq('order_id', orderId)
+      .eq('id', req.userId)
+      .maybeSingle()
+    if (error) throw error
+    if (!order) return res.status(404).json({ error: 'Order not found' })
+
+    const { data: payRows, error: payErr } = await supabaseAdmin
+      .from('payment')
+      .select('order_id, method, status')
+      .eq('order_id', orderId)
+      .limit(1)
+    if (payErr) throw payErr
+    const payment = payRows?.[0]
+    if (!payment) return res.status(404).json({ error: 'Payment record not found' })
+    if (!isGatewayMethod(payment.method)) {
+      return res.status(400).json({ error: 'This order does not use an online payment method' })
+    }
+    if (String(payment.status || '').toLowerCase() === 'succeeded' || order.status !== 'Pending') {
+      return res.status(409).json({ error: 'This order is not awaiting payment.', code: 'NOT_AWAITING_PAYMENT' })
+    }
+
+    if (isGatewayOrderDue(order, payment)) {
+      const ran = await expireGatewayOrder(order)
+      if (ran) auditGatewayExpiry(orderId)
+      return res.status(409).json({
+        error: 'This order has expired. Please place a new order.',
+        code: 'ORDER_EXPIRED',
+      })
+    }
+
+    if (payMongoConfigured()) {
+      const checkoutUrl = await startGatewayCheckout({
+        orderId,
+        method: payment.method,
+        amount: order.total_amount,
+      })
+      return res.json({ checkout_url: checkoutUrl, gateway: 'paymongo' })
+    }
+
+    return res.json({ checkout_url: `/pay/simulate?order=${orderId}`, gateway: 'simulated' })
+  } catch (err) {
+    logger.error({ err, orderId }, 'payment session error')
+    res.status(500).json({ error: 'Could not start the payment session' })
+  }
+})
+
 // POST /api/orders/:id/simulate-payment — the simulated gateway's outcome
 // callback (stands in for PayMongo's webhook: same transition rules, minus
 // signature verification - the caller already proved order ownership, and the
@@ -828,6 +970,12 @@ router.post('/:id/simulate-payment', payLimiter, async (req, res) => {
   const result = String(req.body?.result || '')
   if (result !== 'success' && result !== 'fail') {
     return res.status(400).json({ error: "result must be 'success' or 'fail'" })
+  }
+
+  // once real money is configured, a client-supplied "success" must never mark
+  // an order paid - only the signed PayMongo webhook may
+  if (payMongoConfigured()) {
+    return res.status(404).json({ error: 'Not found' })
   }
 
   try {
@@ -905,88 +1053,35 @@ router.post('/:id/simulate-payment', payLimiter, async (req, res) => {
       return res.json({ ok: true, payment_status: 'failed', order_status: order.status })
     }
 
-    // SUCCESS. Claim the order transition first - expiry targets the same row
-    // with the same guard, so exactly one of us wins. Staff may have advanced
-    // an unpaid order already; Shipped/Delivered orders accept late payment
-    // without a status flip, Cancelled never does.
-    let orderStatusNow = order.status
-    if (order.status === 'Pending' || order.status === 'Processing') {
-      const { data: claimed, error: claimErr } = await supabaseAdmin
-        .from('orders')
-        .update({ status: 'Processing' })
-        .eq('order_id', orderId)
-        .in('status', ['Pending', 'Processing'])
-        .select('status')
-      if (claimErr) throw claimErr
-      if (!claimed || claimed.length === 0) {
-        const { data: fresh } = await supabaseAdmin
-          .from('orders')
-          .select('status')
-          .eq('order_id', orderId)
-          .maybeSingle()
-        if (fresh?.status === 'Cancelled') {
-          return res.status(409).json({
-            error: 'This order has expired. Please place a new order.',
-            code: 'ORDER_EXPIRED',
-          })
-        }
-        orderStatusNow = fresh?.status || order.status
-      } else {
-        orderStatusNow = claimed[0].status
-      }
-    }
-
-    // mark paid (neq guard = claim the receipt email: a concurrent duplicate
-    // confirmation finds 0 rows and skips the mail)
-    const { data: marked, error: markErr } = await supabaseAdmin
-      .from('payment')
-      .update({
-        status: 'succeeded',
-        paid_at: new Date().toISOString(),
-        gateway_ref: `sim_${orderId.slice(0, 8)}_${Date.now().toString(36)}`,
+    // SUCCESS: the shared transition owns the claim/paid/receipt/cart sequence
+    // (the PayMongo webhook calls the same function, so both paths agree).
+    let settled
+    try {
+      settled = await settleGatewayPayment({
+        order: { ...order, id: req.userId },
+        payment,
+        gatewayRef: `sim_${orderId.slice(0, 8)}_${Date.now().toString(36)}`,
+        email: req.userEmail,
       })
-      .eq('order_id', orderId)
-      .neq('status', 'succeeded')
-      .select('payment_id')
-    if (markErr) {
-      if (isSchemaPendingError(markErr)) {
+    } catch (settleErr) {
+      if (settleErr.code === 'ORDER_EXPIRED' || settleErr.code === 'ORDER_CANCELLED') {
+        return res.status(409).json({ error: settleErr.message, code: settleErr.code })
+      }
+      if (settleErr.code === 'MIGRATION_REQUIRED') {
         return res.status(503).json({ error: 'Payment gateway is not available yet', code: 'MIGRATION_REQUIRED' })
       }
-      throw markErr
-    }
-    const firstClaim = (marked || []).length > 0
-
-    const payload = await loadReceiptPayload(orderId)
-    const productIds = payload ? payload.items.map((i) => i.prod_id).filter(Boolean) : []
-    let receiptEmailed = false
-    if (firstClaim && payload) {
-      // never throws; without BREVO_API_KEY it is a no-op
-      const receipt = await sendOrderReceipt(req.userEmail, payload)
-      receiptEmailed = Boolean(receipt.sent)
-      logger.info(
-        { orderId, receiptSent: receipt.sent, reason: receipt.reason, to: maskEmail(req.userEmail) },
-        receipt.sent ? 'Payment receipt emailed' : 'Payment receipt not emailed'
-      )
-      // the cart the checkout page kept until money arrived - cleared here,
-      // server-side, exactly once
-      if (productIds.length > 0) {
-        await supabaseAdmin
-          .from('cart_items')
-          .delete()
-          .eq('user_id', req.userId)
-          .in('product_id', productIds)
-      }
+      throw settleErr
     }
 
     res.json({
       ok: true,
       payment_status: 'succeeded',
-      order_status: orderStatusNow,
-      receipt_email_sent: receiptEmailed,
+      order_status: settled.orderStatus,
+      receipt_email_sent: settled.receiptEmailed,
       // returned on every success (even a duplicate) so the client can clear
       // its local cart state honestly
-      product_ids: productIds,
-      ...(firstClaim ? {} : { already_paid: true }),
+      product_ids: settled.productIds,
+      ...(settled.alreadyPaid ? { already_paid: true } : {}),
     })
   } catch (err) {
     logger.error({ err, orderId }, 'Payment confirmation error')

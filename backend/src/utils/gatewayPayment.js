@@ -15,6 +15,7 @@
 
 import { supabaseAdmin } from '../config/supabase.js'
 import { isSchemaPendingError } from './pgErrors.js'
+import { sendOrderReceipt, maskEmail } from './mailer.js'
 import logger from './logger.js'
 
 export const GATEWAY_METHOD_IDS = ['gcash', 'paymaya']
@@ -114,6 +115,195 @@ export async function sweepGatewayExpiry(orders, paymentByOrderId) {
     }
   }
   return expired
+}
+
+/**
+ * Shared success transition for every confirmation path (the simulated
+ * callback and the PayMongo webhook). Callers pass the rows they already read
+ * and verified, so ownership / signature checks stay at the route.
+ *
+ * Exactly-once rules:
+ *   - the order claim (Pending|Processing -> Processing) and expiry race on the
+ *     same status-guarded update, so one of them owns the transition;
+ *   - the payment update is guarded with neq(status,'succeeded'), and only the
+ *     call that actually flipped the row sends the receipt + clears the cart.
+ *
+ * `realMoney` marks a gateway-confirmed payment (webhook): if the order was
+ * cancelled in the meantime the money is real, so the payment is recorded as
+ * succeeded and the caller is told (paidAfterCancel) instead of the update
+ * being silently dropped. Nothing is restocked - an operator must refund.
+ *
+ * Throws { code: 'ORDER_EXPIRED' } when a same-time expiry won the race.
+ */
+export async function settleGatewayPayment({
+  order,
+  payment,
+  gatewayRef = null,
+  email = null,
+  realMoney = false,
+}) {
+  const orderId = order.order_id
+
+  if (String(payment?.status || '').toLowerCase() === 'succeeded') {
+    const dupPayload = await loadReceiptPayload(orderId)
+    return {
+      alreadyPaid: true,
+      paidAfterCancel: false,
+      orderStatus: order.status,
+      receiptEmailed: false,
+      productIds: dupPayload ? dupPayload.items.map((i) => i.prod_id).filter(Boolean) : [],
+    }
+  }
+
+  const markPaid = async (ref) => {
+    const { data: marked, error } = await supabaseAdmin
+      .from('payment')
+      .update({
+        status: 'succeeded',
+        paid_at: new Date().toISOString(),
+        ...(ref ? { gateway_ref: ref } : {}),
+      })
+      .eq('order_id', orderId)
+      .neq('status', 'succeeded')
+      .select('payment_id')
+    if (error) {
+      if (isSchemaPendingError(error)) {
+        const missing = new Error('Payment gateway is not available yet')
+        missing.code = 'MIGRATION_REQUIRED'
+        throw missing
+      }
+      throw error
+    }
+    return (marked || []).length > 0
+  }
+
+  if (order.status === 'Cancelled') {
+    if (!realMoney) {
+      const cancelled = new Error('This order was cancelled.')
+      cancelled.code = 'ORDER_CANCELLED'
+      throw cancelled
+    }
+    const recorded = await markPaid(gatewayRef)
+    logger.error(
+      { orderId, gatewayRef },
+      'payment confirmed after cancellation - recorded, refund required'
+    )
+    return {
+      alreadyPaid: !recorded,
+      paidAfterCancel: true,
+      orderStatus: 'Cancelled',
+      receiptEmailed: false,
+      productIds: [],
+    }
+  }
+
+  // staff may have advanced an unpaid order already; Shipped/Delivered accept
+  // late payment without a status flip, Cancelled never does
+  let orderStatusNow = order.status
+  if (order.status === 'Pending' || order.status === 'Processing') {
+    const { data: claimed, error: claimErr } = await supabaseAdmin
+      .from('orders')
+      .update({ status: 'Processing' })
+      .eq('order_id', orderId)
+      .in('status', ['Pending', 'Processing'])
+      .select('status')
+    if (claimErr) throw claimErr
+    if (!claimed || claimed.length === 0) {
+      const { data: fresh } = await supabaseAdmin
+        .from('orders')
+        .select('status')
+        .eq('order_id', orderId)
+        .maybeSingle()
+      if (fresh?.status === 'Cancelled') {
+        if (realMoney) {
+          const recorded = await markPaid(gatewayRef)
+          logger.error(
+            { orderId, gatewayRef },
+            'payment confirmed after cancellation - recorded, refund required'
+          )
+          return {
+            alreadyPaid: !recorded,
+            paidAfterCancel: true,
+            orderStatus: 'Cancelled',
+            receiptEmailed: false,
+            productIds: [],
+          }
+        }
+        const expired = new Error('This order has expired. Please place a new order.')
+        expired.code = 'ORDER_EXPIRED'
+        throw expired
+      }
+      orderStatusNow = fresh?.status || order.status
+    } else {
+      orderStatusNow = claimed[0].status
+    }
+  }
+
+  const firstClaim = await markPaid(gatewayRef)
+  const payload = await loadReceiptPayload(orderId)
+  const productIds = payload ? payload.items.map((i) => i.prod_id).filter(Boolean) : []
+
+  let receiptEmailed = false
+  if (firstClaim && payload && email) {
+    // never throws; without BREVO_API_KEY it is a no-op
+    const receipt = await sendOrderReceipt(email, payload)
+    receiptEmailed = Boolean(receipt.sent)
+    logger.info(
+      { orderId, receiptSent: receipt.sent, reason: receipt.reason, to: maskEmail(email) },
+      receipt.sent ? 'Payment receipt emailed' : 'Payment receipt not emailed'
+    )
+    // the cart checkout kept until money arrived - cleared server-side once
+    if (order.id && productIds.length > 0) {
+      await supabaseAdmin
+        .from('cart_items')
+        .delete()
+        .eq('user_id', order.id)
+        .in('product_id', productIds)
+    }
+  }
+
+  return {
+    alreadyPaid: !firstClaim,
+    paidAfterCancel: false,
+    orderStatus: orderStatusNow,
+    receiptEmailed,
+    productIds,
+  }
+}
+
+/**
+ * Force-cancel an unpaid gateway order (PayMongo session could not be created,
+ * so the shopper has no way to pay). Same transition as expiry minus the TTL
+ * precondition, and the guarded update means a concurrent success still wins.
+ */
+export async function cancelGatewayOrder(orderId, { paymentStatus = 'failed' } = {}) {
+  try {
+    const { data: cancelled, error } = await supabaseAdmin
+      .from('orders')
+      .update({ status: 'Cancelled' })
+      .eq('order_id', orderId)
+      .eq('status', 'Pending')
+      .select('order_id')
+    if (error) throw error
+    if (!cancelled || cancelled.length === 0) return false
+
+    const { error: markErr } = await supabaseAdmin
+      .from('payment')
+      .update({ status: paymentStatus })
+      .eq('order_id', orderId)
+      .neq('status', 'succeeded')
+    if (markErr && !isSchemaPendingError(markErr)) {
+      logger.warn({ err: markErr, orderId }, 'payment cancel mark failed')
+    }
+
+    await restoreStock(orderId)
+    await releasePromo(orderId)
+    logger.info({ orderId }, 'gateway order cancelled (unpayable)')
+    return true
+  } catch (err) {
+    logger.error({ err, orderId }, 'gateway order cancel failed')
+    return false
+  }
 }
 
 // rebuilds the receipt payload at payment-success time (gateway orders skip

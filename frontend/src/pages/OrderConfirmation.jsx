@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams, useLocation } from 'react-router-dom'
+import { Link, useParams, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useShop } from '../context/ShopContext.jsx'
+import { apiPostAuth } from '../lib/api.js'
 import { extractSizeLabel, getBaseName } from '../lib/productUtils.js'
 import {
   fetchOrderById, peso, orderCode, trackingCode, formatOrderDateTime,
@@ -58,6 +59,8 @@ function Skeleton() {
 function OrderConfirmation() {
   const { orderId } = useParams()
   const location = useLocation()
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { session, pushNotification } = useShop()
   // only the checkout that just placed the order passes this flag; the line
   // below never appears on a refresh or a later visit, so the page can never
@@ -65,10 +68,14 @@ function OrderConfirmation() {
   const receiptEmailed = Boolean(location.state?.receiptEmailed)
   // set only when the pay page confirmed payment in this navigation
   const paymentSucceeded = Boolean(location.state?.paymentSucceeded)
+  // PayMongo sends the shopper back here before its webhook lands
+  const returnedFromPayMongo = searchParams.get('payment') === 'paymongo'
+  const [confirming, setConfirming] = useState(returnedFromPayMongo)
   const [order, setOrder] = useState(null)
   const [state, setState] = useState('loading')
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+  const [resuming, setResuming] = useState(false)
 
   useEffect(() => {
     if (!session?.access_token) return
@@ -89,6 +96,57 @@ function OrderConfirmation() {
     load()
     return () => { cancelled = true }
   }, [orderId, session])
+
+  // The hosted gateway redirects back before its webhook is guaranteed to have
+  // landed, so poll the order until the payment flips (or give up after ~1min).
+  useEffect(() => {
+    if (!confirming || !session?.access_token) return undefined
+    let cancelled = false
+    let attempts = 0
+    let timer = null
+
+    const poll = async () => {
+      attempts += 1
+      try {
+        const item = await fetchOrderById(orderId, session.access_token)
+        if (cancelled) return
+        setOrder(item)
+        setState('ready')
+        if (String(item?.payment?.status || '').toLowerCase() === 'succeeded') {
+          setConfirming(false)
+          // drop the query flag so a refresh does not start polling again
+          setSearchParams({}, { replace: true })
+          return
+        }
+      } catch {
+        // keep waiting - the webhook may still be in flight
+      }
+      if (attempts >= 20) {
+        setConfirming(false)
+        return
+      }
+      timer = setTimeout(poll, 3000)
+    }
+
+    timer = setTimeout(poll, 1500)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [confirming, orderId, session, setSearchParams])
+
+  async function resumePayment() {
+    if (!session?.access_token || resuming) return
+    setResuming(true)
+    try {
+      const data = await apiPostAuth(`/orders/${order.order_id}/payment-session`, {}, session.access_token)
+      const url = data?.checkout_url
+      if (!url) throw new Error('Could not start the payment session')
+      if (/^https?:\/\//i.test(url)) window.location.assign(url)
+      else navigate(url)
+    } catch (err) {
+      pushNotification(err.message || 'Could not start the payment session', 'error')
+    } finally {
+      setResuming(false)
+    }
+  }
 
   async function copyTracking() {
     try {
@@ -132,10 +190,10 @@ function OrderConfirmation() {
         <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
           Thank you for shopping with Whiskers! Your order has been placed and is currently being processed.
         </p>
-        {paymentSucceeded && (
+        {(paymentSucceeded || (returnedFromPayMongo && payStatus === 'succeeded')) && (
           <div className="mt-3 flex items-start gap-2 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 px-3 py-2.5 text-sm text-emerald-800 dark:text-emerald-300" role="status">
             <BsCheckLg className="mt-0.5 shrink-0" />
-            <span>Payment confirmed — your order is now being processed.</span>
+            <span>Payment confirmed â€” your order is now being processed.</span>
           </div>
         )}
         {receiptEmailed && (
@@ -148,27 +206,37 @@ function OrderConfirmation() {
           <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-lg border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-2.5 text-sm text-amber-900 dark:text-amber-200" role="status">
             <div>
               <p className="font-semibold">
-                {payStatus === 'failed' ? 'Last payment attempt failed' : 'Waiting for payment'}
+                {confirming
+                  ? 'Confirming your paymentâ€¦'
+                  : payStatus === 'failed'
+                    ? 'Last payment attempt failed'
+                    : 'Waiting for payment'}
               </p>
               <p className="text-xs mt-0.5">
-                {payStatus === 'failed'
-                  ? 'Your order is still pending — complete payment to confirm it.'
-                  : 'Complete your payment to confirm this order.'}
-                {' '}Unpaid orders are cancelled automatically after the payment window and items return to stock.
+                {confirming
+                  ? 'This usually takes a few seconds. Keep this page open â€” your receipt follows by email.'
+                  : payStatus === 'failed'
+                    ? 'Your order is still pending â€” complete payment to confirm it.'
+                    : 'Complete your payment to confirm this order.'}
+                {!confirming && ' Unpaid orders are cancelled automatically after the payment window and items return to stock.'}
               </p>
             </div>
-            <Link
-              to={`/pay/simulate?order=${order.order_id}`}
-              className="shrink-0 inline-flex items-center justify-center min-h-[40px] rounded-lg bg-[#0b2e59] px-4 text-xs font-black uppercase tracking-widest text-white hover:bg-[#15407a] transition-colors"
-            >
-              Complete payment
-            </Link>
+            {!confirming && (
+              <button
+                type="button"
+                onClick={resumePayment}
+                disabled={resuming}
+                className="shrink-0 inline-flex items-center justify-center min-h-[40px] rounded-lg bg-[#0b2e59] px-4 text-xs font-black uppercase tracking-widest text-white hover:bg-[#15407a] transition-colors disabled:opacity-60"
+              >
+                {resuming ? 'Openingâ€¦' : 'Complete payment'}
+              </button>
+            )}
           </div>
         )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-        {/* ── left column ─────────────────────────────────── */}
+        {/* â”€â”€ left column â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <div className="space-y-4">
           {/* Order Overview */}
           <section className={CARD}>
@@ -265,7 +333,7 @@ function OrderConfirmation() {
           </section>
         </div>
 
-        {/* ── right column ────────────────────────────────── */}
+        {/* â”€â”€ right column â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
           {/* Payment Summary */}
           <section className="rounded-xl border-2 border-blue-600 dark:border-blue-500 bg-white dark:bg-gray-800 p-4 sm:p-5 shadow-sm">

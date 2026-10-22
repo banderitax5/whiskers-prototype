@@ -355,6 +355,12 @@ function Checkout() {
         // clears it on success. No receipt claim here either: that email only
         // goes out when payment succeeds.
         pushNotification('Order placed. Complete your payment to confirm it.', 'info')
+        // hosted gateways return an external URL (full navigation); the
+        // simulated pay page is an SPA route
+        if (/^https?:\/\//i.test(checkoutUrl)) {
+          window.location.assign(checkoutUrl)
+          return
+        }
         navigate(checkoutUrl)
         return
       }
