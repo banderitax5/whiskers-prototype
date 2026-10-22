@@ -31,6 +31,11 @@ router.post('/login', loginLimiter, async (req, res) => {
       password,
     })
     if (error) {
+      // with "Confirm email" enabled Supabase refuses the sign-in until the
+      // link is clicked - say so instead of pretending the password is wrong
+      if ((error.message || '').toLowerCase().includes('email not confirmed')) {
+        return res.status(403).json({ error: 'Please confirm your email address before signing in.' })
+      }
       return res.status(401).json({ error: 'Invalid email or password.' })
     }
     // audit trail: a staff/admin sign-in is a security event - record when
@@ -94,21 +99,41 @@ router.post('/signup', signupLimiter, async (req, res) => {
     })
     if (authError) {
       // map known Supabase errors to safe messages, hide internals
-      const msg = authError.message
+      const msg = authError.message || ''
+      logger.warn({ supabaseError: msg }, 'Supabase signup rejected')
       if (msg.includes('already registered')) {
         return res.status(409).json({ error: 'An account with this email already exists.' })
       }
       if (msg.includes('Password should')) {
         return res.status(400).json({ error: 'Password does not meet requirements.' })
       }
+      if (/signups? not allowed|signups? (are )?disabled/i.test(msg)) {
+        return res.status(403).json({ error: 'Sign-ups are currently closed.' })
+      }
+      if (/rate limit|too many requests/i.test(msg)) {
+        return res.status(429).json({ error: 'Too many attempts. Please try again shortly.' })
+      }
       return res.status(400).json({ error: 'Signup failed. Please try again.' })
     }
-    if (!data.session || !data.user) {
+    if (!data.user) {
       return res.status(400).json({ error: 'Signup failed. Please try again.' })
     }
 
     const userId = data.user.id
     const userEmail = data.user.email
+
+    // Two Supabase modes:
+    //  - "Confirm email" off -> signUp returns a session, the shopper is in;
+    //  - "Confirm email" on  -> signUp returns the user but NO session until
+    //    the emailed link is clicked. That is success, not failure: ensure the
+    //    profile exists and tell the client to show the "check your inbox" step.
+    // Supabase answers a duplicate address with an obfuscated user whose
+    // identities array is empty - never touch that person's profile.
+    const needsConfirmation = !data.session
+    const duplicateAddress = Array.isArray(data.user.identities) && data.user.identities.length === 0
+    if (needsConfirmation && duplicateAddress) {
+      return res.status(201).json({ requiresConfirmation: true, email: userEmail })
+    }
 
     // wait for the db trigger to finish creating the profile row (retry up to 5 times)
     let profileRow = null
@@ -148,6 +173,9 @@ router.post('/signup', signupLimiter, async (req, res) => {
       if (upsertError) logger.error({ err: upsertError }, 'Profile upsert failed')
     }
 
+    if (needsConfirmation) {
+      return res.status(201).json({ requiresConfirmation: true, email: userEmail })
+    }
     res.status(201).json({ session: data.session })
   } catch (err) {
     logger.error({ err }, 'Signup error')

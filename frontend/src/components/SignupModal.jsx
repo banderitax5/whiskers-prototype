@@ -21,6 +21,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
   const [loading, setLoading] = useState(false)
   const dialogRef = useRef(null)
@@ -46,6 +47,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
 
   useEffect(() => {
     if (!isOpen) return undefined
+    setNotice('')
     const t = setTimeout(() => firstNameRef.current?.focus(), 50)
     function onKey(e) {
       if (e.key === 'Escape') onClose()
@@ -123,6 +125,14 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Sign up failed')
 
+      // "Confirm email" is enabled: the account exists but Supabase will not
+      // hand out a session until the emailed link is opened.
+      if (data.requiresConfirmation) {
+        trackEvent('signup')
+        setNotice(`We sent a confirmation link to ${email.trim()}. Open it to activate your account, then log in.`)
+        return
+      }
+
       const { error: setErr } = await supabase.auth.setSession({
         access_token: data.session.access_token,
         refresh_token: data.session.refresh_token,
@@ -168,6 +178,23 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
             <img src="/logo/logo-whiskers.png" alt="Whiskers" className="h-11 sm:h-12" />
           </div>
 
+          {notice ? (
+            <div className="py-6 text-center" role="status">
+              <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Confirm your email</h2>
+              <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">{notice}</p>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                Can&apos;t find it? Check your spam folder, then open the link and log in.
+              </p>
+              <button
+                type="button"
+                onClick={() => { onClose(); onSwitchToLogin() }}
+                className="mt-4 w-full px-4 py-2 rounded-lg bg-[#0039a6] hover:bg-[#0046cc] text-white font-semibold transition-colors"
+              >
+                Go to log in
+              </button>
+            </div>
+          ) : (
+          <>
           <form onSubmit={handleSubmit} className="space-y-2.5 sm:space-y-3">
             <div className="h-8">
               {error && (
@@ -330,7 +357,9 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
              >
                Log in
              </button>
-          </p>
+           </p>
+          </>
+          )}
         </div>
       </div>
     </div>
