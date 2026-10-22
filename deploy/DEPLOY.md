@@ -29,17 +29,18 @@ credit is a countdown, not a subscription.
 Plus ~$1.40/mo for a 64 GB OS disk.
 
 **If you need the site up for a full school year, B2s will not get you there.**
-Three honest options, cheapest first:
+The capstone paper commits to **Microsoft Azure**, so the intended path is a
+B2s renewed annually; the honest options, cheapest first:
 
-1. **Oracle Cloud Always Free** (4 ARM OCPUs / 24 GB RAM, no time limit) — the
-   target the capstone paper already commits to. Free forever, but ARM capacity
-   in Singapore is occasionally unavailable.
-2. **B1ms on Azure** (~5 months) — half the RAM, so drop the Node heap cap to
-   512 MB in `whiskers-api.service`.
-3. **B2s + renew annually** — Azure for Students can be renewed once per year
+1. **B2s + renew annually** — Azure for Students can be renewed once per year
    while you stay enrolled, so a 2.6-month runway works if you renew and
    re-deploy. Data on the VM is lost when the subscription is disabled, so the
    database (Supabase) is safe either way — you just rebuild the VM.
+2. **B1ms on Azure** (~5 months) — half the RAM, so drop the Node heap cap to
+   512 MB in `whiskers-api.service`.
+3. **Oracle Cloud Always Free** (4 ARM OCPUs / 24 GB RAM, no time limit) — free
+   forever and a reasonable fallback if the Azure credit runs out, but ARM
+   capacity in Singapore is occasionally unavailable.
 
 The rest of this guide is the same for all three.
 

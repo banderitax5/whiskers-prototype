@@ -45,12 +45,13 @@ Suggested replacement:
 > enforces per-IP rate limits, and routes requests to feature modules
 > (catalog, cart, orders, admin, content, audit, …).
 
-### 1.4 "Supabase database on Oracle Cloud" — **[WRONG]** (Figure 3.1.1 paragraph)
-Reality: Supabase is Supabase Inc.'s managed cloud (free tier). Oracle Always Free is
-the planned host for the Node backend only (README deploy plan, Q7).
+### 1.4 "Supabase database on Oracle/Azure" — **[WRONG]** (Figure 3.1.1 paragraph)
+Reality: Supabase is Supabase Inc.'s managed cloud (free tier). **Microsoft Azure**
+is the host for the Node backend only (deployment guide `deploy/DEPLOY.md`, Azure VM).
 Suggested replacement:
 > Data is stored in a managed Supabase project (Postgres + Auth + storage, hosted by
-> Supabase). The Node/Express backend is designed to deploy on Oracle Cloud Always Free.
+> Supabase). The Node/Express backend is designed to deploy on a Microsoft Azure
+> virtual machine running Docker Compose.
 
 ### 1.5 Service booking — **[WRONG] everywhere** (dropped by owner decision, commit `72cc6c5`)
 Search the document for "booking", "book services", "schedule service", "approve bookings"
@@ -94,13 +95,20 @@ Owner decision still pending — two options:
   not built).
 The paper must not describe a Sales DB as the analytics source either way.
 
-### 1.9 "Secure payment processing" / payment gateway — **[WRONG]** (Abstract IPO, Figure 2, Scope)
-Reality: no payment gateway integration. Customers pay via GCash or Maya QR
-instructions (or cash on delivery); QR payments are confirmed by store staff before
-fulfillment. Suggested wording:
-> Payment is handled via GCash/Maya QR-transfer instructions or cash on delivery; QR
-> payments are verified by store staff before the order is fulfilled. Automated
-> payment-gateway integration (e.g., Stripe) is future work.
+### 1.9 "Secure payment processing" / payment gateway — **[STALE]** (Abstract IPO, Figure 2, Scope)
+Reality: cashless payment runs through a **PayMongo seam**. The prototype ships a
+simulated gateway — a hosted-checkout-style pay page plus an outcome callback — with the
+same transition rules production will use: success → Processing + receipt (idempotent),
+failure → order stays Pending, 30-minute payment window, expiry → cancelled + restocked
+(see `backend/src/utils/gatewayPayment.js`). In production that step is PayMongo's
+hosted checkout (GCash/Maya/cards) confirmed by its webhook, which is wired once the
+system has a public HTTPS domain (`deploy/DEPLOY.md`). Cash on delivery stays as the
+manual alternative. Suggested wording:
+> Payment is processed through the PayMongo payment gateway (GCash, Maya, and cards via
+> hosted checkout); orders not paid within 30 minutes are cancelled automatically and
+> stock is restored. Cash on delivery remains available as a manual alternative. The
+> prototype exercises the same integration seam through a built-in gateway simulation;
+> the live webhook is enabled when the system is deployed to a public HTTPS domain.
 
 ### 1.10 "Real-time" claims — **[STALE]** (Abstract, Objectives E, Scope item 3)
 Keep the feature, soften the word: "near-real-time (refreshed on load; ~30 s polling)".
@@ -113,9 +121,13 @@ refreshed on load".
 
 ### 2.1 Software Architecture (Figure 3.1.1)
 Boxes: [React + Vite + Tailwind PWA] → HTTPS/REST + JWT → [Express modular monolith on
-Oracle Always Free] → [Supabase: Postgres (RLS), Auth (GoTrue), Storage] and
-[Brevo SMTP/API → email (receipts, status, support replies, password reset)].
-Kill Socket.IO, Capacitor, microservice, "on Oracle" (Supabase) arrows.
+Microsoft Azure] → [Supabase: Postgres (RLS), Auth (GoTrue), Storage], [Brevo SMTP/API →
+email (receipts, status, support replies, password reset)], and [PayMongo payment gateway →
+GCash/Maya/cards; webhook confirms payment]. Include the supplied figure
+`Downloads/architecture-diagram.png` (source: `docs/system-architecture.md`).
+Kill Socket.IO, Capacitor, microservice arrows, and any claim that Supabase itself runs
+on the Azure VM — Supabase is its own managed cloud; the VM hosts only the API and the
+static frontend.
 
 ### 2.2 DFD Level 0 (Figure 3.1.2)
 Add an external entity **Email provider (Brevo)** with flows: password-reset email,
@@ -277,12 +289,12 @@ list from §3.
 | 1 | Socket.IO real-time | Polling + 30 s cache | §1.1 reword / Future Work |
 | 2 | Capacitor mobile app | Responsive PWA only | §1.2 delete |
 | 3 | Microservices gateway | Modular monolith | §1.3 reword |
-| 4 | Supabase on Oracle | Supabase cloud; Oracle = backend host plan | §1.4 reword |
+| 4 | Supabase on Oracle | Supabase cloud; Microsoft Azure = backend host plan | §1.4 reword (Oracle → Azure) |
 | 5 | Service booking | Dropped by owner (Q3) | §1.5 remove + limitation |
 | 6 | Review module (broad) | Order-history reviews; no public aggregate | §1.6 narrow |
 | 7 | Address verification (staff/admin) | Free-text profile field only | §1.7 remove |
 | 8 | Sales DB drives analytics | sales = seed-only fake profit; live = orders+payments+events | §1.8 Option A/B (owner) |
-| 9 | Secure payment processing | QR + staff confirmation / COD | §1.9 reword |
+| 9 | Secure payment processing | PayMongo seam (simulated gateway; live webhook pending public domain) + COD | §1.9 reword |
 | 10 | 8-entity ERD | ~26 tables, 1 roles table, pets on-device | §2.6 redraw |
 | 11 | Chatbot (objective F, "if applicable") | FAQ content pages only | §3 soften |
 | 12 | Guest checkout | Account required to check out | §3 limitation |

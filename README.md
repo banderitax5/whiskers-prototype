@@ -132,7 +132,7 @@ Each image builds from its own service folder, so compose works straight from th
 
 ## Deployment (recommended target)
 
-The paper commits to Oracle Cloud Free Tier and the project must stay free and reachable 24/7, so the intended target is an **Oracle Cloud Always Free VM** (ARM shape) running Docker Compose:
+The deployment target is a **Microsoft Azure virtual machine** (Azure for Students credit — sizes, costs, and step-by-step provisioning are in `deploy/DEPLOY.md`) running Docker Compose:
 
 1. Provision the VM (Ubuntu), open only ports 22, 80, and 443.
 2. Install Docker, clone the repo, copy both `.env.example` files to `.env` and fill in Supabase keys.
