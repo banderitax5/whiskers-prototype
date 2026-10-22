@@ -47,8 +47,8 @@ async function fillAndSubmit(container) {
     setInput(container, '#signup-firstName', 'Juana')
     setInput(container, '#signup-lastName', 'Dela Cruz')
     setInput(container, '#signup-email', 'juana@example.com')
-    setInput(container, '#signup-password', 'Secret123')
-    setInput(container, '#signup-confirmPassword', 'Secret123')
+    setInput(container, '#signup-password', 'Secret123!')
+    setInput(container, '#signup-confirmPassword', 'Secret123!')
   })
   await act(async () => {
     container
@@ -97,5 +97,32 @@ describe('SignupModal email-confirmation flow', () => {
 
     expect(supabase.auth.setSession).toHaveBeenCalledWith({ access_token: 'a', refresh_token: 'r' })
     expect(onSignupSuccess).toHaveBeenCalled()
+  })
+
+  it('explains the password policy instead of a vague error', async () => {
+    const fetchMock = vi.fn()
+    globalThis.fetch = fetchMock
+    const container = await render()
+    await act(async () => {
+      setInput(container, '#signup-firstName', 'Derek')
+      setInput(container, '#signup-lastName', 'Hale')
+      setInput(container, '#signup-email', 'haled6159@example.com')
+      setInput(container, '#signup-password', 'asdfasdf')
+      setInput(container, '#signup-confirmPassword', 'asdfasdf')
+    })
+    await act(async () => {
+      container
+        .querySelector('form')
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    const items = [...container.querySelectorAll('#signup-password-rules li')]
+    const itemFor = (re) => items.find((li) => re.test(li.textContent))
+    expect(itemFor(/lowercase/).className).toContain('text-green-700')
+    expect(itemFor(/uppercase/).className).toContain('text-gray-500')
+    expect(itemFor(/number/).className).toContain('text-gray-500')
+    expect(itemFor(/symbol/).className).toContain('text-gray-500')
+    expect(container.querySelector('#signup-password').getAttribute('aria-invalid')).toBe('true')
   })
 })

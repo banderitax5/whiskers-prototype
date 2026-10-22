@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { BsEye, BsEyeSlash } from 'react-icons/bs'
 import supabase from '../lib/supabase'
 import { trackEvent } from '../lib/appEvents.js'
+import { passwordError } from '../lib/passwordRules'
+import PasswordRequirements from './PasswordRequirements.jsx'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -73,7 +75,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
         return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()) ? '' : 'Enter a valid email address.'
       case 'password':
         if (!value) return 'Password is required.'
-        return value.length >= 8 ? '' : 'Password must be at least 8 characters.'
+        return passwordError(value)
       case 'confirmPassword':
         if (!value) return 'Please confirm your password.'
         return value === password ? '' : 'Passwords do not match.'
@@ -276,6 +278,8 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   id="signup-password"
+                  aria-describedby={password ? 'signup-password-rules' : undefined}
+                  aria-invalid={fieldErrors.password ? 'true' : undefined}
                   placeholder="Enter your password"
                   value={password}
                   onChange={(e) => {
@@ -300,9 +304,14 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
                   {showPassword ? <BsEyeSlash className="h-4 w-4" /> : <BsEye className="h-4 w-4" />}
                 </button>
               </div>
-              <div className="h-6">
-                {fieldErrors.password && <p className="text-xs text-red-500 dark:text-red-400 mt-1 line-clamp-1">{fieldErrors.password}</p>}
-              </div>
+              {(password || fieldErrors.password) && (
+                <div className="h-auto">
+                  {fieldErrors.password && (
+                    <p className="text-xs text-red-500 dark:text-red-400">{fieldErrors.password}</p>
+                  )}
+                  <PasswordRequirements value={password} id="signup-password-rules" />
+                </div>
+              )}
             </div>
 
             <div>

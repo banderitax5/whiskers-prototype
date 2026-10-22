@@ -4,6 +4,8 @@ import { BsEye, BsEyeSlash } from 'react-icons/bs'
 import toast from 'react-hot-toast'
 import supabase, { hadRecoveryMarker, RECOVERY_PENDING_KEY } from '../lib/supabase'
 import { notifyAuth } from '../lib/authNotice'
+import { passwordError } from '../lib/passwordRules'
+import PasswordRequirements from '../components/PasswordRequirements.jsx'
 
 function ResetPassword() {
   const [status, setStatus] = useState('checking')
@@ -63,7 +65,8 @@ function ResetPassword() {
     e.preventDefault()
     setError('')
     const errs = {}
-    if (password.length < 8) errs.password = 'Password must be at least 8 characters.'
+    const pwProblem = passwordError(password)
+    if (pwProblem) errs.password = pwProblem
     if (confirm !== password) errs.confirm = 'Passwords do not match.'
     setFieldErrors(errs)
     if (Object.keys(errs).length > 0) return
@@ -180,6 +183,8 @@ function ResetPassword() {
               <input
                 type={showPassword ? 'text' : 'password'}
                 id="reset-password"
+                aria-describedby={password ? 'reset-password-rules' : undefined}
+                aria-invalid={fieldErrors.password ? 'true' : undefined}
                 value={password}
                 onChange={(e) => { setPassword(e.target.value); setFieldErrors(p => ({ ...p, password: '' })) }}
                 required
@@ -196,6 +201,9 @@ function ResetPassword() {
               </button>
             </div>
             {fieldErrors.password && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{fieldErrors.password}</p>}
+            {(password || fieldErrors.password) && (
+              <PasswordRequirements value={password} id="reset-password-rules" />
+            )}
           </div>
 
           <div>

@@ -104,8 +104,17 @@ router.post('/signup', signupLimiter, async (req, res) => {
       if (msg.includes('already registered')) {
         return res.status(409).json({ error: 'An account with this email already exists.' })
       }
-      if (msg.includes('Password should')) {
-        return res.status(400).json({ error: 'Password does not meet requirements.' })
+      // Supabase's own weak-password message is a wall of character classes;
+      // say the actual policy in plain words instead.
+      if (authError.code === 'weak_password' || /password should contain|weak password/i.test(msg)) {
+        return res.status(400).json({
+          error: 'Password needs at least 8 characters, including an uppercase letter, a lowercase letter, a number, and a symbol.',
+        })
+      }
+      if (/known to be weak|easy to guess|pwned|data breach/i.test(msg)) {
+        return res.status(400).json({
+          error: 'That password has appeared in a known data breach. Please choose a different one.',
+        })
       }
       if (/signups? not allowed|signups? (are )?disabled/i.test(msg)) {
         return res.status(403).json({ error: 'Sign-ups are currently closed.' })
