@@ -193,7 +193,7 @@ function OrderConfirmation() {
         {(paymentSucceeded || (returnedFromPayMongo && payStatus === 'succeeded')) && (
           <div className="mt-3 flex items-start gap-2 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 px-3 py-2.5 text-sm text-emerald-800 dark:text-emerald-300" role="status">
             <BsCheckLg className="mt-0.5 shrink-0" />
-            <span>Payment confirmed â€” your order is now being processed.</span>
+            <span>Payment confirmed — your order is now being processed.</span>
           </div>
         )}
         {receiptEmailed && (
@@ -207,16 +207,16 @@ function OrderConfirmation() {
             <div>
               <p className="font-semibold">
                 {confirming
-                  ? 'Confirming your paymentâ€¦'
+                  ? 'Confirming your payment…'
                   : payStatus === 'failed'
                     ? 'Last payment attempt failed'
                     : 'Waiting for payment'}
               </p>
               <p className="text-xs mt-0.5">
                 {confirming
-                  ? 'This usually takes a few seconds. Keep this page open â€” your receipt follows by email.'
+                  ? 'This usually takes a few seconds. Keep this page open — your receipt follows by email.'
                   : payStatus === 'failed'
-                    ? 'Your order is still pending â€” complete payment to confirm it.'
+                    ? 'Your order is still pending — complete payment to confirm it.'
                     : 'Complete your payment to confirm this order.'}
                 {!confirming && ' Unpaid orders are cancelled automatically after the payment window and items return to stock.'}
               </p>
@@ -228,7 +228,7 @@ function OrderConfirmation() {
                 disabled={resuming}
                 className="shrink-0 inline-flex items-center justify-center min-h-[40px] rounded-lg bg-[#0b2e59] px-4 text-xs font-black uppercase tracking-widest text-white hover:bg-[#15407a] transition-colors disabled:opacity-60"
               >
-                {resuming ? 'Openingâ€¦' : 'Complete payment'}
+                {resuming ? 'Opening…' : 'Complete payment'}
               </button>
             )}
           </div>

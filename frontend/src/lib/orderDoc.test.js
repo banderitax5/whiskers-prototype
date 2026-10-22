@@ -24,9 +24,9 @@ describe('formatters', () => {
   })
 
   it('builds display codes', () => {
-    expect(orderCode('abcdef123')).toBe('#WPS-ABCDEF')
+    expect(orderCode('abcdef123')).toBe('#WPS-ABCDEF12')
     expect(orderCode(null)).toBe('#WPS-')
-    expect(trackingCode('abcdefghij')).toBe('TRK-ABCDEFGH')
+    expect(trackingCode('abcdefghij')).toBe('TRK-WPS-ABCDEFGH')
   })
 
   it('returns empty strings for missing dates', () => {

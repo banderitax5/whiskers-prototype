@@ -37,8 +37,10 @@ export function maskEmail(email) {
   return `${name.slice(0, 1)}***@${domain}`
 }
 
-function shortId(orderId) {
-  return String(orderId || '').slice(0, 8).toUpperCase()
+// ONE canonical order code across the storefront, receipts and email. Must stay
+// in lockstep with frontend/src/lib/orderDoc.js orderCode().
+export function orderCode(orderId) {
+  return `#WPS-` + String(orderId || '').slice(0, 8).toUpperCase()
 }
 
 function formatDate(iso) {
@@ -74,7 +76,7 @@ function shell(title, bodyHtml) {
 </div>`.trim()
 }
 
-// ── order receipt (sent by POST /api/orders) ────────────────────────────────
+// --- order receipt (sent by POST /api/orders) ---------------------------------
 
 // Build the receipt content for one order. Pure - takes a plain object, so it
 // can be unit tested and reused for other channels later.
@@ -101,14 +103,14 @@ export function buildReceiptEmail(order) {
   const greeting = customerName ? `Hi ${customerName},` : 'Hi there,'
   const when = formatDate(createdAt)
 
-  const subject = `Your ${STORE_NAME} order #${shortId(orderId)}`
+  const subject = `Your ${STORE_NAME} order ${orderCode(orderId)}`
 
   const textLines = [
     greeting,
     '',
     `Thank you for shopping at ${STORE_NAME}! We received your order and will start preparing it right away.`,
     '',
-    `Order: #${shortId(orderId)}`,
+    `Order: ${orderCode(orderId)}`,
     when ? `Placed: ${when}` : null,
     '',
     ...safeItems.map((i) => `- ${i.name} x${i.quantity} - PHP ${php(i.subtotal)}`),
@@ -148,7 +150,7 @@ export function buildReceiptEmail(order) {
     `
       <p style="margin:0 0 4px;font-size:14px;color:#1c2430;">${greeting}</p>
       <p style="margin:0 0 16px;font-size:14px;color:#5b6472;">Thank you for shopping with us! We received your order and will start preparing it right away.</p>
-      <p style="margin:0 0 4px;font-size:13px;color:#1c2430;"><strong>Order #${shortId(orderId)}</strong></p>
+      <p style="margin:0 0 4px;font-size:13px;color:#1c2430;"><strong>Order ${orderCode(orderId)}</strong></p>
       ${when ? `<p style="margin:0 0 16px;font-size:13px;color:#8a94a3;">Placed ${when}</p>` : '<div style="margin-bottom:16px;"></div>'}
       <table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:12px;">
         ${itemRows || '<tr><td style="font-size:14px;color:#8a94a3;">No items</td></tr>'}
@@ -167,7 +169,7 @@ export function buildReceiptEmail(order) {
   return { subject, html, text: textLines.join('\n') }
 }
 
-// ── order status update (sent by PATCH /api/admin/orders/:id) ───────────────
+// --- order status update (sent by PATCH /api/admin/orders/:id) ----------------
 
 // one paragraph per status: what the shopper is being told changed, in the
 // shop's voice. Missing statuses get a neutral line rather than silence.
@@ -202,7 +204,7 @@ export function buildOrderStatusEmail({ orderId, status, previousStatus, itemsCo
   const count = Number(itemsCount) || 0
   const itemsLine = count === 1 ? '1 item' : `${count} items`
 
-  const subject = `${copy.heading} - ${STORE_NAME} order #${shortId(orderId)}`
+  const subject = `${copy.heading} - ${STORE_NAME} order ${orderCode(orderId)}`
   const transition = previousStatus && previousStatus !== status
     ? `Status updated: ${previousStatus} - ${status}.`
     : `Current status: ${status}.`
@@ -212,7 +214,7 @@ export function buildOrderStatusEmail({ orderId, status, previousStatus, itemsCo
     '',
     copy.body,
     '',
-    `Order: #${shortId(orderId)}`,
+    `Order: ${orderCode(orderId)}`,
     `${transition} (${itemsLine})`,
     '',
     `Sign in to your ${STORE_NAME} account any time to track this order and see your receipt.`,
@@ -227,7 +229,7 @@ export function buildOrderStatusEmail({ orderId, status, previousStatus, itemsCo
       <p style="margin:0 0 16px;font-size:14px;color:#5b6472;">${copy.body}</p>
       <table role="presentation" style="width:100%;border-collapse:collapse;background:#f8fafc;border:1px solid #eceff3;border-radius:8px;margin-bottom:16px;">
         <tr><td style="padding:10px 14px;font-size:13px;color:#5b6472;">Order</td>
-            <td style="padding:10px 14px;font-size:13px;color:#1c2430;text-align:right;font-weight:700;">#${shortId(orderId)}</td></tr>
+            <td style="padding:10px 14px;font-size:13px;color:#1c2430;text-align:right;font-weight:700;">${orderCode(orderId)}</td></tr>
         <tr><td style="padding:0 14px 10px;font-size:13px;color:#5b6472;">Status</td>
             <td style="padding:0 14px 10px;font-size:13px;color:#1c2430;text-align:right;font-weight:700;">${status}</td></tr>
         <tr><td style="padding:0 14px 10px;font-size:13px;color:#5b6472;">Items</td>
@@ -240,7 +242,7 @@ export function buildOrderStatusEmail({ orderId, status, previousStatus, itemsCo
   return { subject, html, text }
 }
 
-// ── support reply (sent by PATCH /api/admin/supports/:id) ───────────────────
+// --- support reply (sent by PATCH /api/admin/supports/:id) --------------------
 
 export function buildSupportReplyEmail({ customerName, message, reply }) {
   const greeting = customerName ? `Hi ${customerName},` : 'Hi there,'

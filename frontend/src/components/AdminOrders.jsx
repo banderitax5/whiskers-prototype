@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import supabase from '../lib/supabase';
 import { apiGetAllPages, apiPatchAuth, apiDeleteAuth } from '../lib/api';
 import { formatPesos } from '../lib/cartLogic';
+import { orderCode } from '../lib/orderDoc';
 import { formatMargin } from '../lib/adminCosting';
 import { AdminPage, AdminTable, AdminRowDropdown, EmptyState, StatCard, StatusPill, ConfirmDialog } from './adminTheme';
 import { BsBoxSeam, BsSearch, BsTrash, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
@@ -199,7 +200,7 @@ const AdminOrders = () => {
         />
       ),
     }] : []),
-    { key: 'id', label: 'Order ID', sortable: true, render: (o) => <span className="text-xs font-mono text-gray-500 dark:text-slate-400">{String(o.order_id).slice(0, 8).toUpperCase()}</span> },
+    { key: 'id', label: 'Order ID', sortable: true, render: (o) => <span className="text-xs font-mono text-gray-500 dark:text-slate-400">{orderCode(o.order_id)}</span> },
     { key: 'customer', label: 'User Account', sortable: true,
       render: (o) => {
         const name = `${o.firstName || ''} ${o.lastName || ''}`.trim();
@@ -347,7 +348,7 @@ const AdminOrders = () => {
         renderMobileCard={(o) => (
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono text-gray-400 dark:text-slate-500">#{String(o.order_id).slice(0, 8).toUpperCase()}</span>
+              <span className="text-[10px] font-mono text-gray-400 dark:text-slate-500">{orderCode(o.order_id)}</span>
               <StatusPill kind={STATUS_KIND[o.status] || 'neutral'}>{o.status}</StatusPill>
             </div>
             <div className="text-sm font-bold text-gray-900 dark:text-slate-100 truncate">{`${o.firstName || ''} ${o.lastName || ''}`.trim() || 'Guest'}</div>
@@ -382,7 +383,7 @@ const AdminOrders = () => {
             <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#1e3a5f]">
               <div>
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white">Order Details</h3>
-                <p className="text-xs font-mono text-gray-500 dark:text-slate-400">#{String(viewingOrder.order_id).slice(0, 8).toUpperCase()}</p>
+                <p className="text-xs font-mono text-gray-500 dark:text-slate-400">{orderCode(viewingOrder.order_id)}</p>
               </div>
               <button type="button" onClick={() => setViewingOrder(null)} className="h-8 w-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-[#1e3a5f] text-gray-500 dark:text-slate-400 transition">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -484,7 +485,7 @@ const AdminOrders = () => {
       <ConfirmDialog
         open={!!deleteTarget}
         title="Delete Order"
-        message={`Are you sure you want to delete order #${deleteTarget?.order_id?.slice(0, 8).toUpperCase()}? This will also remove all items and payment records. This action cannot be undone.`}
+        message={`Are you sure you want to delete order ${deleteTarget ? orderCode(deleteTarget.order_id) : ''}? This will also remove all items and payment records. This action cannot be undone.`}
         confirmLabel="Delete Order"
         cancelLabel="Keep Order"
         danger

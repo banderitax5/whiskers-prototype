@@ -26,7 +26,7 @@ const sampleOrder = {
 describe('emailTemplates: receipt', () => {
   test('subject carries the short order id', () => {
     const { subject } = buildReceiptEmail(sampleOrder)
-    assert.match(subject, /#3F6B2A91/)
+    assert.match(subject, /#WPS-3F6B2A91/)
     assert.match(subject, /Whiskers Pet Shop/)
   })
 
@@ -70,7 +70,7 @@ describe('emailTemplates: receipt', () => {
   test('text alternative carries every line a receipt needs', () => {
     const { text } = buildReceiptEmail(sampleOrder)
     assert.match(text, /Hi Ken,/)
-    assert.match(text, /Order: #3F6B2A91/)
+    assert.match(text, /Order: #WPS-3F6B2A91/)
     assert.match(text, /Royal Canin Adult Beef 10kg x1 - PHP 2,450\.00/)
     assert.match(text, /Discount: -PHP 50\.00/)
     assert.match(text, /Shipping: PHP 75\.00/)

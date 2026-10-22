@@ -4,9 +4,9 @@ Whiskers Petshop is an e-commerce prototype for pet food and supplies, with pers
 
 ## Tech stack
 
-- **Frontend** â€” React 19, Vite 6, Tailwind CSS 3 + daisyUI, React Router 7, PWA (installable, offline fallback), Supabase client for auth
-- **Backend** â€” Node.js with Express 4 (ESM), helmet, express-rate-limit, pino logging, multer + sharp for image uploads, AES-256-GCM field encryption
-- **Database** â€” Supabase (PostgreSQL with row-level security)
+- **Frontend** — React 19, Vite 6, Tailwind CSS 3 + daisyUI, React Router 7, PWA (installable, offline fallback), Supabase client for auth
+- **Backend** — Node.js with Express 4 (ESM), helmet, express-rate-limit, pino logging, multer + sharp for image uploads, AES-256-GCM field encryption
+- **Database** — Supabase (PostgreSQL with row-level security)
 
 ## Project structure
 
@@ -38,8 +38,8 @@ copy frontend\.env.example frontend\.env
 
 Then fill in:
 
-- **Backend** â€” `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_ANON_KEY`, `ENCRYPTION_KEY` (generate one with the command printed in the template), optional `TRUST_PROXY`, step-up settings, email settings (`BREVO_API_KEY`, `MAIL_FROM_EMAIL`, `MAIL_FROM_NAME`), and optionally `PAYMONGO_SECRET_KEY` + `PAYMONGO_WEBHOOK_SECRET` for online payments
-- **Frontend** â€” `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, optional `VITE_API_BASE` and `VITE_PROXY_TARGET`
+- **Backend** — `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_ANON_KEY`, `ENCRYPTION_KEY` (generate one with the command printed in the template), optional `TRUST_PROXY`, step-up settings, email settings (`BREVO_API_KEY`, `MAIL_FROM_EMAIL`, `MAIL_FROM_NAME`), and optionally `PAYMONGO_SECRET_KEY` + `PAYMONGO_WEBHOOK_SECRET` for online payments
+- **Frontend** — `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, optional `VITE_API_BASE` and `VITE_PROXY_TARGET`
 
 Never commit the real `.env` files.
 
@@ -49,7 +49,7 @@ Order confirmations email the customer a receipt through Brevo. The feature
 switches on the moment `BREVO_API_KEY` + `MAIL_FROM_EMAIL` are set in
 `backend/.env`; without them checkout behaves exactly as before (receipt
 skipped, logged). Brevo's free tier (300 emails/day) covers a shop this
-size, and the sender can be a verified Gmail address â€” no domain purchase
+size, and the sender can be a verified Gmail address — no domain purchase
 needed. Password-reset emails are handled separately by Supabase and need
 no setup.
 
@@ -99,7 +99,7 @@ npm run dev --prefix backend
 npm run dev --prefix frontend
 ```
 
-Open http://localhost:5173 â€” the Vite dev server proxies `/api` requests to the backend, so no CORS setup is needed locally.
+Open http://localhost:5173 — the Vite dev server proxies `/api` requests to the backend, so no CORS setup is needed locally.
 
 ## Demo accounts
 
@@ -108,11 +108,11 @@ Pre-seeded in Supabase for demos and panel review:
 | Role | Email | Password | Lands on |
 |------|-------|----------|----------|
 | User | demo-user@example.com | `DemoUser!123` | Storefront |
-| Staff | demo-staff@example.com | `DemoStaff!123` | Staff Panel â€” orders, products, payments, support |
-| Admin | demo-admin@example.com | `DemoAdmin!123` | Admin Dashboard â€” analytics, customers, audit logs |
+| Staff | demo-staff@example.com | `DemoStaff!123` | Staff Panel — orders, products, payments, support |
+| Admin | demo-admin@example.com | `DemoAdmin!123` | Admin Dashboard — analytics, customers, audit logs |
 
 Staff and admin panels ask for password re-verification (step-up) before
-state-changing actions â€” type the same account password.
+state-changing actions — type the same account password.
 
 ## Tests, lint, and build
 
@@ -157,7 +157,7 @@ The deployment target is a **Microsoft Azure virtual machine** (Azure for Studen
 
 1. Provision the VM (Ubuntu), open only ports 22, 80, and 443.
 2. Install Docker, clone the repo, copy both `.env.example` files to `.env` and fill in Supabase keys.
-3. `docker compose up --build` (run `docker compose config` first to validate) â€” **run the build once on the VM**; it is the canonical build check.
+3. `docker compose up --build` (run `docker compose config` first to validate) — **run the build once on the VM**; it is the canonical build check.
 4. Put the frontend behind a reverse proxy (Caddy or nginx) on 443 with a Cloudflare-managed DNS record; point `VITE_PROXY_TARGET` at the backend container.
 5. Keep Supabase on its free cloud tier (database + auth); the VM only runs the API and static frontend.
 
@@ -165,7 +165,7 @@ Render/Railway free tiers sleep after inactivity, so they do not satisfy the 24/
 
 ## Troubleshooting
 
-- **`EADDRINUSE` on 4141 or 5173** â€” a previous dev server is still running. Close it or kill the process holding the port.
-- **Proxy errors in the browser console** â€” the backend is not running, or it is on a custom port. Point `VITE_PROXY_TARGET` at the right address.
-- **Auth or Supabase errors on load** â€” the frontend env file is missing or has placeholder values.
-- **`npm audit` reports high-severity issues** â€” the remaining ones come from dev-only tooling chains (chokidar/braces) and are not shipped by the backend at runtime. For production images, install with `npm ci --omit=dev`.
+- **`EADDRINUSE` on 4141 or 5173** — a previous dev server is still running. Close it or kill the process holding the port.
+- **Proxy errors in the browser console** — the backend is not running, or it is on a custom port. Point `VITE_PROXY_TARGET` at the right address.
+- **Auth or Supabase errors on load** — the frontend env file is missing or has placeholder values.
+- **`npm audit` reports high-severity issues** — the remaining ones come from dev-only tooling chains (chokidar/braces) and are not shipped by the backend at runtime. For production images, install with `npm ci --omit=dev`.

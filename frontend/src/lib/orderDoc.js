@@ -7,14 +7,15 @@ export function peso(amount) {
   return `₱${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
-// display code used across both documents, e.g. #WPS-894201
+// ONE canonical order code across the storefront, receipts and email. Must stay
+// in lockstep with backend/src/utils/emailTemplates.js orderCode().
 export function orderCode(orderId) {
-  return `#WPS-${String(orderId ?? '').slice(0, 6).toUpperCase()}`
+  return `#WPS-${String(orderId ?? '').slice(0, 8).toUpperCase()}`
 }
 
-// display-only tracking id, e.g. TRK-WPS-894201
+// display-only tracking id, derived from the same code, e.g. TRK-WPS-894201CE
 export function trackingCode(orderId) {
-  return `TRK-${String(orderId ?? '').slice(0, 8).toUpperCase()}`
+  return `TRK-${orderCode(orderId).replace('#', '')}`
 }
 
 export function formatOrderDate(iso) {

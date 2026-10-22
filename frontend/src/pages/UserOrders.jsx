@@ -2,7 +2,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useShop } from '../context/ShopContext.jsx'
 import { formatPesos } from '../lib/cartLogic'
-import { awaitingGatewayPayment } from '../lib/orderDoc'
+import { awaitingGatewayPayment, orderCode } from '../lib/orderDoc'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -263,7 +263,7 @@ function UserOrders() {
               >
                 <div className="flex flex-wrap items-center gap-3">
                   <span className="text-xs font-mono text-gray-500 dark:text-gray-400">
-                    #{String(order.order_id).slice(0, 8).toUpperCase()}
+                    {orderCode(order.order_id)}
                   </span>
                   <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${STATUS_COLOR[order.status] || 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>
                     {order.status}
