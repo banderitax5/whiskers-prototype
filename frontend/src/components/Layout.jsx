@@ -4,6 +4,7 @@ import Navbar from './Navbar.jsx'
 import NavLinks from './NavLinks.jsx'
 import Footer from './Footer.jsx'
 import FloatingNotification from './Toaster.jsx'
+import AuthNotice from './AuthNotice.jsx'
 import ScrollProgress from './ScrollProgress.jsx'
 import BackToTop from './BackToTop.jsx'
 import FloatingContact from './FloatingContact.jsx'
@@ -76,6 +77,8 @@ function Layout() {
       {showNavLinks && <NavLinks />}
       <PromoStrip />
       <FloatingNotification />
+      <AuthNotice />
+
       <main id="main-content" className="flex-1 px-3 sm:px-4 py-4 sm:py-6">
         {shopClosed ? (
           <div className="mx-auto max-w-xl text-center py-16 sm:py-24 space-y-4" role="alert">

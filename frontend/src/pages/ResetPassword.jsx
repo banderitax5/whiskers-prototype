@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { BsEye, BsEyeSlash } from 'react-icons/bs'
 import toast from 'react-hot-toast'
 import supabase, { hadRecoveryMarker, RECOVERY_PENDING_KEY } from '../lib/supabase'
+import { notifyAuth } from '../lib/authNotice'
 
 function ResetPassword() {
   const [status, setStatus] = useState('checking')
@@ -74,7 +75,10 @@ function ResetPassword() {
       setError(updateErr.message || 'Could not update the password. Request a new link and try again.')
       return
     }
-    toast.success('Password updated.')
+    notifyAuth({
+      title: 'Password changed',
+      body: 'Your password was updated. Use the new one next time you sign in.',
+    })
     localStorage.removeItem(RECOVERY_PENDING_KEY)
     setPending(false)
     navigate('/', { replace: true })
