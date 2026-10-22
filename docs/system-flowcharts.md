@@ -2,14 +2,24 @@
 
 Standard flowchart symbols used throughout:
 
-| Shape | Meaning | Example |
-|---|---|---|
-| Stadium (rounded ends) | **Terminator** — Start / End | Start, Logout |
-| Rectangle | **Process** — action by user or system | Compute totals, Update order status |
-| Diamond | **Decision** — yes/no branch | Has an account? |
-| Parallelogram | **Input / Output** — data entering or leaving | Enter pet data, Email receipt |
-| Cylinder | **Database** — stored data | Orders DB, Products DB |
-| Circle | **On-page connector** — flow continues at the matching letter | A, B |
+| Shape | Meaning | Fill | Example |
+|---|---|---|---|
+| Stadium (rounded ends) | **Terminator** — Start / End | Yellow `#F6CB4F` | Start, Logout |
+| Rectangle | **Process** — action by user or system | Gray `#E8E8E8` | Compute totals, Update order status |
+| Diamond | **Decision** — Yes/No branch | Blue `#4472C4`, white text | Has an account? |
+| Parallelogram | **Input / Output** — data entering or leaving | Gray `#E8E8E8` | Enter pet data, Email receipt |
+| Cylinder | **Database** — stored data | Gray `#E8E8E8` | Orders DB, Products DB |
+| Circle | **On-page connector** — flow continues at the matching letter | White | A, B, C |
+
+Color scheme (classDef applied in every Mermaid block below):
+
+```mermaid
+classDef term fill:#F6CB4F,stroke:#333333,stroke-width:1.5px,color:#111111
+classDef proc fill:#E8E8E8,stroke:#333333,stroke-width:1.5px,color:#111111
+classDef dec fill:#4472C4,stroke:#333333,stroke-width:1.5px,color:#FFFFFF
+classDef db fill:#E8E8E8,stroke:#333333,stroke-width:1.5px,color:#111111
+classDef conn fill:#FFFFFF,stroke:#333333,stroke-width:1.5px,color:#111111
+```
 
 **ANSI/ISO 5807 compliance:**
 
@@ -18,6 +28,7 @@ Standard flowchart symbols used throughout:
 - Every decision has exactly **one entry and two labeled exits** (Yes/No).
 - Flowlines never cross; merges are shown as multiple arrows entering one symbol.
 - Text is horizontal, centered, and reads left-to-right.
+- **Color scheme (capstone standard):** yellow terminators, blue decision diamonds, gray process/I-O/database symbols, white connectors.
 
 **Print layout:** each figure is split into vertical columns so it fits A4 without shrinking the text. The flow leaves one column through a circled connector and resumes at the same letter at the top of the next column (customer uses A, B, and C; staff and admin use A). The stitched PNGs in `C:\Users\USER\Downloads\` are:
 
@@ -48,6 +59,14 @@ flowchart TD
     LG -- No --> LR[/Register or log in/]
     LG -- Yes --> KA(("A"))
     LR --> KA
+    classDef term fill:#F6CB4F,stroke:#333333,stroke-width:1.5px,color:#111111
+    classDef proc fill:#E8E8E8,stroke:#333333,stroke-width:1.5px,color:#111111
+    classDef dec fill:#4472C4,stroke:#333333,stroke-width:1.5px,color:#FFFFFF
+    classDef conn fill:#FFFFFF,stroke:#333333,stroke-width:1.5px,color:#111111
+    class S term
+    class CO,LG dec
+    class B,V,A,LR proc
+    class KA,KC,KC2 conn
 ```
 
 (Connector **C** at the top of this column is where the *Proceed to checkout? — No* branch re-enters the flow to keep browsing — an ANSI-compliant alternative to an upward loop arrow.)
@@ -64,6 +83,14 @@ flowchart TD
     QR --> DB[("Orders DB - order and payment records")]
     COD --> DB
     DB --> KB(("B"))
+    classDef proc fill:#E8E8E8,stroke:#333333,stroke-width:1.5px,color:#111111
+    classDef dec fill:#4472C4,stroke:#333333,stroke-width:1.5px,color:#FFFFFF
+    classDef db fill:#E8E8E8,stroke:#333333,stroke-width:1.5px,color:#111111
+    classDef conn fill:#FFFFFF,stroke:#333333,stroke-width:1.5px,color:#111111
+    class PM dec
+    class T,QR,COD proc
+    class DB db
+    class KA2,KB conn
 ```
 
 Column 3 — connector **B** to end:
@@ -77,6 +104,14 @@ flowchart TD
     FB -- Yes --> RV[/Ratings, comments, and support messages/]
     FB -- No --> E(["END: Transaction complete"])
     RV --> E
+    classDef term fill:#F6CB4F,stroke:#333333,stroke-width:1.5px,color:#111111
+    classDef proc fill:#E8E8E8,stroke:#333333,stroke-width:1.5px,color:#111111
+    classDef dec fill:#4472C4,stroke:#333333,stroke-width:1.5px,color:#FFFFFF
+    classDef conn fill:#FFFFFF,stroke:#333333,stroke-width:1.5px,color:#111111
+    class FB dec
+    class CF,ST,RV proc
+    class E term
+    class KB2 conn
 ```
 
 ---
@@ -96,6 +131,14 @@ flowchart TD
     SU -- Yes --> ST["STEP-UP: Re-enter password - 403 until verified"]
     SU -- No --> KA(("A"))
     ST --> KA
+    classDef term fill:#F6CB4F,stroke:#333333,stroke-width:1.5px,color:#111111
+    classDef proc fill:#E8E8E8,stroke:#333333,stroke-width:1.5px,color:#111111
+    classDef dec fill:#4472C4,stroke:#333333,stroke-width:1.5px,color:#FFFFFF
+    classDef conn fill:#FFFFFF,stroke:#333333,stroke-width:1.5px,color:#111111
+    class S,ED term
+    class RC,SU dec
+    class AU,DENY,ST proc
+    class KA conn
 ```
 
 Column 2 — connector **A** to end:
@@ -113,6 +156,16 @@ flowchart TD
     PD --> AL
     SR --> AL
     AL --> E(["END: Staff logs out"])
+    classDef term fill:#F6CB4F,stroke:#333333,stroke-width:1.5px,color:#111111
+    classDef proc fill:#E8E8E8,stroke:#333333,stroke-width:1.5px,color:#111111
+    classDef dec fill:#4472C4,stroke:#333333,stroke-width:1.5px,color:#FFFFFF
+    classDef db fill:#E8E8E8,stroke:#333333,stroke-width:1.5px,color:#111111
+    classDef conn fill:#FFFFFF,stroke:#333333,stroke-width:1.5px,color:#111111
+    class M dec
+    class OM,PM,PD,SR proc
+    class AL db
+    class E term
+    class KA2 conn
 ```
 
 ---
@@ -127,6 +180,12 @@ flowchart TD
     S(["START: Administrator logs in"]) --> AU["Authenticate email and password"]
     AU --> ST["STEP-UP: Re-enter password - 403 until verified"]
     ST --> KA(("A"))
+    classDef term fill:#F6CB4F,stroke:#333333,stroke-width:1.5px,color:#111111
+    classDef proc fill:#E8E8E8,stroke:#333333,stroke-width:1.5px,color:#111111
+    classDef conn fill:#FFFFFF,stroke:#333333,stroke-width:1.5px,color:#111111
+    class S term
+    class AU,ST proc
+    class KA conn
 ```
 
 Column 2 — connector **A** to end:
@@ -150,6 +209,16 @@ flowchart TD
     SR --> DB
     AL --> DB
     DB --> E(["END: Admin logs out"])
+    classDef term fill:#F6CB4F,stroke:#333333,stroke-width:1.5px,color:#111111
+    classDef proc fill:#E8E8E8,stroke:#333333,stroke-width:1.5px,color:#111111
+    classDef dec fill:#4472C4,stroke:#333333,stroke-width:1.5px,color:#FFFFFF
+    classDef db fill:#E8E8E8,stroke:#333333,stroke-width:1.5px,color:#111111
+    classDef conn fill:#FFFFFF,stroke:#333333,stroke-width:1.5px,color:#111111
+    class M dec
+    class AN,PD,PR,CS,CR,SR,AL proc
+    class DB db
+    class E term
+    class KA2 conn
 ```
 
 ---
