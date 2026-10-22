@@ -2,7 +2,8 @@
 # The dev server must never be the public origin: it ships unminified source,
 # enables react-refresh/unsafe-eval, and has no service worker or manifest.
 
-FROM node:22-alpine AS build
+# Pinned to the patched 22.x LTS (2026-10-21 security release).
+FROM node:22.23.4-alpine AS build
 
 WORKDIR /app
 
@@ -13,7 +14,7 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM nginx:1.27-alpine
+FROM nginx:1.28-alpine
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
