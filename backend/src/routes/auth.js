@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { supabaseAuth, supabaseAdmin } from '../config/supabase.js'
 import { encryptText } from '../utils/encryption.js'
-import { loginLimiter, signupLimiter, stepUpLimiter } from '../middleware/rateLimiter.js'
+import { loginLimiter, signupLimiter, stepUpLimiter, clientIp } from '../middleware/rateLimiter.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { signStepUpToken, getStepUpTtlSeconds } from '../utils/stepUp.js'
 import { logAudit } from './admin.js'
@@ -54,7 +54,7 @@ router.post('/login', loginLimiter, async (req, res) => {
           target: `user:${data.session.user.id}`,
           changes: {
             role,
-            ip: req.ip || null,
+            ip: clientIp(req),
             user_agent: (req.get('user-agent') || '').slice(0, 300) || null,
           },
         })

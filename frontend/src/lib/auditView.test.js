@@ -225,17 +225,25 @@ describe('whoFor / shortId', () => {
 
 describe('createResolver', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    // resetAllMocks, not clear: mockImplementation survives clearAllMocks and
+    // would leak one test's product name into the next
+    vi.resetAllMocks()
   })
 
-  it('resolves user and product targets and tolerates missing products', async () => {
+  it('resolves products via the admin endpoint first, public as fallback', async () => {
     apiGetAllPages.mockResolvedValue({
       items: [{ id: '11111111-1111-1111-1111-111111111111', firstName: 'Juan', lastName: 'Dela Cruz' }],
     })
-    apiGet.mockImplementation(async (path) => {
-      // production wraps the row: GET /products/:id -> { item: {...} }
-      if (path === '/products/22222222-2222-2222-2222-222222222222') {
+    apiGetAuth.mockImplementation(async (path) => {
+      if (path === '/admin/products/22222222-2222-2222-2222-222222222222') {
         return { item: { prod_name: 'Royal Canin Adult 10kg' } }
+      }
+      throw new Error('404')
+    })
+    apiGet.mockImplementation(async (path) => {
+      // only reached when the admin row is missing (e.g. hard-deleted product)
+      if (path === '/products/44444444-4444-4444-4444-444444444444') {
+        return { item: { prod_name: 'Legacy Product' } }
       }
       throw new Error('404')
     })
@@ -244,12 +252,18 @@ describe('createResolver', () => {
       { target: 'user:11111111-1111-1111-1111-111111111111' },
       { target: 'product:22222222-2222-2222-2222-222222222222' },
       { target: 'product:33333333-3333-3333-3333-333333333333' },
+      { target: 'product:44444444-4444-4444-4444-444444444444' },
       { target: 'site_settings' },
     ]
     const { userName, productName } = await resolver.resolve(rows, 'tok')
     expect(apiGetAllPages).toHaveBeenCalledWith('/admin/customers', 'tok', { pageSize: 100, maxPages: 10 })
     expect(userName('11111111-1111-1111-1111-111111111111')).toBe('Juan Dela Cruz')
     expect(productName('22222222-2222-2222-2222-222222222222')).toBe('Royal Canin Adult 10kg')
+    // products the admin row can see never hit the public endpoint (no 404 noise)
+    expect(apiGet).not.toHaveBeenCalledWith('/products/22222222-2222-2222-2222-222222222222')
+    // hard-deleted: admin misses, public fallback still resolves
+    expect(productName('44444444-4444-4444-4444-444444444444')).toBe('Legacy Product')
+    // gone from both: honest null
     expect(productName('33333333-3333-3333-3333-333333333333')).toBeNull()
     expect(productName('unknown')).toBeNull()
   })

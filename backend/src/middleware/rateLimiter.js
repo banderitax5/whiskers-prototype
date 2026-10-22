@@ -10,12 +10,18 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 // proxy), which would put all visitors in one bucket. With TRUST_PROXY
 // enabled we key on Cloudflare's client IP instead; the header is only
 // trusted when explicitly opted in, so direct access can't spoof it.
-function ipKey(req) {
+//
+// req.ip alone is the nearest proxy hop (the Docker bridge / Caddy), never
+// the visitor - so anything that records "where from" (the sign-in audit
+// row) must go through this helper too.
+export function clientIp(req) {
   const cf = req.headers['cf-connecting-ip']
-  if (process.env.TRUST_PROXY && typeof cf === 'string' && cf) {
-    return ipKeyGenerator(cf)
-  }
-  return ipKeyGenerator(req.ip)
+  if (process.env.TRUST_PROXY && typeof cf === 'string' && cf) return cf
+  return req.ip || null
+}
+
+function ipKey(req) {
+  return ipKeyGenerator(clientIp(req))
 }
 
 export function clientKey(req) {

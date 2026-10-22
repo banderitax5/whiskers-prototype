@@ -309,16 +309,18 @@ export function createResolver() {
       if (productFetch.has(id)) return productFetch.get(id)
       const job = (async () => {
         try {
-          const data = await apiGet(`/products/${id}`)
-          // GET /products/:id wraps the row as { item: {...} }; tolerate a flat body too
-          const item = data?.item || data
-          productNames.set(id, item?.prod_name || null)
+          // the admin row first: this page always has a staff token, and it is
+          // the only endpoint that shows archived products, so the public
+          // detail's 404-on-archive would just be a wasted round trip + a
+          // console error per deleted product
+          const data = await apiGetAuth(`/admin/products/${id}`, token)
+          productNames.set(id, data?.item?.prod_name || null)
         } catch {
-          // the public detail endpoint hides archived/inactive products - the
-          // admin row (which includes them) is the fallback for those
           try {
-            const data = await apiGetAuth(`/admin/products/${id}`, token)
-            productNames.set(id, data?.item?.prod_name || null)
+            const data = await apiGet(`/products/${id}`)
+            // GET /products/:id wraps the row as { item: {...} }; tolerate a flat body too
+            const item = data?.item || data
+            productNames.set(id, item?.prod_name || null)
           } catch {
             productNames.set(id, null)
           }

@@ -163,6 +163,9 @@ function Navbar() {
               <>
                 <button
                   onClick={() => setIsDropdownOpen((v) => !v)}
+                  aria-label="Your account"
+                  aria-haspopup="menu"
+                  aria-expanded={isDropdownOpen}
                   className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-yellow-400 text-[#0b2e59] dark:bg-yellow-300 dark:text-gray-900 flex items-center justify-center font-bold hover:ring-2 hover:ring-yellow-300/50 transition-all duration-200"
                 >
                   {getInitial()}
@@ -183,6 +186,9 @@ function Navbar() {
               <>
                 <button
                   onClick={() => setIsDropdownOpen((v) => !v)}
+                  aria-label="Sign in or create an account"
+                  aria-haspopup="menu"
+                  aria-expanded={isDropdownOpen}
                   className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-yellow-400 text-[#0b2e59] dark:bg-yellow-300 dark:text-gray-900 flex items-center justify-center font-bold hover:ring-2 hover:ring-yellow-300/50 transition-all duration-200"
                 >
                   <FaUser className="text-white w-5 h-5" />
