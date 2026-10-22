@@ -59,7 +59,7 @@ The objective of the system test plan was to verify, before evaluation by end us
 | **Test environment** | Local development environment (Vite dev server + Node.js/Express API) connected to a hosted Supabase project (PostgreSQL + Auth) for realistic data; Docker Compose configuration verified as the deployment path |
 | **Hardware and operating system** | [FILL: e.g., Windows 11, Intel Core i5-XXXX, 16 GB RAM, 512 GB SSD] |
 | **Browser / device** | Google Chrome and Microsoft Edge (latest); mobile viewports emulated at 360×800 and 390×844; physical check on [FILL: Android/iPhone model if available] |
-| **Testing tools** | Node.js built-in test runner (`node --test`) for the backend suite; Vitest + jsdom for the frontend suite; custom PowerShell end-to-end API harness (`test/e2e.ps1`, 187 checks); Chrome DevTools (network throttling, device emulation, Lighthouse audit); `npm audit` for dependency vulnerability review |
+| **Testing tools** | Node.js built-in test runner (`node --test`) for the backend suite; Vitest + jsdom for the frontend suite; custom PowerShell end-to-end API harness (`test/e2e.ps1`, 191 checks); Chrome DevTools (network throttling, device emulation, Lighthouse audit); `npm audit` for dependency vulnerability review |
 | **Network conditions** | Local Wi-Fi broadband for functional runs; Chrome DevTools throttling profiles (Slow 3G / Fast 3G) for mobile-loading observations |
 
 ### 4.2.3 Functional Test Case Preparations and Execution
