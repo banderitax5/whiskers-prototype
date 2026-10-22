@@ -1,0 +1,48 @@
+{
+	admin off
+}
+
+# Production config for a single Azure VM running Caddy + the Node API.
+# Same-origin topology: Caddy serves the built frontend and reverse-proxies
+# /api and /health to the API on 127.0.0.1:4141, so the browser never makes a
+# cross-origin request and the API's localhost-only CORS stays correct.
+
+encode zstd gzip
+
+header {
+	Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	X-Content-Type-Options "nosniff"
+	X-Frame-Options "DENY"
+	Referrer-Policy "strict-origin-when-cross-origin"
+	Permissions-Policy "camera=(), geolocation=(), microphone=()"
+	del X-Powered-By
+}
+
+# The hashed asset filenames are content-addressed, so they can be cached forever.
+@assets path /assets/*
+header @assets Cache-Control "public, max-age=31536000, immutable"
+
+# The service worker must be revalidated or stale clients keep an old bundle.
+@service-worker path /sw.js
+header @service-worker Cache-Control "no-cache"
+
+# index.html and offline.html must never be cached, otherwise a deploy is
+# invisible until every visitor clears their cache.
+@html path / /index.html /offline.html
+header @html Cache-Control "no-cache"
+
+# The API and its health check go straight to the Node process.
+handle /health {
+	reverse_proxy 127.0.0.1:4141
+}
+
+handle /api/* {
+	reverse_proxy 127.0.0.1:4141
+}
+
+# Static SPA with client-side routing fallback.
+handle {
+	root * /opt/whiskers/frontend/dist
+	try_files {path} /index.html
+	file_server
+}

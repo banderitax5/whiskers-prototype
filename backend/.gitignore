@@ -1,3 +1,4 @@
+
 # Logs
 logs
 *.log
@@ -6,6 +7,11 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+
+.nojekyll
+
+node_modules/
+backend/node_modules/
 
 node_modules
 dist
@@ -22,3 +28,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+.env
+.env*
+!.env.example

@@ -1,3 +1,4 @@
 {
-    "scm.defaultViewSortKey": "path"
+    "scm.defaultViewSortKey": "path",
+    "css.lint.unknownAtRules": "ignore"
 }

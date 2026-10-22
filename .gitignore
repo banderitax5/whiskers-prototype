@@ -1,0 +1,40 @@
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+.nojekyll
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+.env
+.env*
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+
+# OpenCode
+.opencode/
+AGENTS.md
+cloudflared-linux-amd64.deb
+backend/dbg.log
+backend/dbg.err

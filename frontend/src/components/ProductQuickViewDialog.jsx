@@ -1,0 +1,224 @@
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
+import { Link } from 'react-router-dom'
+import { extractSizeLabel } from '../lib/productUtils.js'
+import { trackEvent } from '../lib/appEvents.js'
+import ProductImage from './ProductImage.jsx'
+import { normalizeProduct, getStockStatus, useLowStockThreshold } from '../lib/productDisplay.js'
+import { formatPesos } from '../lib/cartLogic'
+import { saleFor, useActivePromos } from '../lib/promoDisplay.js'
+
+// full screen product dialog that pops up when you click on a product card
+// uses createPortal to render directly on document.body so it always covers
+// the entire viewport no matter where the component sits in the tree
+// press Escape or click the dark backdrop to close it
+function ProductQuickViewDialog({ product, sizeVariants = [], isOpen, onClose, onAddToCart, onBuyNow }) {
+  const [qty, setQty] = useState(1)
+  const [selectedVariant, setSelectedVariant] = useState(null)
+  const promos = useActivePromos()
+  const lowStockThreshold = useLowStockThreshold()
+  const dialogRef = useRef(null)
+
+  // focus trap: cycle Tab inside the dialog while it is open
+  const trapFocus = useCallback((e) => {
+    if (e.key !== 'Tab' || !dialogRef.current) return
+    const focusables = dialogRef.current.querySelectorAll(
+      'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
+    )
+    if (focusables.length === 0) return
+    const first = focusables[0]
+    const last = focusables[focusables.length - 1]
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault()
+      first.focus()
+    }
+  }, [])
+
+  // reset state when dialog opens with a new product
+  // also resets if a different product card is clicked while dialog is already open
+  useEffect(() => {
+    if (isOpen && product) {
+      setQty(1)
+      setSelectedVariant(product)
+      trackEvent('product_view', { product_id: product.prod_id || product.id, name: product.prod_name || product.name })
+    }
+  }, [isOpen, product])
+
+  // when the dialog is open, listen for the Escape key and lock body scroll
+  // cleanup removes the listener and unlocks scroll when the dialog closes
+  useEffect(() => {
+    if (!isOpen) return undefined
+    function onKey(e) {
+      if (e.key === 'Escape') onClose()
+      else trapFocus(e)
+    }
+    document.addEventListener('keydown', onKey)
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = ''
+    }
+  }, [isOpen, onClose, trapFocus])
+
+  // use the selected variant for display, fall back to the product prop
+  const current = selectedVariant || product
+
+  // normalize field names so the dialog works with both API products and
+  // hardcoded ones (shared with the detail page via productDisplay)
+  const p = normalizeProduct(current)
+  const safePrice = p ? p.price : 0
+  const { stock, hasStockInfo, inStock, lowStock } = getStockStatus(current?.stock_quantity, lowStockThreshold)
+
+  // compute size labels from variants
+  const sizes = useMemo(() => {
+    if (!sizeVariants || sizeVariants.length === 0) return []
+    return sizeVariants.map((v) => ({
+      label: extractSizeLabel(v.prod_name || v.name) || 'Default',
+      product: v,
+    }))
+  }, [sizeVariants])
+
+  if (!isOpen || !p) return null
+
+  const maxQty = hasStockInfo && stock > 0 ? stock : Infinity
+  function increase() { setQty((v) => Math.min(maxQty, v + 1)) }
+  function decrease() { setQty((v) => Math.max(1, v - 1)) }
+  const purchasable = safePrice > 0 && inStock
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[10020] flex items-center justify-center overflow-y-auto bg-black/60 backdrop-blur-sm"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={p.name} className="relative mx-2 my-4 w-full max-w-4xl rounded-2xl bg-white dark:bg-gray-800 shadow-2xl sm:mx-6 sm:my-6">
+        {/* close button in the top right corner */}
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 transition hover:bg-gray-200 dark:hover:bg-gray-600"
+          aria-label="Close product details"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+
+        {/* two column layout: images on the left, product info on the right */}
+        {/* collapses to a single column on mobile */}
+        <div className="grid grid-cols-1 gap-4 p-4 sm:gap-6 sm:p-6 md:grid-cols-2">
+          {/* main product image */}
+          <ProductImage
+            src={p.image}
+            alt={p.name}
+            className="rounded-xl border border-gray-200 dark:border-gray-600 p-4"
+            imgClassName="max-h-[220px] w-full sm:max-h-[280px]"
+          />
+
+          {/* product details, price, quantity picker, and action buttons */}
+          <div className="flex flex-col">
+            <Link
+              to={`/products/${p.prod_id}`}
+              onClick={onClose}
+              className="text-xl font-bold text-gray-900 dark:text-white sm:text-2xl hover:text-[#0b2e59] dark:hover:text-blue-400 hover:underline"
+            >
+              {p.name}
+            </Link>
+            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{p.brand || p.collection || 'Whiskers'}</p>
+            {safePrice > 0 ? (
+              (() => {
+                const sale = saleFor(p, promos)
+                if (!sale) return <p className="mt-3 text-3xl font-bold text-[#e4406a]">PHP {formatPesos(Number(safePrice))}</p>
+                return (
+                  <p className="mt-3 text-3xl font-bold">
+                    <span className="text-gray-400 dark:text-gray-500 line-through font-normal text-xl mr-2">PHP {formatPesos(Number(safePrice))}</span>
+                    <span className="text-[#e4406a]">PHP {formatPesos(sale.salePrice)}</span>
+                    <span className="ml-2 inline-block rounded bg-[#e4406a] px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-white align-middle">Sale −{sale.discountPct}%</span>
+                  </p>
+                )
+              })()
+            ) : (
+              <p className="mt-3 text-lg font-semibold text-gray-500 dark:text-gray-400">Price not yet set</p>
+            )}
+
+            {/* stock line */}
+            {hasStockInfo && (
+              <p className={`mt-1 text-xs font-semibold ${!inStock ? 'text-red-600 dark:text-red-400' : lowStock ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'}`}>
+                {!inStock ? 'Out of stock' : lowStock ? `Only ${stock} left in stock` : 'In stock'}
+              </p>
+            )}
+
+            {/* size selector: only show when product has multiple size variants */}
+            {sizes.length > 0 && (
+              <div className="mt-4">
+                <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Available Sizes</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {sizes.map((size) => {
+                    const isActive = current.prod_id === size.product.prod_id
+                    return (
+                      <button
+                        key={size.product.prod_id}
+                        type="button"
+                        onClick={() => setSelectedVariant(size.product)}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium border transition ${
+                          isActive
+                            ? 'bg-[#0b2e59] text-white border-[#0b2e59]'
+                            : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:border-[#0b2e59] dark:hover:border-blue-400'
+                        }`}
+                      >
+                        {size.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* quantity stepper: minus button, current qty, plus button */}
+            <div className="mt-5 flex items-center gap-1">
+              <button type="button" onClick={decrease} className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 text-lg font-semibold text-gray-700 dark:text-gray-200 transition hover:bg-gray-100 dark:hover:bg-gray-700">-</button>
+              <div className="flex h-10 min-w-[48px] items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 px-3 text-sm font-semibold text-gray-800 dark:text-gray-100">{qty}</div>
+              <button type="button" onClick={increase} className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 text-lg font-semibold text-gray-700 dark:text-gray-200 transition hover:bg-gray-100 dark:hover:bg-gray-700">+</button>
+            </div>
+
+            {/* add to cart and buy now buttons side by side */}
+            {/* pass the currently selected variant (current) so the right size gets added */}
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-5 sm:gap-3">
+              <button
+                type="button"
+                disabled={!purchasable}
+                onClick={() => onAddToCart(current, qty)}
+                className="h-10 rounded-lg bg-yellow-400 text-xs font-bold text-gray-900 transition hover:bg-yellow-500 active:bg-yellow-600 sm:h-12 sm:text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {purchasable ? 'Add to Cart' : 'Unavailable'}
+              </button>
+              <button
+                type="button"
+                disabled={!purchasable}
+                onClick={() => onBuyNow(current, qty)}
+                className="h-10 rounded-lg bg-[#0b2e59] text-xs font-bold text-white transition hover:bg-[#15407a] sm:h-12 sm:text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Buy Now
+              </button>
+            </div>
+
+            {/* link out to the full product page */}
+            <Link
+              to={`/products/${p.prod_id}`}
+              onClick={onClose}
+              className="mt-3 inline-flex items-center justify-center gap-1.5 h-10 rounded-lg border border-gray-300 dark:border-gray-600 text-xs font-semibold text-gray-700 dark:text-gray-200 transition hover:bg-gray-100 dark:hover:bg-gray-700 sm:h-12 sm:text-sm"
+            >
+              View full details
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            </Link>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+export default ProductQuickViewDialog

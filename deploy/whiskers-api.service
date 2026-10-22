@@ -1,0 +1,51 @@
+[Unit]
+Description=Whiskers Pet Shop API
+Documentation=https://github.com/whiskers/whiskers-petshop
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=whiskers
+Group=whiskers
+WorkingDirectory=/opt/whiskers/backend
+EnvironmentFile=/opt/whiskers/backend/.env
+Environment=NODE_ENV=production
+# 1024 MB heap cap on a 2 GB box leaves room for the OS, Caddy, and sharp's
+# native allocations before the kernel OOM killer picks a victim.
+ExecStart=/usr/bin/node --max-old-space-size=1024 index.js
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Resource guardrails. MemoryMax trips the cgroup OOM killer on this service
+# only (instead of the whole box), and MemorySwapMax bounds how far it can
+# page out before being killed.
+MemoryMax=1500M
+MemorySwapMax=512M
+
+# Filesystem hardening. ProtectSystem=strict makes the whole tree read-only
+# except for /dev, /proc, /sys, and the paths listed below; PrivateTmp gives
+# the service its own /tmp so multer's scratch files stay isolated.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+PrivateDevices=true
+SystemCallArchitectures=native
+ReadWritePaths=/tmp
+
+# Logging: journald only, no files to rotate.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=whiskers-api
+
+[Install]
+WantedBy=multi-user.target

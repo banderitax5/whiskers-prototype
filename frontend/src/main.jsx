@@ -1,19 +1,22 @@
-// React core imports
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-
-// Global styles
 import './index.css'
-
-// Main App component
 import App from './App.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
+import { ShopProvider } from './context/ShopContext.jsx'
+import { PetsProvider } from './context/PetsContext.jsx'
+import { captureUTM } from './lib/utm'
 
-/**
- * Application entry point and root render
- * Creates the React root and renders the App component
- */
+captureUTM()
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <ShopProvider>
+        <PetsProvider>
+          <App />
+        </PetsProvider>
+      </ShopProvider>
+    </ErrorBoundary>
   </StrictMode>,
 )

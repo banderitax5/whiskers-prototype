@@ -7,10 +7,15 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+.nojekyll
+
 node_modules
 dist
 dist-ssr
 *.local
+
+# mobile screenshot audit output (scripts/mobile-screenshots.mjs)
+screenshots/
 
 # Editor directories and files
 .vscode/*
@@ -22,3 +27,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+.env
+.env*
+!.env.example

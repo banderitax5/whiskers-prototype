@@ -1,0 +1,24 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: petconnect-backend
+    environment:
+      NODE_ENV: production
+    env_file:
+      - ./backend/.env
+    ports:
+      - "127.0.0.1:4141:4141"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: petconnect-frontend
+    # Loopback only: host Caddy terminates TLS and proxies to 127.0.0.1:5173,
+    # so the container must never be reachable through another interface.
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      - backend
+    restart: unless-stopped
