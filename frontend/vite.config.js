@@ -45,8 +45,12 @@ export default defineConfig(({ mode }) => {
             { src: '/logo/logo-whiskers.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
           ],
         },
+        // Serve the SPA shell for navigations. It must never be a static
+        // page: createHandlerBoundToURL() answers from the precache without
+        // touching the network, so pointing this at offline.html made every
+        // full page load (email links, typed URLs, reopen) show "You're offline".
         workbox: {
-          navigateFallback: '/offline.html',
+          navigateFallback: '/index.html',
           navigateFallbackDenylist: [/^\/api/],
         },
       }),
