@@ -11,12 +11,20 @@ Standard flowchart symbols used throughout:
 | Cylinder | **Database** — stored data | Orders DB, Products DB |
 | Circle | **On-page connector** — flow continues at the matching letter | A, B |
 
-**Print layout:** each figure is split into vertical columns so it fits A4 without shrinking the text. The flow leaves one column through a circled connector and resumes at the same letter at the top of the next column (customer uses A and B; staff and admin use A). The stitched PNGs in `C:\Users\USER\Downloads\` are:
+**ANSI/ISO 5807 compliance:**
+
+- Every path begins at a **Start terminator** and ends at an **End terminator** (no dead ends).
+- Flow is strictly **top-to-bottom** — no reversed (upward) flowlines. Loops return via a circled on-page connector (customer connector **C** returns to *Browse*).
+- Every decision has exactly **one entry and two labeled exits** (Yes/No).
+- Flowlines never cross; merges are shown as multiple arrows entering one symbol.
+- Text is horizontal, centered, and reads left-to-right.
+
+**Print layout:** each figure is split into vertical columns so it fits A4 without shrinking the text. The flow leaves one column through a circled connector and resumes at the same letter at the top of the next column (customer uses A, B, and C; staff and admin use A). The stitched PNGs in `C:\Users\USER\Downloads\` are:
 
 | File | Figure | Columns | Size (px) |
 |---|---|---|---|
-| `flowchart-customer.png` | Figure 3.3.6 — Customer | 3 (connectors A, B) | 1978 × 2356 |
-| `flowchart-staff.png` | Figure 3.3.5 — Staff | 2 (connector A) | 2374 × 1884 |
+| `flowchart-customer.png` | Figure 3.3.6 — Customer | 3 (connectors A, B, C) | 2156 × 2356 |
+| `flowchart-staff.png` | Figure 3.3.5 — Staff | 2 (connector A) | 2396 × 1968 |
 | `flowchart-admin.png` | Figure 3.3.4 — Admin | 2 (connector A) | 2060 × 940 |
 
 Paper figure numbering: **Figure 3.3.4 — Admin**, **Figure 3.3.5 — Staff**, **Figure 3.3.6 — Customer** (Chapters may renumber after re-shoot — keep this order).
@@ -31,15 +39,18 @@ Column 1 — browse to connector **A**:
 %%{init: {"flowchart": {"nodeSpacing": 12, "rankSpacing": 20}, "themeVariables": {"fontSize": "12px"}}}%%
 flowchart TD
     S(["START: Customer opens the website"]) --> B[/Browse and search catalog/]
+    KC(("C")) --> B
     B --> V["View product details and pet food recommendations"]
     V --> A["Add to cart - stock and price re-checked"]
-    A --> C{"Proceed to checkout?"}
-    C -- No --> B
-    C -- Yes --> LG{"Registered customer?"}
+    A --> CO{"Proceed to checkout?"}
+    CO -- No --> KC2(("C"))
+    CO -- Yes --> LG{"Registered customer?"}
     LG -- No --> LR[/Register or log in/]
     LG -- Yes --> KA(("A"))
     LR --> KA
 ```
+
+(Connector **C** at the top of this column is where the *Proceed to checkout? — No* branch re-enters the flow to keep browsing — an ANSI-compliant alternative to an upward loop arrow.)
 
 Column 2 — connector **A** to connector **B**:
 
@@ -80,6 +91,7 @@ flowchart TD
     S(["START: Staff logs in"]) --> AU["Authenticate email and password"]
     AU --> RC{"Role check"}
     RC -- "Customer account" --> DENY["Access denied - staff functions only"]
+    DENY --> ED(["END: Session terminated"])
     RC -- "Staff account" --> SU{"State-changing action?"}
     SU -- Yes --> ST["STEP-UP: Re-enter password - 403 until verified"]
     SU -- No --> KA(("A"))
