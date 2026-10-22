@@ -25,18 +25,19 @@ classDef conn fill:#FFFFFF,stroke:#333333,stroke-width:1.5px,color:#111111
 
 - Every path begins at a **Start terminator** and ends at an **End terminator** (no dead ends).
 - Flow is strictly **top-to-bottom** — no reversed (upward) flowlines. Loops return via a circled on-page connector (customer connector **C** returns to *Browse*).
-- Every decision has exactly **one entry and two labeled exits** (Yes/No).
+- Every decision has exactly **one entry and two labeled exits** (Yes/No), leaving from the diamond's side points.
+- **Maximum two flowlines per symbol.** Fan-outs are drawn as *decision cascades*: each diamond asks about one module — Yes performs it and flows to the next diamond, No skips to the next diamond — so no shape ever has more than two lines in or two lines out.
 - Flowlines never cross; merges are shown as multiple arrows entering one symbol.
 - Text is horizontal, centered, and reads left-to-right.
 - **Color scheme (capstone standard):** yellow terminators, blue decision diamonds, gray process/I-O/database symbols, white connectors.
 
-**Print layout:** each figure is split into vertical columns so it fits A4 without shrinking the text. The flow leaves one column through a circled connector and resumes at the same letter at the top of the next column (customer uses A, B, and C; staff and admin use A). The stitched PNGs in `C:\Users\USER\Downloads\` are:
+**Print layout:** each figure is split into vertical columns so it fits A4 without shrinking the text. The flow leaves one column through a circled connector and resumes at the same letter at the top of the next column (customer uses A–C; staff uses A–B; admin uses A–D). The stitched PNGs in `C:\Users\USER\Downloads\` are:
 
 | File | Figure | Columns | Size (px) |
 |---|---|---|---|
 | `flowchart-customer.png` | Figure 3.3.6 — Customer | 3 (connectors A, B, C) | 2156 × 2356 |
-| `flowchart-staff.png` | Figure 3.3.5 — Staff | 2 (connector A) | 2396 × 1968 |
-| `flowchart-admin.png` | Figure 3.3.4 — Admin | 2 (connector A) | 2060 × 940 |
+| `flowchart-staff.png` | Figure 3.3.5 — Staff | 3 (connectors A, B) | 1858 × 2128 |
+| `flowchart-admin.png` | Figure 3.3.4 — Admin | 5 (connectors A, B, C, D) | 2492 × 1974 |
 
 Paper figure numbering: **Figure 3.3.4 — Admin**, **Figure 3.3.5 — Staff**, **Figure 3.3.6 — Customer** (Chapters may renumber after re-shoot — keep this order).
 
@@ -141,31 +142,49 @@ flowchart TD
     class KA conn
 ```
 
-Column 2 — connector **A** to end:
+Column 2 — connector **A** to connector **B** (module cascade — max two flowlines per symbol):
 
 ```mermaid
-%%{init: {"flowchart": {"nodeSpacing": 12, "rankSpacing": 20}, "themeVariables": {"fontSize": "12px"}}}%%
+%%{init: {"flowchart": {"nodeSpacing": 12, "rankSpacing": 20}, "themeVariables": {"fontSize": "12px", "edgeLabelBackground": "#FFFFFF"}}}%%
 flowchart TD
-    KA2(("A")) --> M{"Select module"}
-    M --> OM["Order Management - status update emails"]
-    M --> PM["Payment Monitoring - verify GCash / Maya QR"]
-    M --> PD["Product Management - limited fields, no cost or supplier"]
-    M --> SR["Support Replies - reply emailed to customer"]
-    OM --> AL[("Audit Log - actions and sign-ins recorded")]
-    PM --> AL
-    PD --> AL
+    KA2(("A")) --> M1{"Manage orders?"}
+    M1 -- Yes --> OM["Update order status - customer emailed"]
+    OM --> M2
+    M1 -- No --> M2{"Monitor payments?"}
+    M2 -- Yes --> PM["Verify GCash / Maya QR payments"]
+    PM --> KB(("B"))
+    M2 -- No --> KB
+    classDef proc fill:#E8E8E8,stroke:#333333,stroke-width:1.5px,color:#111111
+    classDef dec fill:#4472C4,stroke:#333333,stroke-width:1.5px,color:#FFFFFF
+    classDef conn fill:#FFFFFF,stroke:#333333,stroke-width:1.5px,color:#111111
+    class M1,M2 dec
+    class OM,PM proc
+    class KA2,KB conn
+```
+
+Column 3 — connector **B** to end:
+
+```mermaid
+%%{init: {"flowchart": {"nodeSpacing": 12, "rankSpacing": 20}, "themeVariables": {"fontSize": "12px", "edgeLabelBackground": "#FFFFFF"}}}%%
+flowchart TD
+    KB2(("B")) --> M3{"Edit products?"}
+    M3 -- Yes --> PD["Limited fields - no cost or supplier"]
+    PD --> M4
+    M3 -- No --> M4{"Reply to support?"}
+    M4 -- Yes --> SR["Reply emailed to customer"]
     SR --> AL
-    AL --> E(["END: Staff logs out"])
+    M4 -- No --> AL
+    AL[("Audit Log - actions and sign-ins recorded")] --> E(["END: Staff logs out"])
     classDef term fill:#F6CB4F,stroke:#333333,stroke-width:1.5px,color:#111111
     classDef proc fill:#E8E8E8,stroke:#333333,stroke-width:1.5px,color:#111111
     classDef dec fill:#4472C4,stroke:#333333,stroke-width:1.5px,color:#FFFFFF
     classDef db fill:#E8E8E8,stroke:#333333,stroke-width:1.5px,color:#111111
     classDef conn fill:#FFFFFF,stroke:#333333,stroke-width:1.5px,color:#111111
-    class M dec
-    class OM,PM,PD,SR proc
+    class M3,M4 dec
+    class PD,SR proc
     class AL db
     class E term
-    class KA2 conn
+    class KB2 conn
 ```
 
 ---
@@ -188,37 +207,86 @@ flowchart TD
     class KA conn
 ```
 
-Column 2 — connector **A** to end:
+Column 2 — connector **A** to connector **B** (module cascade — max two flowlines per symbol):
 
 ```mermaid
-%%{init: {"flowchart": {"nodeSpacing": 12, "rankSpacing": 20}, "themeVariables": {"fontSize": "12px"}}}%%
+%%{init: {"flowchart": {"nodeSpacing": 12, "rankSpacing": 20}, "themeVariables": {"fontSize": "12px", "edgeLabelBackground": "#FFFFFF"}}}%%
 flowchart TD
-    KA2(("A")) --> M{"Select module"}
-    M --> AN["Analytics and Reporting - sales, trends, margins"]
-    M --> PD["Product Management - pricing, archive, CSV import/export"]
-    M --> PR["Promotions - percent, fixed, free-shipping codes"]
-    M --> CS["Content CMS - banners, navigation, FAQs, policies, settings"]
-    M --> CR["Customer and Role Management"]
-    M --> SR["Support Replies - emailed"]
-    M --> AL["Audit Logs - who, what, old to new"]
-    AN --> DB[("Databases - Orders, Payments, Products, Content, Accounts, Audit")]
-    PD --> DB
-    PR --> DB
-    CS --> DB
-    CR --> DB
-    SR --> DB
+    KA2(("A")) --> M1{"View analytics and reports?"}
+    M1 -- Yes --> AN["Sales, trends, margins - dashboard and reports"]
+    AN --> M2
+    M1 -- No --> M2{"Manage products?"}
+    M2 -- Yes --> PD["Pricing, archive, CSV import and export"]
+    PD --> KB(("B"))
+    M2 -- No --> KB
+    classDef proc fill:#E8E8E8,stroke:#333333,stroke-width:1.5px,color:#111111
+    classDef dec fill:#4472C4,stroke:#333333,stroke-width:1.5px,color:#FFFFFF
+    classDef conn fill:#FFFFFF,stroke:#333333,stroke-width:1.5px,color:#111111
+    class M1,M2 dec
+    class AN,PD proc
+    class KA2,KB conn
+```
+
+Column 3 — connector **B** to connector **C**:
+
+```mermaid
+%%{init: {"flowchart": {"nodeSpacing": 12, "rankSpacing": 20}, "themeVariables": {"fontSize": "12px", "edgeLabelBackground": "#FFFFFF"}}}%%
+flowchart TD
+    KB2(("B")) --> M3{"Manage promotions?"}
+    M3 -- Yes --> PR["Percent, fixed, free-shipping codes"]
+    PR --> M4
+    M3 -- No --> M4{"Edit content and settings?"}
+    M4 -- Yes --> CS["Banners, navigation, FAQs, policies, site settings"]
+    CS --> KC(("C"))
+    M4 -- No --> KC
+    classDef proc fill:#E8E8E8,stroke:#333333,stroke-width:1.5px,color:#111111
+    classDef dec fill:#4472C4,stroke:#333333,stroke-width:1.5px,color:#FFFFFF
+    classDef conn fill:#FFFFFF,stroke:#333333,stroke-width:1.5px,color:#111111
+    class M3,M4 dec
+    class PR,CS proc
+    class KB2,KC conn
+```
+
+Column 4 — connector **C** to connector **D**:
+
+```mermaid
+%%{init: {"flowchart": {"nodeSpacing": 12, "rankSpacing": 20}, "themeVariables": {"fontSize": "12px", "edgeLabelBackground": "#FFFFFF"}}}%%
+flowchart TD
+    KC2(("C")) --> M5{"Manage customers and roles?"}
+    M5 -- Yes --> CR["Change account roles - user / staff / admin"]
+    CR --> M6
+    M5 -- No --> M6{"Reply to support?"}
+    M6 -- Yes --> SR["Reply emailed to customer"]
+    SR --> KD(("D"))
+    M6 -- No --> KD
+    classDef proc fill:#E8E8E8,stroke:#333333,stroke-width:1.5px,color:#111111
+    classDef dec fill:#4472C4,stroke:#333333,stroke-width:1.5px,color:#FFFFFF
+    classDef conn fill:#FFFFFF,stroke:#333333,stroke-width:1.5px,color:#111111
+    class M5,M6 dec
+    class CR,SR proc
+    class KC2,KD conn
+```
+
+Column 5 — connector **D** to end:
+
+```mermaid
+%%{init: {"flowchart": {"nodeSpacing": 12, "rankSpacing": 20}, "themeVariables": {"fontSize": "12px", "edgeLabelBackground": "#FFFFFF"}}}%%
+flowchart TD
+    KD2(("D")) --> M7{"View audit logs?"}
+    M7 -- Yes --> AL["Who, what, old value to new value"]
     AL --> DB
+    M7 -- No --> DB[("Databases - Orders, Payments, Products, Content, Accounts, Audit")]
     DB --> E(["END: Admin logs out"])
     classDef term fill:#F6CB4F,stroke:#333333,stroke-width:1.5px,color:#111111
     classDef proc fill:#E8E8E8,stroke:#333333,stroke-width:1.5px,color:#111111
     classDef dec fill:#4472C4,stroke:#333333,stroke-width:1.5px,color:#FFFFFF
     classDef db fill:#E8E8E8,stroke:#333333,stroke-width:1.5px,color:#111111
     classDef conn fill:#FFFFFF,stroke:#333333,stroke-width:1.5px,color:#111111
-    class M dec
-    class AN,PD,PR,CS,CR,SR,AL proc
+    class M7 dec
+    class AL proc
     class DB db
     class E term
-    class KA2 conn
+    class KD2 conn
 ```
 
 ---
