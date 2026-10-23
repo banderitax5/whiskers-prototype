@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { BsEye, BsEyeSlash } from 'react-icons/bs'
-import toast from 'react-hot-toast'
 import supabase from '../lib/supabase'
 import { trackEvent } from '../lib/appEvents.js'
 import { normalizeOtp, otpError } from '../lib/mfa.js'
@@ -147,9 +146,6 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
       onLoginSuccess?.()
       trackEvent('login')
       onClose()
-      if (data.mfa_enrollment_required) {
-        toast('Set up two-factor authentication in your profile to use the admin panel.', { duration: 6000 })
-      }
     } catch (err) {
       setError(err.message || 'Login failed')
     } finally {

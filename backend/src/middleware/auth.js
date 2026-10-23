@@ -64,12 +64,6 @@ export function requireAdmin(req, res, next) {
   if (req.userRole !== 'admin') {
     return res.status(403).json({ error: 'Admin access required' })
   }
-  if (req.mfaEnabled !== true) {
-    return res.status(403).json({
-      error: 'Two-factor authentication must be set up before using the admin panel.',
-      code: 'MFA_ENROLLMENT_REQUIRED',
-    })
-  }
   next()
 }
 
@@ -77,12 +71,6 @@ export function requireAdmin(req, res, next) {
 export function requireStaff(req, res, next) {
   if (req.userRole !== 'admin' && req.userRole !== 'staff') {
     return res.status(403).json({ error: 'Staff or admin access required' })
-  }
-  if (req.mfaEnabled !== true) {
-    return res.status(403).json({
-      error: 'Two-factor authentication must be set up before using the admin panel.',
-      code: 'MFA_ENROLLMENT_REQUIRED',
-    })
   }
   next()
 }

@@ -90,18 +90,10 @@ router.post('/login', loginLimiter, async (req, res) => {
       logger.error({ err: auditErr }, 'Sign-in audit failed')
     }
 
-    // Admin-panel roles must enroll a second factor before the panel opens;
-    // customers may opt in voluntarily from their profile.
-    const mfaEnrollmentRequired = (role === 'admin' || role === 'staff') && !mfaRequired
-
     // The session is returned even when MFA is required: it is an aal1 session
     // that every protected API route rejects until /mfa-verify upgrades it to
     // aal2. The client needs it to run the GoTrue challenge.
-    res.json({
-      session: data.session,
-      mfa_required: mfaRequired,
-      mfa_enrollment_required: mfaEnrollmentRequired,
-    })
+    res.json({ session: data.session, mfa_required: mfaRequired })
   } catch (err) {
     logger.error({ err }, 'Login error')
     res.status(500).json({ error: 'Server error' })

@@ -17,54 +17,50 @@ function mockRes() {
   return res
 }
 
-test('requireStaff admits admin and staff who have enrolled a second factor', () => {
+test('requireStaff admits admin and staff', () => {
   for (const role of ['admin', 'staff']) {
     const res = mockRes()
     let nextCalled = false
-    requireStaff({ userRole: role, mfaEnabled: true }, res, () => { nextCalled = true })
+    requireStaff({ userRole: role }, res, () => { nextCalled = true })
     assert.equal(nextCalled, true, `${role} should pass requireStaff`)
     assert.equal(res.statusCode, 200)
   }
 })
 
+test('requireStaff does not require a second factor (MFA stays optional)', () => {
+  const res = mockRes()
+  let nextCalled = false
+  requireStaff({ userRole: 'admin', mfaEnabled: false }, res, () => { nextCalled = true })
+  assert.equal(nextCalled, true)
+  assert.equal(res.statusCode, 200)
+})
+
 test('requireStaff rejects a plain user with 403', () => {
   const res = mockRes()
   let nextCalled = false
-  requireStaff({ userRole: 'user', mfaEnabled: true }, res, () => { nextCalled = true })
+  requireStaff({ userRole: 'user' }, res, () => { nextCalled = true })
   assert.equal(nextCalled, false)
   assert.equal(res.statusCode, 403)
   assert.match(res.body.error, /staff or admin/i)
 })
 
-test('requireStaff sends admin/staff without a second factor to enrollment', () => {
-  for (const role of ['admin', 'staff']) {
-    const res = mockRes()
-    let nextCalled = false
-    requireStaff({ userRole: role, mfaEnabled: false }, res, () => { nextCalled = true })
-    assert.equal(nextCalled, false, `${role} must enroll before using the panel`)
-    assert.equal(res.statusCode, 403)
-    assert.equal(res.body.code, 'MFA_ENROLLMENT_REQUIRED')
-  }
-})
-
 test('requireAdmin still rejects staff (admin-only routes stay admin-only)', () => {
   const res = mockRes()
   let nextCalled = false
-  requireAdmin({ userRole: 'staff', mfaEnabled: true }, res, () => { nextCalled = true })
+  requireAdmin({ userRole: 'staff' }, res, () => { nextCalled = true })
   assert.equal(nextCalled, false)
   assert.equal(res.statusCode, 403)
 
   const res2 = mockRes()
   let next2 = false
-  requireAdmin({ userRole: 'admin', mfaEnabled: true }, res2, () => { next2 = true })
+  requireAdmin({ userRole: 'admin' }, res2, () => { next2 = true })
   assert.equal(next2, true)
 })
 
-test('requireAdmin requires enrollment for admins without a second factor', () => {
+test('requireAdmin does not require a second factor (MFA stays optional)', () => {
   const res = mockRes()
   let nextCalled = false
   requireAdmin({ userRole: 'admin', mfaEnabled: false }, res, () => { nextCalled = true })
-  assert.equal(nextCalled, false)
-  assert.equal(res.statusCode, 403)
-  assert.equal(res.body.code, 'MFA_ENROLLMENT_REQUIRED')
+  assert.equal(nextCalled, true)
+  assert.equal(res.statusCode, 200)
 })
