@@ -508,6 +508,16 @@ export const REGISTRY = {
     important: true,
     describe: ({ who }) => `${who} entered a wrong password at a confirmation prompt`,
   },
+  mfa_enabled: {
+    category: 'Security',
+    important: true,
+    describe: ({ who }) => `${who} turned on two-factor authentication`,
+  },
+  mfa_disabled: {
+    category: 'Security',
+    important: true,
+    describe: ({ who }) => `${who} turned off two-factor authentication`,
+  },
   sign_in: {
     category: 'Security',
     important: true,

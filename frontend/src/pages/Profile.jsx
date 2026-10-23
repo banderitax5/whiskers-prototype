@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import supabase from '../lib/supabase'
 import { philippinesData } from '../data/philippinesData.js'
 import { phoneError, addressLineError, postalError } from '../lib/addressValidation.js'
+import MfaEnrollmentModal from '../components/MfaEnrollmentModal'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -52,6 +53,11 @@ function Profile() {
   const [session, setSession] = useState(undefined)
   const [fieldErrors, setFieldErrors] = useState({})
   const [formError, setFormError] = useState('')
+  const [mfaEnabled, setMfaEnabled] = useState(false)
+  const [mfaEnrollment, setMfaEnrollment] = useState(null)
+  const [mfaBusy, setMfaBusy] = useState(false)
+  const [mfaError, setMfaError] = useState('')
+  const [confirmMfaOff, setConfirmMfaOff] = useState(false)
 
   // make auth failures readable for the user
   function readableError(err, fallback) {
@@ -120,7 +126,10 @@ function Profile() {
       if (!s) { setLoading(false); return }
 
       fetchWithAuth('/profile')
-        .then(setProfile)
+        .then(p => {
+          setProfile(p)
+          setMfaEnabled(p.mfaEnabled ?? p.mfa_enabled ?? false)
+        })
         .catch((err) => {
           const msg = readableError(err, 'Failed to load profile')
           setFormError(msg)
@@ -170,6 +179,69 @@ function Profile() {
       toast.error(msg)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleMfaEnroll() {
+    setMfaBusy(true)
+    setMfaError('')
+    try {
+      const data = await fetchWithAuth('/auth/mfa/enroll', { method: 'POST' })
+      setMfaEnrollment({
+        factorId: data.factorId,
+        secret: data.secret,
+        qrCode: data.qrCode,
+        uri: data.uri,
+      })
+    } catch (err) {
+      const msg = readableError(err, 'Could not start two-factor setup.')
+      toast.error(msg)
+    } finally {
+      setMfaBusy(false)
+    }
+  }
+
+  async function handleMfaEnrollVerify(code) {
+    setMfaBusy(true)
+    setMfaError('')
+    try {
+      const data = await fetchWithAuth('/auth/mfa/verify', {
+        method: 'POST',
+        body: JSON.stringify({ code }),
+      })
+      if (!data.session) throw new Error('Verification did not return a session. Please log in again.')
+      const { error: setErr } = await supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+      })
+      if (setErr) throw setErr
+
+      setMfaEnabled(true)
+      setMfaEnrollment(null)
+      toast.success('Two-factor authentication is on.')
+    } catch (err) {
+      setMfaError(readableError(err, 'Invalid code. Try again.'))
+    } finally {
+      setMfaBusy(false)
+    }
+  }
+
+  function handleMfaEnrollCancel() {
+    setMfaEnrollment(null)
+    setMfaError('')
+  }
+
+  async function handleMfaDisable() {
+    setMfaBusy(true)
+    try {
+      await fetchWithAuth('/auth/mfa/unenroll', { method: 'POST' })
+      setMfaEnabled(false)
+      setConfirmMfaOff(false)
+      toast.success('Two-factor authentication is off.')
+    } catch (err) {
+      toast.error(readableError(err, 'Could not turn off two-factor authentication.'))
+    } finally {
+      setMfaBusy(false)
     }
   }
 
@@ -228,6 +300,7 @@ function Profile() {
     'block text-sm font-medium text-gray-600 mb-1.5 dark:text-gray-300'
 
   return (
+    <>
     <div className={SHELL}>
 
       <div className={HEADER}>
@@ -427,6 +500,74 @@ function Profile() {
 
           </section>
 
+          {/* MFA */}
+          <section className="space-y-3 sm:space-y-4 pt-2 border-t border-gray-100 dark:border-gray-700">
+            <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              Two-factor authentication
+            </h2>
+            <p className="text-xs text-gray-500 dark:text-gray-300">
+              Add an extra layer of security with a code from your authenticator app. Required for admin and staff accounts.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
+                  mfaEnabled
+                    ? 'bg-green-50 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                    : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                }`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${mfaEnabled ? 'bg-green-500' : 'bg-gray-400'}`} aria-hidden="true" />
+                {mfaEnabled ? 'On' : 'Off'}
+              </span>
+              {!mfaEnabled && (
+                <button
+                  type="button"
+                  onClick={handleMfaEnroll}
+                  disabled={mfaBusy}
+                  className="rounded-lg bg-[#0b2e59] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#15407a] disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
+                >
+                  {mfaBusy ? 'Starting…' : 'Set up two-factor authentication'}
+                </button>
+              )}
+            </div>
+
+            {mfaEnabled && !confirmMfaOff && (
+              <button
+                type="button"
+                onClick={() => setConfirmMfaOff(true)}
+                disabled={mfaBusy}
+                className="text-xs font-medium text-red-600 hover:text-red-700 disabled:opacity-60 dark:text-red-400 sm:text-sm"
+              >
+                Turn off two-factor authentication
+              </button>
+            )}
+            {mfaEnabled && confirmMfaOff && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/30">
+                <p className="text-xs text-red-700 dark:text-red-300">
+                  Turning this off removes the second factor from your account. Continue?
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleMfaDisable}
+                    disabled={mfaBusy}
+                    className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                  >
+                    {mfaBusy ? 'Turning off…' : 'Yes, turn it off'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmMfaOff(false)}
+                    disabled={mfaBusy}
+                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+
         </div>
 
         <div className={FOOTER}>
@@ -441,6 +582,16 @@ function Profile() {
 
       </form>
     </div>
+    {mfaEnrollment && (
+      <MfaEnrollmentModal
+        enrollment={mfaEnrollment}
+        onClose={handleMfaEnrollCancel}
+        onVerify={handleMfaEnrollVerify}
+        saving={mfaBusy}
+        error={mfaError}
+      />
+    )}
+    </>
   )
 }
 

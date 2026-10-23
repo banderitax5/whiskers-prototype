@@ -1,10 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
-import { supabaseAuth, supabaseAdmin } from '../config/supabase.js'
+import { supabaseAuth } from '../config/supabase.js'
 import { verifyStepUpToken } from '../utils/stepUp.js'
+import { aalFromToken, hasVerifiedFactor } from '../utils/mfa.js'
 
 // Verifies the Bearer token, attaches userId, userEmail, userRole, and req.db to req
 // req.db is a Supabase client scoped to the authenticated user — RLS policies are enforced
-export async function authMiddleware(req, res, next) {
+async function authenticate(req, res, next, { enforceAal = true } = {}) {
   const authHeader = req.headers.authorization
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
   if (!token) {
@@ -16,6 +17,10 @@ export async function authMiddleware(req, res, next) {
   }
   req.userId = user.id
   req.userEmail = user.email
+  // GoTrue returns the account's MFA factors on GET /user, so this needs no
+  // database column and cannot drift from the real enrollment state.
+  req.mfaEnabled = hasVerifiedFactor(user)
+  req.userFactorsAll = Array.isArray(user.factors) ? user.factors : []
 
   // create a user-scoped client so RLS policies see auth.uid()
   req.db = createClient(
@@ -31,12 +36,39 @@ export async function authMiddleware(req, res, next) {
     .single()
   req.userRole = profile?.role || 'user'
 
+  // Password-only (aal1) sessions are refused for accounts with a verified
+  // factor. This is the enforcement point that makes MFA meaningful: a stolen
+  // password cannot call the API even if the attacker talks to GoTrue directly.
+  // The MFA verification routes opt out because they run before the upgrade.
+  if (enforceAal && req.mfaEnabled && aalFromToken(token) !== 'aal2') {
+    return res.status(403).json({
+      error: 'Two-factor authentication required.',
+      code: 'MFA_REQUIRED',
+    })
+  }
+
   next()
+}
+
+export function authMiddleware(req, res, next) {
+  return authenticate(req, res, next, { enforceAal: true })
+}
+
+// For the few auth routes that must accept the aal1 session: MFA verification
+// (the whole point is to upgrade it) and enrollment (no factor exists yet).
+export function authAllowAal1(req, res, next) {
+  return authenticate(req, res, next, { enforceAal: false })
 }
 
 export function requireAdmin(req, res, next) {
   if (req.userRole !== 'admin') {
     return res.status(403).json({ error: 'Admin access required' })
+  }
+  if (req.mfaEnabled !== true) {
+    return res.status(403).json({
+      error: 'Two-factor authentication must be set up before using the admin panel.',
+      code: 'MFA_ENROLLMENT_REQUIRED',
+    })
   }
   next()
 }
@@ -45,6 +77,12 @@ export function requireAdmin(req, res, next) {
 export function requireStaff(req, res, next) {
   if (req.userRole !== 'admin' && req.userRole !== 'staff') {
     return res.status(403).json({ error: 'Staff or admin access required' })
+  }
+  if (req.mfaEnabled !== true) {
+    return res.status(403).json({
+      error: 'Two-factor authentication must be set up before using the admin panel.',
+      code: 'MFA_ENROLLMENT_REQUIRED',
+    })
   }
   next()
 }

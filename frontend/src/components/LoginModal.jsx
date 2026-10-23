@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { BsEye, BsEyeSlash } from 'react-icons/bs'
+import toast from 'react-hot-toast'
 import supabase from '../lib/supabase'
 import { trackEvent } from '../lib/appEvents.js'
+import { normalizeOtp, otpError } from '../lib/mfa.js'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -16,8 +18,15 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
   const [forgotLoading, setForgotLoading] = useState(false)
   const [forgotError, setForgotError] = useState('')
   const [forgotSent, setForgotSent] = useState(false)
+  const [mfaCode, setMfaCode] = useState('')
+  const [mfaError, setMfaError] = useState('')
+  const [mfaLoading, setMfaLoading] = useState(false)
+  // The aal1 session stays in memory until the code is verified. Installing it
+  // earlier would let a password-only attacker use customer routes.
+  const [pendingSession, setPendingSession] = useState(null)
   const dialogRef = useRef(null)
   const emailRef = useRef(null)
+  const mfaRef = useRef(null)
 
   useEffect(() => {
     if (!isOpen) {
@@ -25,8 +34,19 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
       setError('')
       setForgotError('')
       setForgotSent(false)
+      setMfaCode('')
+      setMfaError('')
+      setPendingSession(null)
     }
   }, [isOpen])
+
+  useEffect(() => {
+    if (isOpen && view === 'mfa') {
+      const t = setTimeout(() => mfaRef.current?.focus(), 50)
+      return () => clearTimeout(t)
+    }
+    return undefined
+  }, [isOpen, view])
 
   // focus trap: move focus into the dialog on open and cycle Tab inside it
   const trapFocus = useCallback((e) => {
@@ -108,6 +128,16 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Login failed')
 
+      // If MFA is enrolled for this user, the server returns mfa_required:true.
+      // Show a TOTP code input instead of completing the login immediately.
+      if (data.mfa_required) {
+        setPendingSession(data.session)
+        setMfaCode('')
+        setMfaError('')
+        setView('mfa')
+        return
+      }
+
       const { error: setErr } = await supabase.auth.setSession({
         access_token: data.session.access_token,
         refresh_token: data.session.refresh_token,
@@ -117,10 +147,59 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
       onLoginSuccess?.()
       trackEvent('login')
       onClose()
+      if (data.mfa_enrollment_required) {
+        toast('Set up two-factor authentication in your profile to use the admin panel.', { duration: 6000 })
+      }
     } catch (err) {
       setError(err.message || 'Login failed')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleMfaVerify(e) {
+    e.preventDefault()
+    setMfaError('')
+    const code = normalizeOtp(mfaCode)
+    const problem = otpError(code)
+    if (problem) {
+      setMfaError(problem)
+      return
+    }
+    if (!pendingSession?.access_token) {
+      setMfaError('Your sign-in expired. Please log in again.')
+      setView('login')
+      return
+    }
+    setMfaLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/auth/mfa/verify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${pendingSession.access_token}`,
+        },
+        body: JSON.stringify({ code }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Verification failed')
+
+      // Verification returns an upgraded aal2 session; install it so every
+      // subsequent API call carries the second factor.
+      const { error: setErr } = await supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+      })
+      if (setErr) throw setErr
+
+      setPendingSession(null)
+      onLoginSuccess?.()
+      trackEvent('login')
+      onClose()
+    } catch (err) {
+      setMfaError(err.message || 'Invalid code. Try again.')
+    } finally {
+      setMfaLoading(false)
     }
   }
 
@@ -215,6 +294,58 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
                 </p>
               </form>
             )
+          ) : view === 'mfa' ? (
+            <form onSubmit={handleMfaVerify} className="space-y-3 sm:space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Verify your identity</h2>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                  Enter the 6-digit code from your authenticator app.
+                </p>
+              </div>
+              <div className="h-8">
+                {mfaError && (
+                  <p id="mfa-code-error" className="text-sm text-red-700 bg-red-50 dark:bg-red-900 dark:text-red-200 px-3 py-1.5 rounded-lg line-clamp-1" role="alert" title={mfaError}>
+                    {mfaError}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label htmlFor="mfa-code" className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  TOTP CODE
+                </label>
+                <input
+                  ref={mfaRef}
+                  type="text"
+                  id="mfa-code"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  value={mfaCode}
+                  onChange={(e) => { setMfaCode(normalizeOtp(e.target.value)); setMfaError('') }}
+                  required
+                  autoComplete="one-time-code"
+                  aria-invalid={mfaError ? 'true' : undefined}
+                  aria-describedby={mfaError ? 'mfa-code-error' : undefined}
+                  className="w-full px-3 sm:px-4 py-2 rounded-lg border bg-white dark:bg-gray-700 border-gray-500 dark:border-gray-600 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-center tracking-widest"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={mfaLoading}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-[#0039a6] hover:bg-[#0046cc] active:scale-[0.98] text-white font-semibold transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed"
+              >
+                {mfaLoading ? 'Verifying…' : 'Verify code'}
+              </button>
+              <p className="text-center text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+                <button
+                  type="button"
+                  onClick={() => { setView('login'); setMfaError(''); setMfaCode(''); setPendingSession(null) }}
+                  className="text-[#0039a6] hover:text-[#0046cc] font-semibold transition-colors"
+                >
+                  Back to login
+                </button>
+              </p>
+            </form>
           ) : (
           <form onSubmit={handleSubmit} className="space-y-2.5 sm:space-y-3">
             <div className="h-8">

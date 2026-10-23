@@ -6,7 +6,8 @@ import logger from './src/utils/logger.js'
 
 // Eagerly validate encryption key on startup
 import './src/utils/encryption.js'
-import { authMiddleware } from './src/middleware/auth.js'
+import { authAllowAal1 } from './src/middleware/auth.js'
+import { aalFromToken } from './src/utils/mfa.js'
 import authRoutes from './src/routes/auth.js'
 import profileRoutes from './src/routes/profile.js'
 import cartRoutes from './src/routes/cart.js'
@@ -56,8 +57,17 @@ app.use('/api/payments', paymentsRoutes)
 
 app.use(express.json({ limit: '100kb' }))
 
-app.get('/api/me/role', authMiddleware, (req, res) => {
-  res.json({ role: req.userRole })
+// Identity + MFA state. Deliberately reachable with an aal1 session so the
+// admin gate can tell "needs to set up 2FA" apart from "not allowed at all";
+// every actual admin endpoint still rejects aal1 sessions.
+app.get('/api/me/role', authAllowAal1, (req, res) => {
+  const header = req.headers.authorization
+  const token = header?.startsWith('Bearer ') ? header.slice(7) : null
+  res.json({
+    role: req.userRole,
+    mfaEnabled: !!req.mfaEnabled,
+    mfaVerified: !req.mfaEnabled || aalFromToken(token) === 'aal2',
+  })
 })
 
 app.use('/api/auth', authRoutes)

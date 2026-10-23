@@ -33,7 +33,7 @@ function sanitizeField(value, maxLen) {
   return trimmed.slice(0, maxLen)
 }
 
-function formatProfile(u) {
+function formatProfile(u, mfaEnabled = false) {
   return {
     id: u.id,
     email: decryptText(u.email),
@@ -47,6 +47,7 @@ function formatProfile(u) {
     postalCode: decryptText(u.postal_code),
     country: decryptText(u.country),
     role: u.role,
+    mfaEnabled: !!mfaEnabled,
   }
 }
 
@@ -97,9 +98,10 @@ router.get('/', authMiddleware, async (req, res) => {
         postalCode: '',
         country: '',
         role: 'user',
+        mfaEnabled: !!req.mfaEnabled,
       })
     }
-    res.json(formatProfile(u))
+    res.json(formatProfile(u, req.mfaEnabled))
   } catch (err) {
     logger.error({ err }, 'Profile GET error')
     res.status(500).json({ error: 'Server error' })
@@ -153,7 +155,7 @@ router.put('/', authMiddleware, async (req, res) => {
       .single()
     if (selectError) throw selectError
 
-    res.json(formatProfile(u))
+    res.json(formatProfile(u, req.mfaEnabled))
   } catch (err) {
     logger.error({ err }, 'Profile PUT error')
     res.status(500).json({ error: 'Server error' })

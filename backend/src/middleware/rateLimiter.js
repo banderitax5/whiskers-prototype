@@ -64,6 +64,18 @@ export const stepUpLimiter = rateLimit({
   keyGenerator: clientKey,
 })
 
+// 10 MFA code submissions per 15 minutes per account. Six-digit TOTP codes
+// would otherwise be brute-forceable within a 30-second window; the limiter is
+// keyed by the authenticated user (auth runs before this middleware).
+export const mfaLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many verification attempts. Please try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+})
+
 // 100 order creations / promo validations per hour per account (IP when
 // unauthenticated; orders require auth, so this is effectively per user).
 export const orderLimiter = rateLimit({
