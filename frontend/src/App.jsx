@@ -1,6 +1,7 @@
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom'
 import { useState, useEffect, useRef, Suspense, lazy, useContext } from 'react'
 import Layout from './components/Layout.jsx'
+import MfaVerifyGate from './components/MfaVerifyGate.jsx'
 import { RoleContext } from './context/RoleContext.js'
 import { useShop } from './context/ShopContext.jsx'
 
@@ -174,26 +175,7 @@ function RequireAdmin({ children }) {
     )
   }
   if (state === 'mfa-verify') {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 dark:bg-gray-900">
-        <div className="w-full max-w-md rounded-lg border border-yellow-300 bg-white p-6 text-center shadow dark:border-yellow-700 dark:bg-gray-800">
-          <h1 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">Verify your sign-in</h1>
-          <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">
-            Your session has not completed two-factor verification. Sign out and sign in again with your authenticator code.
-          </p>
-          <button
-            type="button"
-            onClick={async () => {
-              await supabase.auth.signOut()
-              window.location.assign('/')
-            }}
-            className="rounded bg-[#0b2e59] px-4 py-2 text-sm font-medium text-white hover:bg-[#123c6f]"
-          >
-            Sign out and sign in again
-          </button>
-        </div>
-      </div>
-    )
+    return <MfaVerifyGate onVerified={() => setState('allowed')} />
   }
   if (state === 'denied') return <Navigate to="/" replace />
 

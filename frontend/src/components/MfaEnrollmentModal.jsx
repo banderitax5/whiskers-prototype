@@ -5,6 +5,7 @@ function MfaEnrollmentModal({ enrollment, onClose, onVerify, saving, error }) {
   const [verifyCode, setVerifyCode] = useState('')
   const [localError, setLocalError] = useState('')
   const codeRef = useRef(null)
+  const dialogRef = useRef(null)
 
   useEffect(() => {
     setVerifyCode('')
@@ -15,6 +16,34 @@ function MfaEnrollmentModal({ enrollment, onClose, onVerify, saving, error }) {
     }
     return undefined
   }, [enrollment])
+
+  // Escape closes unless verification is in flight; Tab cycles inside the
+  // dialog so keyboard focus never escapes behind the overlay.
+  useEffect(() => {
+    if (!enrollment) return undefined
+    function onKey(e) {
+      if (e.key === 'Escape') {
+        if (!saving) onClose()
+        return
+      }
+      if (e.key !== 'Tab' || !dialogRef.current) return
+      const focusables = dialogRef.current.querySelectorAll(
+        'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
+      )
+      if (focusables.length === 0) return
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [enrollment, saving, onClose])
 
   if (!enrollment) return null
 
@@ -37,11 +66,15 @@ function MfaEnrollmentModal({ enrollment, onClose, onVerify, saving, error }) {
   return (
     <div
       className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[10050]"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="mfa-enroll-title"
+      onClick={(e) => { if (e.target === e.currentTarget && !saving) onClose() }}
     >
-      <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md shadow-xl animate-in fade-in duration-300 max-h-[calc(100dvh-2rem)] overflow-y-auto">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mfa-enroll-title"
+        className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md shadow-xl animate-in fade-in duration-300 max-h-[calc(100dvh-2rem)] overflow-y-auto"
+      >
         <div className="w-full p-5 sm:p-6 relative">
           <button
             type="button"

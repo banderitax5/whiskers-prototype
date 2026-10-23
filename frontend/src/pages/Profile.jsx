@@ -506,7 +506,7 @@ function Profile() {
               Two-factor authentication
             </h2>
             <p className="text-xs text-gray-500 dark:text-gray-300">
-              Add an extra layer of security with a code from your authenticator app. Required for admin and staff accounts.
+              Add an extra layer of security with a code from your authenticator app. Optional, but recommended for admin and staff accounts. If you lose your device, an administrator can remove the second factor from your account in Supabase.
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <span

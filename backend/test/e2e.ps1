@@ -154,6 +154,55 @@ try {
 $supList2 = Invoke-RestMethod -Uri "$base/api/support" -Headers $authH
 Step 'support GET single thread' (@($supList2.items).Count -eq 1 -and $supList2.items[0].message -like 'Follow-up*') "count=$(@($supList2.items).Count)"
 
+# ---- MFA (optional, Supabase-native TOTP) ----
+# Runs before the promote step so the login audit log stays clean (only
+# admin/staff sign-ins are recorded). Shape-level only: no TOTP generation.
+try {
+  $roleMfa = Invoke-RestMethod -Uri "$base/api/me/role" -Headers $authH
+  Step 'mfa: off by default' (($roleMfa.mfaEnabled -eq $false) -and ($roleMfa.mfaVerified -eq $true)) "enabled=$($roleMfa.mfaEnabled) verified=$($roleMfa.mfaVerified)"
+} catch { Step 'mfa: off by default' $false (Get-ErrBody $_) }
+
+try {
+  $loginMfa = Invoke-RestMethod -Uri "$base/api/auth/login" -Method Post -ContentType 'application/json' `
+    -Body (@{ email = $email; password = $pw } | ConvertTo-Json -Compress)
+  Step 'mfa: login needs no challenge when unenrolled' (($null -ne $loginMfa.session) -and ($loginMfa.mfa_required -eq $false)) "required=$($loginMfa.mfa_required)"
+} catch { Step 'mfa: login needs no challenge when unenrolled' $false (Get-ErrBody $_) }
+
+try {
+  Invoke-RestMethod -Uri "$base/api/auth/mfa/verify" -Method Post -Headers $authH -ContentType 'application/json' `
+    -Body (@{ code = '123456' } | ConvertTo-Json -Compress) | Out-Null
+  Step 'mfa: verify without a factor rejected' $false 'got 2xx'
+} catch { Step 'mfa: verify without a factor rejected' ($_.Exception.Response.StatusCode.value__ -eq 400) (Get-ErrBody $_) }
+
+$mfaFactorId = $null
+try {
+  $enrollMfa = Invoke-RestMethod -Uri "$base/api/auth/mfa/enroll" -Method Post -Headers $authH -ContentType 'application/json' -Body '{}'
+  $mfaFactorId = $enrollMfa.factorId
+  Step 'mfa: enrollment returns factor + secret + QR' (([bool]$enrollMfa.factorId) -and ([bool]$enrollMfa.secret) -and ([bool]$enrollMfa.qrCode)) "factor=$($enrollMfa.factorId)"
+} catch { Step 'mfa: enrollment returns factor + secret + QR' $false (Get-ErrBody $_) }
+
+# an unverified factor must not lock the account out of the panel
+try {
+  $roleMfa2 = Invoke-RestMethod -Uri "$base/api/me/role" -Headers $authH
+  Step 'mfa: unverified factor does not enable MFA' ($roleMfa2.mfaEnabled -eq $false) "enabled=$($roleMfa2.mfaEnabled)"
+} catch { Step 'mfa: unverified factor does not enable MFA' $false (Get-ErrBody $_) }
+
+try {
+  Invoke-RestMethod -Uri "$base/api/auth/mfa/verify" -Method Post -Headers $authH -ContentType 'application/json' `
+    -Body (@{ code = '123456' } | ConvertTo-Json -Compress) | Out-Null
+  Step 'mfa: wrong code rejected' $false 'got 2xx'
+} catch {
+  $st = $_.Exception.Response.StatusCode.value__
+  Step 'mfa: wrong code rejected' ($st -eq 401 -or $st -eq 429) $st
+}
+
+if ($mfaFactorId) {
+  try {
+    Invoke-RestMethod -Uri "$SU/auth/v1/admin/users/$uid/factors/$mfaFactorId" -Method Delete -Headers @{ apikey = $SK; Authorization = "Bearer $SK" } | Out-Null
+    Step 'mfa: probe factor removed' $true $mfaFactorId
+  } catch { Step 'mfa: probe factor removed' $false (Get-ErrBody $_) }
+}
+
 # ── Phase 5: storefront content endpoint (public, seeded from today's content) ──
 try {
   $sc = Invoke-RestMethod -Uri "$base/api/site-content"

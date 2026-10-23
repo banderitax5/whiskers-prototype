@@ -114,16 +114,33 @@ Pre-seeded in Supabase for demos and panel review:
 Staff and admin panels ask for password re-verification (step-up) before
 state-changing actions — type the same account password.
 
+## Two-factor authentication (optional)
+
+Accounts can add a TOTP second factor (Google Authenticator, Authy, 1Password,
+and similar) from **Profile → Two-factor authentication**.
+
+- Supabase Auth owns the factor. The backend only proxies enrollment and
+  verification, so the shared secret is never stored by this application.
+- It is optional for every role. Without a verified factor, the admin panel is
+  reachable with just the password (keeps demos simple). Once enabled, sign-in
+  returns an aal1 session that must be upgraded with a 6-digit code; protected
+  API routes reject aal1.
+- There are no backup codes (a Supabase TOTP limitation). If a user loses their
+  device, an admin removes the factor in **Supabase Dashboard → Authentication
+  → Users → (user) → Factors**; the account can then sign in with its password
+  and enroll again.
+- No extra environment variables are needed beyond the existing Supabase keys.
+
 ## Tests, lint, and build
 
 ```bash
 # Backend API tests (Node's built-in test runner)
 npm test --prefix backend
 
-# Full API end-to-end suite: 37 checks against a running backend.
+# Full API end-to-end suite against a running backend.
 # Creates a throwaway Supabase user, exercises orders, stock, feedback,
-# support, staff/admin role gates, and the step-up re-auth round-trip,
-# then cleans everything up.
+# support, MFA, staff/admin role gates, and the step-up re-auth round-trip,
+# then cleans everything up. Restart the backend before each run.
 npm run test:e2e --prefix backend
 
 # Frontend lint
