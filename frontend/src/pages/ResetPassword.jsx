@@ -5,7 +5,10 @@ import toast from 'react-hot-toast'
 import supabase, { hadRecoveryMarker, RECOVERY_PENDING_KEY } from '../lib/supabase'
 import { notifyAuth } from '../lib/authNotice'
 import { passwordError } from '../lib/passwordRules'
+import { normalizeOtp, otpError } from '../lib/mfa.js'
 import PasswordRequirements from '../components/PasswordRequirements.jsx'
+
+const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
 function ResetPassword() {
   const [status, setStatus] = useState('checking')
@@ -18,6 +21,14 @@ function ResetPassword() {
   const [resendEmail, setResendEmail] = useState('')
   const [resendState, setResendState] = useState('idle')
   const [pending, setPending] = useState(() => localStorage.getItem(RECOVERY_PENDING_KEY) === '1')
+  // Supabase refuses password changes on an aal1 session when the account has a
+  // verified TOTP factor. A recovery link only yields aal1, so those users must
+  // enter their authenticator code first to upgrade the session to aal2.
+  const [mfaRequired, setMfaRequired] = useState(false)
+  const [mfaVerified, setMfaVerified] = useState(false)
+  const [mfaCode, setMfaCode] = useState('')
+  const [mfaError, setMfaError] = useState('')
+  const [mfaBusy, setMfaBusy] = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -61,9 +72,73 @@ function ResetPassword() {
     }
   }, [])
 
+  // Probe the session's assurance level once the reset link is accepted. When
+  // a verified factor exists Supabase reports nextLevel=aal2 while the recovery
+  // session is aal1. If this probe fails (older client, network hiccup) the
+  // AAL2 rejection from updateUser below still routes the user to the code step.
+  useEffect(() => {
+    if (status !== 'ready') return
+    let cancelled = false
+    Promise.resolve(supabase.auth.mfa?.getAuthenticatorAssuranceLevel?.())
+      .then(({ data } = {}) => {
+        if (cancelled || !data) return
+        if (data.nextLevel === 'aal2' && data.currentLevel !== 'aal2') {
+          setMfaRequired(true)
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [status])
+
+  async function handleVerifyMfa(e) {
+    e.preventDefault()
+    setMfaError('')
+    const clean = normalizeOtp(mfaCode)
+    const problem = otpError(clean)
+    if (problem) {
+      setMfaError(problem)
+      return
+    }
+    setMfaBusy(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('Your reset link expired. Request a new one below.')
+      }
+      const res = await fetch(`${API_BASE}/auth/mfa/verify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ code: clean }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Verification failed')
+      if (!data.session?.access_token) {
+        throw new Error('Verification did not return a session. Please request a new link.')
+      }
+      const { error: setErr } = await supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+      })
+      if (setErr) throw setErr
+      setMfaVerified(true)
+      setMfaCode('')
+    } catch (err) {
+      setMfaError(err.message || 'Invalid code. Try again.')
+    } finally {
+      setMfaBusy(false)
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
+    if (mfaRequired && !mfaVerified) {
+      setError('Confirm the code from your authenticator app first.')
+      return
+    }
     const errs = {}
     const pwProblem = passwordError(password)
     if (pwProblem) errs.password = pwProblem
@@ -75,6 +150,13 @@ function ResetPassword() {
     const { error: updateErr } = await supabase.auth.updateUser({ password })
     setLoading(false)
     if (updateErr) {
+      // Backstop for the rare case where the assurance probe failed: Supabase
+      // still tells us MFA stands in the way, so surface the code step.
+      if (/aal2/i.test(updateErr.message || '')) {
+        setMfaRequired(true)
+        setError('For your security, confirm the code from your authenticator app, then update the password.')
+        return
+      }
       setError(updateErr.message || 'Could not update the password. Request a new link and try again.')
       return
     }
@@ -153,6 +235,62 @@ function ResetPassword() {
           <Link to="/" className="block text-center text-sm text-[#0039a6] hover:text-[#0046cc] font-semibold transition-colors">
             Back to home
           </Link>
+        </div>
+      </div>
+    )
+  }
+
+  if (mfaRequired && !mfaVerified) {
+    return (
+      <div className="min-h-[50vh] flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-md bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 sm:p-8 space-y-5">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Verify it&apos;s you</h1>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+              Two-factor authentication is on for this account. Enter the 6-digit code from your
+              authenticator app to continue resetting the password.
+            </p>
+          </div>
+
+          {mfaError && (
+            <p id="reset-mfa-error" className="text-sm text-red-700 bg-red-50 dark:bg-red-900 dark:text-red-200 px-3 py-2 rounded-lg" role="alert">
+              {mfaError}
+            </p>
+          )}
+
+          <form onSubmit={handleVerifyMfa} className="space-y-4">
+            <div>
+              <label htmlFor="reset-mfa-code" className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                TOTP CODE
+              </label>
+              <input
+                id="reset-mfa-code"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                value={mfaCode}
+                onChange={(e) => { setMfaCode(normalizeOtp(e.target.value)); setMfaError('') }}
+                autoComplete="one-time-code"
+                required
+                aria-invalid={mfaError ? 'true' : undefined}
+                aria-describedby={mfaError ? 'reset-mfa-error' : undefined}
+                className="w-full px-3 sm:px-4 py-2 rounded-lg border bg-white dark:bg-gray-700 border-gray-500 dark:border-gray-600 dark:text-gray-100 text-center tracking-widest focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={mfaBusy}
+              className="w-full px-4 py-3 rounded-lg bg-[#0039a6] hover:bg-[#0046cc] active:scale-[0.98] text-white font-semibold transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              {mfaBusy ? 'Verifying…' : 'Verify code'}
+            </button>
+          </form>
+
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Lost access to your authenticator app? Contact the shop so we can help you recover your account.
+          </p>
         </div>
       </div>
     )
