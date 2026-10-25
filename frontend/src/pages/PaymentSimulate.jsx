@@ -103,8 +103,8 @@ function PaymentSimulate() {
         },
         body: JSON.stringify({ result }),
       })
-      const data = await res.json().catch(() => ({}))
       if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
         if (res.status === 409) {
           // expired or cancelled under us - close the page honestly
           setBlocked(data.error || 'This order is no longer payable.')
@@ -113,7 +113,7 @@ function PaymentSimulate() {
         }
         throw new Error(data.error || 'Could not reach the payment service')
       }
-
+      const data = await res.json().catch(() => ({}))
       if (result === 'fail') {
         setFailMsg('The payment did not go through (simulated). Your order is still pending — you can try again now or finish paying later from My Orders.')
         setOrder((prev) => (prev ? { ...prev, payment: { ...prev.payment, status: 'failed' } } : prev))

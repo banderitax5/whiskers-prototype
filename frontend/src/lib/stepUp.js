@@ -63,12 +63,13 @@ export async function verifyStepUp(accessToken, password) {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify({ password }),
   })
-  const data = await res.json().catch(() => ({}))
   if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
     const err = new Error(data.error || 'Verification failed. Try again.')
     err.status = res.status
     throw err
   }
+  const data = await res.json().catch(() => ({}))
   resolveStepUp(data.stepUpToken, data.expiresAt)
   return data
 }

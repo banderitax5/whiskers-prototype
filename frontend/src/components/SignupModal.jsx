@@ -124,8 +124,11 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
           lastName: lastName.trim(),
         }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Sign up failed')
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Sign up failed')
+      }
+      const data = await res.json().catch(() => ({}))
 
       // "Confirm email" is enabled: the account exists but Supabase will not
       // hand out a session until the emailed link is opened.

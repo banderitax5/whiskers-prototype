@@ -126,8 +126,11 @@ function ResetPassword() {
         },
         body: JSON.stringify({ code: clean }),
       })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Verification failed')
+      }
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || 'Verification failed')
       if (!data.session?.access_token) {
         throw new Error('Verification did not return a session. Please request a new link.')
       }

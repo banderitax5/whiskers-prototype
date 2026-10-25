@@ -186,8 +186,10 @@ function UserOrders() {
         },
         body: JSON.stringify({ orderId: order.order_id, items }),
       })
-      const body = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(body.error || 'Could not save your reviews.')
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || 'Could not save your reviews.')
+      }
       setOrders((prev) => prev.map((o) => {
         if (o.order_id !== order.order_id) return o
         const merged = (o.feedback || []).filter((f) => !items.some((it) => it.prod_id === f.prod_id))

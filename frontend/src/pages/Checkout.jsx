@@ -239,8 +239,11 @@ function Checkout() {
           promo_code: code,
         }),
       })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Promo code could not be applied')
+      }
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || 'Promo code could not be applied')
       setAppliedPromo(code)
       setPromoDiscount(Number(data.discount || 0))
       trackEvent('promo_applied', { code, discount: data.discount })

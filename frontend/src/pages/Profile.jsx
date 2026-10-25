@@ -40,10 +40,12 @@ async function fetchWithAuth(path, options = {}) {
   if (options.body) headers['Content-Type'] = 'application/json'
 
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers })
-  const data = await res.json().catch(() => ({}))
 
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-  return data
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.error || `HTTP ${res.status}`)
+  }
+  return res.json().catch(() => ({}))
 }
 
 function Profile() {

@@ -16,6 +16,10 @@ async function send(path, { method = 'GET', body, token, stepUpToken, isForm = f
     payload = JSON.stringify(body)
   }
   const res = await fetch(`${apiBase}${path}`, { method, headers, body: payload })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    return { res, data }
+  }
   const data = await res.json().catch(() => ({}))
   return { res, data }
 }

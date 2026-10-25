@@ -132,11 +132,12 @@ export async function fetchOrderById(orderId, token) {
   const res = await fetch(`${API_BASE}/orders/${orderId}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
-  const data = await res.json().catch(() => ({}))
   if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
     const err = new Error(data.error || `HTTP ${res.status}`)
     err.status = res.status
     throw err
   }
+  const data = await res.json().catch(() => ({}))
   return data.item
 }

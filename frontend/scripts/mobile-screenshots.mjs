@@ -39,13 +39,19 @@ async function shoot(page, name) {
   console.log(`shot ${name}`);
 }
 
-const products = await (await fetch(`${API}/api/products?page=1&pageSize=1`)).json();
+async function getJson(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`GET ${url} failed: ${res.status}`);
+  return res.json();
+}
+
+const products = await getJson(`${API}/api/products?page=1&pageSize=1`);
 const productId = products.items?.[0]?.prod_id;
 if (!productId) {
-  console.error('No products from API — is the backend running on :4141?');
+  console.error('No products from API �?" is the backend running on :4141?');
   process.exit(1);
 }
-const content = await (await fetch(`${API}/api/site-content`)).json();
+const content = await getJson(`${API}/api/site-content`);
 const policySlug = content.policies?.[0]?.slug || null;
 
 const browser = await chromium.launch();

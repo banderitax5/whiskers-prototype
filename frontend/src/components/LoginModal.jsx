@@ -125,8 +125,11 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim(), password }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Login failed')
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Login failed')
+      }
+      const data = await res.json().catch(() => ({}))
 
       // If MFA is enrolled for this user, the server returns mfa_required:true.
       // Show a TOTP code input instead of completing the login immediately.
@@ -178,8 +181,11 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
         },
         body: JSON.stringify({ code }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Verification failed')
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Verification failed')
+      }
+      const data = await res.json().catch(() => ({}))
 
       // Verification returns an upgraded aal2 session; install it so every
       // subsequent API call carries the second factor.
