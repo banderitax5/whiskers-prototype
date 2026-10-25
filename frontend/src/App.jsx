@@ -1,44 +1,10 @@
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom'
-import { useState, useEffect, useRef, Suspense, lazy, useContext } from 'react'
+import { useState, useEffect, useRef, useContext } from 'react'
 import Layout from './components/Layout.jsx'
 import MfaVerifyGate from './components/MfaVerifyGate.jsx'
+import RouteErrorBoundary from './components/RouteErrorBoundary.jsx'
 import { RoleContext } from './context/RoleContext.js'
 import { useShop } from './context/ShopContext.jsx'
-
-// USER PAGES (lazy loaded — chunks split per page)
-const Home = lazy(() => import('./pages/Home.jsx'))
-const About = lazy(() => import('./pages/About.jsx'))
-const Pets = lazy(() => import('./pages/Pets.jsx'))
-const Menu = lazy(() => import('./pages/Menu.jsx'))
-const ProductDetail = lazy(() => import('./pages/ProductDetail.jsx'))
-const Profile = lazy(() => import('./pages/Profile.jsx'))
-const Cart = lazy(() => import('./pages/Cart.jsx'))
-const Checkout = lazy(() => import('./pages/Checkout.jsx'))
-const UserOrders = lazy(() => import('./pages/UserOrders.jsx'))
-const Support = lazy(() => import('./pages/Support.jsx'))
-const PolicyPage = lazy(() => import('./pages/PolicyPage.jsx'))
-const OrderConfirmation = lazy(() => import('./pages/OrderConfirmation.jsx'))
-const OfficialReceipt = lazy(() => import('./pages/OfficialReceipt.jsx'))
-const PaymentSimulate = lazy(() => import('./pages/PaymentSimulate.jsx'))
-const ResetPassword = lazy(() => import('./pages/ResetPassword.jsx'))
-const LostAuthenticator = lazy(() => import('./pages/LostAuthenticator.jsx'))
-const NotFound = lazy(() => import('./pages/NotFound.jsx'))
-
-// ADMIN COMPONENTS (lazy loaded — only fetched when admin visits /admin)
-const AdminLayout = lazy(() => import('./components/AdminLayout.jsx'))
-const AdminDashboard = lazy(() => import('./components/AdminDashboard.jsx'))
-const AdminPayments = lazy(() => import('./components/AdminPayments.jsx'))
-const AdminProductManagement = lazy(() => import('./components/AdminProductManagement.jsx'))
-const AdminOrders = lazy(() => import('./components/AdminOrders.jsx'))
-const AdminAuditLogs = lazy(() => import('./components/AdminAuditLogs.jsx'))
-const AdminCustomers = lazy(() => import('./components/AdminCustomers.jsx'))
-const AdminSupports = lazy(() => import('./components/AdminSupports.jsx'))
-const AdminPromos = lazy(() => import('./components/AdminPromos.jsx'))
-const AdminMedia = lazy(() => import('./components/AdminMedia.jsx'))
-const AdminBanners = lazy(() => import('./components/AdminBanners.jsx'))
-const AdminHomeSections = lazy(() => import('./components/AdminHomeSections.jsx'))
-const AdminNavigation = lazy(() => import('./components/AdminNavigation.jsx'))
-const AdminSettings = lazy(() => import('./components/AdminSettings.jsx'))
 
 import supabase from './lib/supabase'
 
@@ -191,110 +157,75 @@ function RequireRole({ role, fallback, children }) {
   return children
 }
 
+const routeLazy = (load, wrap) => async () => {
+  const { default: Page } = await load()
+  return wrap ? { element: wrap(<Page />) } : { Component: Page }
+}
+
+const authRoute = (load) => routeLazy(load, (page) => <RequireAuth>{page}</RequireAuth>)
+const adminRoute = (load) => routeLazy(load, (page) => <RequireRole role="admin" fallback="/admin/orders">{page}</RequireRole>)
+
 // ROUTES
 const router = createBrowserRouter([
   {
     path: '/',
     element: <Layout />,
+    errorElement: <RouteErrorBoundary />,
+    HydrateFallback: FoodBowlLoader,
     children: [
-      { index: true, element: <Home /> },
-      { path: 'menu', element: <Menu /> },
-      { path: 'products/:prod_id', element: <ProductDetail /> },
-      { path: 'cart', element: <Cart /> },
-      { path: 'checkout', element: <Checkout /> },
-      {
-        // simulated payment gateway pay page (stands in for PayMongo's
-        // hosted checkout); owns order id via ?order=
-        path: 'pay/simulate',
-        element: (
-          <RequireAuth>
-            <PaymentSimulate />
-          </RequireAuth>
-        ),
-      },
-      {
-        path: 'orders',
-        element: (
-          <RequireAuth>
-            <UserOrders />
-          </RequireAuth>
-        ),
-      },
-      {
-        path: 'orders/:orderId',
-        element: (
-          <RequireAuth>
-            <OrderConfirmation />
-          </RequireAuth>
-        ),
-      },
-      { path: 'about', element: <About /> },
-      { path: 'policies/:slug', element: <PolicyPage /> },
-      {
-        path: 'pets',
-        element: (
-          <RequireAuth>
-            <Pets />
-          </RequireAuth>
-        ),
-      },
-      {
-        path: 'profile',
-        element: (
-          <RequireAuth>
-            <Profile />
-          </RequireAuth>
-        ),
-      },
-      {
-        path: 'support',
-        element: <Support />,
-      },
-      { path: 'reset', element: <ResetPassword /> },
-      // public: users who cannot finish the MFA challenge must be able to read
-      // the recovery steps without a session
-      { path: 'help/lost-authenticator', element: <LostAuthenticator /> },
+      { index: true, lazy: routeLazy(() => import('./pages/Home.jsx')) },
+      { path: 'menu', lazy: routeLazy(() => import('./pages/Menu.jsx')) },
+      { path: 'products/:prod_id', lazy: routeLazy(() => import('./pages/ProductDetail.jsx')) },
+      { path: 'cart', lazy: routeLazy(() => import('./pages/Cart.jsx')) },
+      { path: 'checkout', lazy: routeLazy(() => import('./pages/Checkout.jsx')) },
+      { path: 'pay/simulate', lazy: authRoute(() => import('./pages/PaymentSimulate.jsx')) },
+      { path: 'orders', lazy: authRoute(() => import('./pages/UserOrders.jsx')) },
+      { path: 'orders/:orderId', lazy: authRoute(() => import('./pages/OrderConfirmation.jsx')) },
+      { path: 'about', lazy: routeLazy(() => import('./pages/About.jsx')) },
+      { path: 'policies/:slug', lazy: routeLazy(() => import('./pages/PolicyPage.jsx')) },
+      { path: 'pets', lazy: authRoute(() => import('./pages/Pets.jsx')) },
+      { path: 'profile', lazy: authRoute(() => import('./pages/Profile.jsx')) },
+      { path: 'support', lazy: routeLazy(() => import('./pages/Support.jsx')) },
+      { path: 'reset', lazy: routeLazy(() => import('./pages/ResetPassword.jsx')) },
+      { path: 'help/lost-authenticator', lazy: routeLazy(() => import('./pages/LostAuthenticator.jsx')) },
     ],
   },
 
-  // ADMIN ROUTES (separate layout - no navbar)
   {
     path: '/admin',
-    element: (
-      <RequireAdmin>
-        <AdminLayout />
-      </RequireAdmin>
-    ),
+    lazy: routeLazy(() => import('./components/AdminLayout.jsx'), (page) => <RequireAdmin>{page}</RequireAdmin>),
+    errorElement: <RouteErrorBoundary />,
+    HydrateFallback: FoodBowlLoader,
     children: [
-      // the analytics dashboard and account tools stay admin-only;
-      // staff land on /admin/orders instead
-      { index: true, element: <RequireRole role="admin" fallback="/admin/orders"><AdminDashboard /></RequireRole> },
-      { path: 'products', element: <AdminProductManagement /> },
-      { path: 'customers', element: <RequireRole role="admin" fallback="/admin/orders"><AdminCustomers /></RequireRole> },
-      { path: 'orders', element: <AdminOrders /> },
-      { path: 'payments', element: <AdminPayments /> },
-      { path: 'promos', element: <RequireRole role="admin" fallback="/admin/orders"><AdminPromos /></RequireRole> },
-      { path: 'media', element: <RequireRole role="admin" fallback="/admin/orders"><AdminMedia /></RequireRole> },
-      { path: 'banners', element: <RequireRole role="admin" fallback="/admin/orders"><AdminBanners /></RequireRole> },
-      { path: 'home-sections', element: <RequireRole role="admin" fallback="/admin/orders"><AdminHomeSections /></RequireRole> },
-      { path: 'navigation', element: <RequireRole role="admin" fallback="/admin/orders"><AdminNavigation /></RequireRole> },
-      { path: 'settings', element: <RequireRole role="admin" fallback="/admin/orders"><AdminSettings /></RequireRole> },
-      { path: 'support', element: <AdminSupports /> },
-      { path: 'audit-logs', element: <RequireRole role="admin" fallback="/admin/orders"><AdminAuditLogs /></RequireRole> },
+      { index: true, lazy: adminRoute(() => import('./components/AdminDashboard.jsx')) },
+      { path: 'products', lazy: routeLazy(() => import('./components/AdminProductManagement.jsx')) },
+      { path: 'customers', lazy: adminRoute(() => import('./components/AdminCustomers.jsx')) },
+      { path: 'orders', lazy: routeLazy(() => import('./components/AdminOrders.jsx')) },
+      { path: 'payments', lazy: routeLazy(() => import('./components/AdminPayments.jsx')) },
+      { path: 'promos', lazy: adminRoute(() => import('./components/AdminPromos.jsx')) },
+      { path: 'media', lazy: adminRoute(() => import('./components/AdminMedia.jsx')) },
+      { path: 'banners', lazy: adminRoute(() => import('./components/AdminBanners.jsx')) },
+      { path: 'home-sections', lazy: adminRoute(() => import('./components/AdminHomeSections.jsx')) },
+      { path: 'navigation', lazy: adminRoute(() => import('./components/AdminNavigation.jsx')) },
+      { path: 'settings', lazy: adminRoute(() => import('./components/AdminSettings.jsx')) },
+      { path: 'support', lazy: routeLazy(() => import('./components/AdminSupports.jsx')) },
+      { path: 'audit-logs', lazy: adminRoute(() => import('./components/AdminAuditLogs.jsx')) },
     ],
   },
 
-  // PRINTABLE RECEIPT (standalone — no navbar/footer, like NotFound)
   {
     path: '/receipt/:orderId',
-    element: (
-      <RequireAuth>
-        <OfficialReceipt />
-      </RequireAuth>
-    ),
+    lazy: authRoute(() => import('./pages/OfficialReceipt.jsx')),
+    errorElement: <RouteErrorBoundary />,
+    HydrateFallback: FoodBowlLoader,
   },
 
-  { path: '*', element: <NotFound /> },
+  {
+    path: '*',
+    lazy: routeLazy(() => import('./pages/NotFound.jsx')),
+    errorElement: <RouteErrorBoundary />,
+    HydrateFallback: FoodBowlLoader,
+  },
 ])
 
 function FoodBowlLoader() {
@@ -340,11 +271,7 @@ function FoodBowlLoader() {
 }
 
 function App() {
-  return (
-    <Suspense fallback={<FoodBowlLoader />}>
-      <RouterProvider router={router} />
-    </Suspense>
-  )
+  return <RouterProvider router={router} />
 }
 
 export default App
