@@ -3,6 +3,7 @@ import { BsEye, BsEyeSlash } from 'react-icons/bs'
 import supabase from '../lib/supabase'
 import { trackEvent } from '../lib/appEvents.js'
 import { normalizeOtp, otpError } from '../lib/mfa.js'
+import LostAuthenticatorHelp from './LostAuthenticatorHelp.jsx'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -332,6 +333,7 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
               >
                 {mfaLoading ? 'Verifying…' : 'Verify code'}
               </button>
+              <LostAuthenticatorHelp email={email} className="text-center pt-1" />
               <p className="text-center text-xs sm:text-sm text-gray-600 dark:text-gray-400">
                 <button
                   type="button"

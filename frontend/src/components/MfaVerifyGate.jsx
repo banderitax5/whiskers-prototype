@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import supabase from '../lib/supabase'
 import { normalizeOtp, otpError } from '../lib/mfa.js'
+import LostAuthenticatorHelp from './LostAuthenticatorHelp.jsx'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -12,11 +13,22 @@ function MfaVerifyGate({ onVerified }) {
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [email, setEmail] = useState('')
   const inputRef = useRef(null)
 
   useEffect(() => {
     const t = setTimeout(() => inputRef.current?.focus(), 50)
     return () => clearTimeout(t)
+  }, [])
+
+  // prefill the account email in the recovery email so the shop can find the
+  // account quickly (the session here is aal1 but still identifies the user)
+  useEffect(() => {
+    let cancelled = false
+    supabase.auth.getSession()
+      .then(({ data }) => { if (!cancelled) setEmail(data?.session?.user?.email || '') })
+      .catch(() => {})
+    return () => { cancelled = true }
   }, [])
 
   async function submit(e) {
@@ -107,6 +119,7 @@ function MfaVerifyGate({ onVerified }) {
             {busy ? 'Verifying…' : 'Verify code'}
           </button>
         </form>
+        <LostAuthenticatorHelp email={email} className="mt-4 border-t border-gray-200 pt-3 dark:border-gray-700" />
         <button
           type="button"
           onClick={signOut}

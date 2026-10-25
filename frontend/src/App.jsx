@@ -21,6 +21,7 @@ const OrderConfirmation = lazy(() => import('./pages/OrderConfirmation.jsx'))
 const OfficialReceipt = lazy(() => import('./pages/OfficialReceipt.jsx'))
 const PaymentSimulate = lazy(() => import('./pages/PaymentSimulate.jsx'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword.jsx'))
+const LostAuthenticator = lazy(() => import('./pages/LostAuthenticator.jsx'))
 const NotFound = lazy(() => import('./pages/NotFound.jsx'))
 
 // ADMIN COMPONENTS (lazy loaded — only fetched when admin visits /admin)
@@ -250,6 +251,9 @@ const router = createBrowserRouter([
         element: <Support />,
       },
       { path: 'reset', element: <ResetPassword /> },
+      // public: users who cannot finish the MFA challenge must be able to read
+      // the recovery steps without a session
+      { path: 'help/lost-authenticator', element: <LostAuthenticator /> },
     ],
   },
 

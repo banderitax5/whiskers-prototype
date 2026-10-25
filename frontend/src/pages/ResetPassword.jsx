@@ -7,6 +7,7 @@ import { notifyAuth } from '../lib/authNotice'
 import { passwordError } from '../lib/passwordRules'
 import { normalizeOtp, otpError } from '../lib/mfa.js'
 import PasswordRequirements from '../components/PasswordRequirements.jsx'
+import LostAuthenticatorHelp from '../components/LostAuthenticatorHelp.jsx'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -29,6 +30,7 @@ function ResetPassword() {
   const [mfaCode, setMfaCode] = useState('')
   const [mfaError, setMfaError] = useState('')
   const [mfaBusy, setMfaBusy] = useState(false)
+  const [mfaEmail, setMfaEmail] = useState('')
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -89,6 +91,17 @@ function ResetPassword() {
       .catch(() => {})
     return () => { cancelled = true }
   }, [status])
+
+  // the recovery session knows the account email; prefill it in the recovery
+  // mailto so the shop can match the request to an account
+  useEffect(() => {
+    if (!mfaRequired) return
+    let cancelled = false
+    supabase.auth.getSession()
+      .then(({ data }) => { if (!cancelled) setMfaEmail(data?.session?.user?.email || '') })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [mfaRequired])
 
   async function handleVerifyMfa(e) {
     e.preventDefault()
@@ -288,9 +301,7 @@ function ResetPassword() {
             </button>
           </form>
 
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Lost access to your authenticator app? Contact the shop so we can help you recover your account.
-          </p>
+          <LostAuthenticatorHelp email={mfaEmail} />
         </div>
       </div>
     )

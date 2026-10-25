@@ -130,6 +130,9 @@ and similar) from **Profile → Two-factor authentication**.
   → Users → (user) → Factors**; the account can then sign in with its password
   and enroll again.
 - No extra environment variables are needed beyond the existing Supabase keys.
+- Users who lose their device can read the recovery steps on the public
+  `/help/lost-authenticator` page; every MFA challenge links to it and offers
+  the shop's phone/email (from Admin Settings) so the request can be verified.
 
 ## Tests, lint, and build
 
