@@ -33,6 +33,20 @@ describe('sanitizeBanner create', () => {
     assert.equal(sanitizeBanner({ ...base, mobile_image_url: 'https://cdn.x/m.jpg' }).ok, true)
     assert.match(sanitizeBanner({ ...base, desktop_image_url: 'ftp://x/a.jpg' }).error, /site path/)
   })
+
+  test('defaultStatus fills an omitted status without letting the body widen the allowlist', () => {
+    const { status, ...withoutStatus } = base
+    const r = sanitizeBanner(withoutStatus, { defaultStatus: 'draft' })
+    assert.equal(r.ok, true)
+    assert.equal(r.values.status, 'draft')
+    assert.deepEqual(Object.keys(r.values).sort(), [
+      'alt', 'button_text', 'desktop_image_url', 'ends_at', 'link_target', 'link_type',
+      'mobile_image_url', 'placement', 'starts_at', 'status', 'subtitle', 'title',
+    ])
+    assert.equal(sanitizeBanner({ ...withoutStatus, status: 'published' }, { defaultStatus: 'draft' }).values.status, 'published')
+    assert.equal(sanitizeBanner({ ...withoutStatus, status: undefined }, { defaultStatus: 'draft' }).values.status, 'draft')
+    assert.match(sanitizeBanner({ ...withoutStatus, status: 'live' }, { defaultStatus: 'draft' }).error, /Status/)
+  })
 })
 
 describe('sanitizeBanner links', () => {

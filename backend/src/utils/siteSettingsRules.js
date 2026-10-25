@@ -274,13 +274,15 @@ export function sanitizeFaq(input = {}) {
   return { ok: true, values }
 }
 
-export function sanitizePolicy(input = {}) {
+// fallbackSlug lets a PATCH keep the stored slug when the body omits it
+// without merging request input into a copy of the row
+export function sanitizePolicy(input = {}, { fallbackSlug = null } = {}) {
   const title = optionalText(input.title, 120)
   if (!title.ok) return { ok: false, error: `Title: ${title.error}` }
   if (!title.value) return { ok: false, error: 'Title is required' }
   const body = optionalText(input.body, 20_000)
   if (!body.ok) return { ok: false, error: `Body: ${body.error}` }
-  const slug = optionalText(input.slug, 80)
+  const slug = optionalText(input.slug ?? fallbackSlug, 80)
   if (!slug.ok) return { ok: false, error: `Slug: ${slug.error}` }
   // a slug becomes the URL (/policies/your-slug); derive it from the title
   // when blank, and only allow URL-safe characters

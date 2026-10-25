@@ -71,4 +71,20 @@ describe('sanitizeSection partial', () => {
     assert.deepEqual(r.values.config, { rule: 'brand:Aozi' })
     assert.match(sanitizeSection({ config: { rule: 'brand', name: 'Aozi' } }, { partial: true }).error, /type is required/)
   })
+
+  test('baseType supplies the stored type without merging it into the request body', () => {
+    const r = sanitizeSection({ config: { rule: 'brand', name: 'Aozi' } }, { partial: true, baseType: 'product_row' })
+    assert.equal(r.ok, true)
+    assert.deepEqual(r.values, { config: { rule: 'brand:Aozi' } })
+    // an explicit body type still wins, and an invalid one is rejected
+    assert.equal(sanitizeSection({ type: 'text_block', config: {} }, { partial: true, baseType: 'product_row' }).values.type, 'text_block')
+    assert.match(sanitizeSection({ type: 'hero' }, { partial: true, baseType: 'product_row' }).error, /Type must be/)
+  })
+
+  test('defaultStatus applies only when the body omits status', () => {
+    const { status, ...withoutStatus } = base
+    assert.equal(sanitizeSection(withoutStatus, { defaultStatus: 'draft' }).values.status, 'draft')
+    assert.equal(sanitizeSection({ ...withoutStatus, status: 'published' }, { defaultStatus: 'draft' }).values.status, 'published')
+    assert.match(sanitizeSection({ ...withoutStatus, status: 'live' }, { defaultStatus: 'draft' }).error, /Status/)
+  })
 })

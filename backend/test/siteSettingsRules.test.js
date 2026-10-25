@@ -8,6 +8,7 @@ import {
   publicSettings,
   enabledPaymentMethods,
   summarizePaymentMethods,
+  sanitizePolicy,
 } from '../src/utils/siteSettingsRules.js'
 
 describe('siteSettingsRules: sanitizeSettings', () => {
@@ -138,5 +139,30 @@ describe('siteSettingsRules: summarizePaymentMethods', () => {
       { id: 'paymaya', label: 'PayMaya', qr_url: null, enabled: true, instructions: '' },
     ]
     assert.equal(summarizePaymentMethods(JSON.stringify(before), JSON.stringify(after)), 'GCash: QR image added')
+  })
+})
+
+describe('siteSettingsRules: sanitizePolicy', () => {
+  test('derive the slug from the title when omitted', () => {
+    const r = sanitizePolicy({ title: 'Shipping & Returns!' })
+    assert.equal(r.ok, true)
+    assert.equal(r.values.slug, 'shipping-returns')
+  })
+
+  test('fallbackSlug keeps the stored slug when the patch omits one', () => {
+    const r = sanitizePolicy({ title: 'Shipping & Returns' }, { fallbackSlug: 'old-slug' })
+    assert.equal(r.ok, true)
+    assert.equal(r.values.slug, 'old-slug')
+  })
+
+  test('an explicit blank slug re-derives from the title instead of the fallback', () => {
+    const r = sanitizePolicy({ title: 'Fresh Policy', slug: '' }, { fallbackSlug: 'old-slug' })
+    assert.equal(r.values.slug, 'fresh-policy')
+  })
+
+  test('unknown fields are ignored', () => {
+    const r = sanitizePolicy({ title: 'Privacy', body: 'text', is_visible: true, role: 'admin' })
+    assert.deepEqual(Object.keys(r.values).sort(), ['body', 'is_visible', 'slug', 'title'])
+    assert.equal(r.values.role, undefined)
   })
 })

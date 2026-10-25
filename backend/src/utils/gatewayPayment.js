@@ -239,8 +239,12 @@ export async function settleGatewayPayment({
     }
   }
 
-  const firstClaim = await markPaid(gatewayRef)
-  const payload = await loadReceiptPayload(orderId)
+  // independent: claiming the payment writes status/paid_at, while the receipt
+  // payload only reads order lines, totals and the method/amount columns
+  const [firstClaim, payload] = await Promise.all([
+    markPaid(gatewayRef),
+    loadReceiptPayload(orderId),
+  ])
   const productIds = payload ? payload.items.map((i) => i.prod_id).filter(Boolean) : []
 
   let receiptEmailed = false

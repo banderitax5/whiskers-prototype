@@ -1545,6 +1545,18 @@ async function isSafeUrl(urlStr) {
   return addresses.length > 0 && addresses.every((addr) => !isPrivateIp(addr))
 }
 
+// multer writes every upload into TEMP_DIR with a generated name. Resolve the
+// stored file from that fixed base instead of handing req.file.path straight
+// to fs: basename-only + a base-prefix check means a tampered path can never
+// escape the upload directory.
+function tempUploadFile(file) {
+  const raw = String(file?.filename || '')
+  const name = path.basename(raw)
+  if (!raw || name !== raw) return null
+  const resolved = path.resolve(TEMP_DIR, name)
+  return resolved.startsWith(TEMP_DIR + path.sep) ? resolved : null
+}
+
 // maps multer errors (oversized file, too many fields) to clean 4xx responses
 // instead of letting express's default handler turn them into 500s
 function runUpload(req, res, next) {
@@ -1564,12 +1576,13 @@ function runUpload(req, res, next) {
 // POST /api/admin/images/upload
 // Accepts multipart file (field: "image") OR JSON { imageUrl }
 router.post('/images/upload', runUpload, async (req, res) => {
-  let tempPath = req.file?.path
+  let tempPath = req.file ? tempUploadFile(req.file) : null
   try {
     let fileBuffer
 
     if (req.file) {
-      fileBuffer = await sharp(req.file.path)
+      if (!tempPath) return res.status(400).json({ error: 'Invalid upload' })
+      fileBuffer = await sharp(tempPath)
         .resize({ width: 1200, withoutEnlargement: true })
         .jpeg({ quality: 80 })
         .toBuffer()
@@ -1687,14 +1700,14 @@ async function fetchUsageRefs() {
 }
 
 // re-encode like the product image pipeline; returns the buffer plus the
-// metadata the media library shows (dimensions, final size)
+// metadata the media library shows (dimensions, final size). Each operation
+// gets its own sharp pipeline because sharp instances are stateful - sharing
+// one between metadata() and resize() would make the concurrent reads race.
 async function processMedia(buffer) {
-  const image = sharp(buffer)
-  const meta = await image.metadata()
-  const out = await image
-    .resize({ width: 1200, withoutEnlargement: true })
-    .jpeg({ quality: 80 })
-    .toBuffer()
+  const [meta, out] = await Promise.all([
+    sharp(buffer).metadata(),
+    sharp(buffer).resize({ width: 1200, withoutEnlargement: true }).jpeg({ quality: 80 }).toBuffer(),
+  ])
   return { buffer: out, width: meta.width ?? null, height: meta.height ?? null }
 }
 
@@ -1731,14 +1744,15 @@ router.get('/media', requireAdmin, async (req, res) => {
 // Alt text is checked BEFORE the upload so a missing alt never leaves an
 // orphan file in the bucket.
 router.post('/media', requireAdmin, runUpload, async (req, res) => {
-  let tempPath = req.file?.path
+  let tempPath = req.file ? tempUploadFile(req.file) : null
   try {
     const alt = sanitizeAltText(req.body?.altText)
     if (!alt.ok) return res.status(400).json({ error: alt.error })
 
     let source
     if (req.file) {
-      source = { buffer: await fs.promises.readFile(req.file.path), mimeType: req.file.mimetype }
+      if (!tempPath) return res.status(400).json({ error: 'Invalid upload' })
+      source = { buffer: await fs.promises.readFile(tempPath), mimeType: req.file.mimetype }
     } else if (req.body?.imageUrl) {
       if (!(await isSafeUrl(req.body.imageUrl))) {
         return res.status(400).json({ error: 'URL is not allowed (private/internal addresses are blocked)' })
@@ -1929,7 +1943,7 @@ router.get('/banners', requireAdmin, async (req, res) => {
 // POST /api/admin/banners — new banners start as drafts unless told otherwise
 router.post('/banners', requireAdmin, async (req, res) => {
   try {
-    const clean = sanitizeBanner({ status: 'draft', ...req.body })
+    const clean = sanitizeBanner(req.body, { defaultStatus: 'draft' })
     if (!clean.ok) return res.status(400).json({ error: clean.error })
     const { data: last } = await supabaseAdmin
       .from('site_banners')
@@ -2087,7 +2101,7 @@ router.get('/sections', requireAdmin, async (req, res) => {
 // POST /api/admin/sections — defaults to draft
 router.post('/sections', requireAdmin, async (req, res) => {
   try {
-    const clean = sanitizeSection({ status: 'draft', ...req.body })
+    const clean = sanitizeSection(req.body, { defaultStatus: 'draft' })
     if (!clean.ok) return res.status(400).json({ error: clean.error })
     const { data: last } = await supabaseAdmin
       .from('site_home_sections')
@@ -2118,7 +2132,7 @@ router.patch('/sections/:id', requireAdmin, async (req, res) => {
     const { data: before } = await supabaseAdmin.from('site_home_sections').select(SECTION_COLUMNS).eq('id', req.params.id).single()
     if (!before || before.archived_at) return res.status(404).json({ error: 'Section not found' })
     // config validation needs the effective type; callers may omit it on patches
-    const clean = sanitizeSection({ type: before.type, ...req.body }, { partial: true })
+    const clean = sanitizeSection(req.body, { partial: true, baseType: before.type })
     if (!clean.ok) return res.status(400).json({ error: clean.error })
     const { data, error } = await supabaseAdmin
       .from('site_home_sections')
@@ -2884,7 +2898,7 @@ router.patch('/policies/:id', requireAdmin, async (req, res) => {
   try {
     const { data: before } = await supabaseAdmin.from('site_policies').select(POLICY_COLUMNS).eq('id', req.params.id).single()
     if (!before || before.archived_at) return res.status(404).json({ error: 'Policy not found' })
-    const clean = sanitizePolicy({ ...req.body, slug: req.body?.slug ?? before.slug })
+    const clean = sanitizePolicy(req.body, { fallbackSlug: before.slug })
     if (!clean.ok) return res.status(400).json({ error: clean.error })
     if (clean.values.slug !== before.slug) {
       const { data: clash } = await supabaseAdmin.from('site_policies').select('id').eq('slug', clean.values.slug).maybeSingle()

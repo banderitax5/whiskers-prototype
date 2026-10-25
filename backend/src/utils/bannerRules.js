@@ -39,7 +39,7 @@ function scheduleValue(value, field) {
   return { ok: true, value: d.toISOString() }
 }
 
-export function sanitizeBanner(input = {}, { partial = false } = {}) {
+export function sanitizeBanner(input = {}, { partial = false, defaultStatus = null } = {}) {
   const out = {}
   const fail = (error) => ({ ok: false, error })
 
@@ -73,8 +73,9 @@ export function sanitizeBanner(input = {}, { partial = false } = {}) {
   }
 
   if (!partial || input.status !== undefined) {
-    if (!['draft', 'published', 'scheduled'].includes(input.status)) return fail('Status must be draft, published or scheduled')
-    out.status = input.status
+    const status = input.status ?? defaultStatus
+    if (!['draft', 'published', 'scheduled'].includes(status)) return fail('Status must be draft, published or scheduled')
+    out.status = status
   }
   const starts = scheduleValue(input.starts_at, 'Starts at')
   if (!starts.ok) return fail(starts.error)

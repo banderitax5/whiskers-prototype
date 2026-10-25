@@ -44,7 +44,7 @@ export function sanitizeRowConfig(config = {}) {
   return { ok: true, value: { rule: 'newest' } }
 }
 
-export function sanitizeSection(input = {}, { partial = false } = {}) {
+export function sanitizeSection(input = {}, { partial = false, defaultStatus = null, baseType = null } = {}) {
   const fail = (error) => ({ ok: false, error })
   const out = {}
 
@@ -63,8 +63,9 @@ export function sanitizeSection(input = {}, { partial = false } = {}) {
   }
 
   if (!partial || input.status !== undefined) {
-    if (!['draft', 'published', 'scheduled'].includes(input.status)) return fail('Status must be draft, published or scheduled')
-    out.status = input.status
+    const status = input.status ?? defaultStatus
+    if (!['draft', 'published', 'scheduled'].includes(status)) return fail('Status must be draft, published or scheduled')
+    out.status = status
   }
   const starts = scheduleValue(input.starts_at, 'Starts at')
   if (!starts.ok) return fail(starts.error)
@@ -80,10 +81,10 @@ export function sanitizeSection(input = {}, { partial = false } = {}) {
   }
 
   if (!partial || input.config !== undefined) {
-    const rowType = out.type ?? input.type
+    const rowType = out.type ?? baseType
     if (!rowType) {
-      // a config patch must know the effective type (the route merges in the
-      // stored type); guessing would silently clobber the config
+      // a config patch must know the effective type (the route passes the
+      // stored type as baseType); guessing would silently clobber the config
       return fail('type is required to validate config')
     }
     if (rowType === 'product_row') {
