@@ -50,7 +50,7 @@ export function AdminPage({ title, subtitle, children }) {
   );
 }
 
-export function StatCard({ label, value, loading }) {
+export function StatCard({ label, value, loading, hint, valueClass = '' }) {
   return (
     <div className={`${SURFACE} ${BORDER} p-3 sm:p-5 rounded-xl shadow-sm`}>
       <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-slate-400">
@@ -59,8 +59,11 @@ export function StatCard({ label, value, loading }) {
       {loading ? (
         <div className={`${PULSE} h-6 sm:h-8 lg:h-9 w-16 mt-0.5 sm:mt-1`} aria-hidden="true" />
       ) : (
-        <h2 className="text-lg sm:text-2xl lg:text-3xl font-black mt-0.5 sm:mt-1 text-[#0b2e59] dark:text-yellow-200 leading-tight">{value}</h2>
+        <h2 className={`text-lg sm:text-2xl lg:text-3xl font-black mt-0.5 sm:mt-1 leading-tight ${valueClass || 'text-[#0b2e59] dark:text-yellow-200'}`}>{value}</h2>
       )}
+      {!loading && hint ? (
+        <p className="mt-1 text-[10px] sm:text-xs text-gray-500 dark:text-slate-400">{hint}</p>
+      ) : null}
     </div>
   );
 }

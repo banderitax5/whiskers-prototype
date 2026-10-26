@@ -10,7 +10,16 @@ import { URL } from 'url'
 import { supabaseAdmin, supabaseAuth } from '../config/supabase.js'
 import { authMiddleware, requireAdmin, requireStaff, requireStepUp } from '../middleware/auth.js'
 import { decryptText } from '../utils/encryption.js'
-import { PERIODS, windowDays, bucketPayments } from '../utils/salesBuckets.js'
+import { PERIODS, windowDays, bucketPayments, windowStart, previousWindowStart } from '../utils/salesBuckets.js'
+import {
+  manilaDayKey,
+  buildTraffic,
+  buildFunnel,
+  buildDailyViews,
+  buildTopPages,
+  buildTopSearches,
+  summarizeOrderCosting,
+} from '../utils/analyticsAggregates.js'
 import { sanitizeDetails } from '../utils/productDetails.js'
 import { sanitizeProductCreate, sanitizeProductPatch, parseProductListQuery, escapeLike } from '../utils/adminInput.js'
 import { toCsv } from '../utils/csv.js'
@@ -138,9 +147,11 @@ async function notifyCustomer(userId, send, what) {
 // migration has been applied; falls back to the legacy capped path otherwise
 router.get('/stats', requireAdmin, async (req, res) => {
   try {
+    let base
+
     const { data: stats, error: rpcErr } = await supabaseAdmin.rpc('admin_stats')
     if (!rpcErr && stats && typeof stats === 'object') {
-      return res.json({
+      base = {
         totalUsers: Number(stats.totalUsers || 0),
         totalProducts: Number(stats.totalProducts || 0),
         totalOrders: Number(stats.totalOrders || 0),
@@ -148,35 +159,65 @@ router.get('/stats', requireAdmin, async (req, res) => {
         totalSales: Number(stats.totalSales || 0),
         totalProfit: Number(stats.totalProfit || 0),
         totalRevenue: Number(stats.totalRevenue || 0),
-      })
-    }
-    if (rpcErr) {
-      logger.warn({ err: rpcErr }, 'admin_stats() unavailable, falling back to row scans')
+      }
+    } else {
+      if (rpcErr) {
+        logger.warn({ err: rpcErr }, 'admin_stats() unavailable, falling back to row scans')
+      }
+
+      const [usersHead, productsHead, ordersHead, pendingHead, salesData, paymentData, ordersRes] = await Promise.all([
+        supabaseAdmin.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'user'),
+        supabaseAdmin.from('product').select('*', { count: 'exact', head: true }),
+        supabaseAdmin.from('orders').select('*', { count: 'exact', head: true }),
+        supabaseAdmin.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'Pending'),
+        supabaseAdmin.from('sales').select('total_amount, profit'),
+        supabaseAdmin.from('payment').select('amount'),
+        // sales table only ever gets seeded rows, so Total Sales comes from live orders instead
+        supabaseAdmin.from('orders').select('total_amount').neq('status', 'Cancelled').limit(1000),
+      ])
+
+      const totalSales = (ordersRes.data || []).reduce((s, r) => s + Number(r.total_amount || 0), 0)
+      const totalProfit = (salesData.data || []).reduce((s, r) => s + Number(r.profit || 0), 0)
+      const totalRevenue = (paymentData.data || []).reduce((s, r) => s + Number(r.amount || 0), 0)
+
+      base = {
+        totalUsers: usersHead.count ?? 0,
+        totalProducts: productsHead.count ?? 0,
+        totalOrders: ordersHead.count ?? 0,
+        pendingOrders: pendingHead.count ?? 0,
+        totalSales,
+        totalProfit,
+        totalRevenue,
+      }
     }
 
-    const [usersHead, productsHead, ordersHead, pendingHead, salesData, paymentData, ordersRes] = await Promise.all([
-      supabaseAdmin.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'user'),
-      supabaseAdmin.from('product').select('*', { count: 'exact', head: true }),
-      supabaseAdmin.from('orders').select('*', { count: 'exact', head: true }),
-      supabaseAdmin.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'Pending'),
-      supabaseAdmin.from('sales').select('total_amount, profit'),
-      supabaseAdmin.from('payment').select('amount'),
-      // sales table only ever gets seeded rows, so Total Sales comes from live orders instead
-      supabaseAdmin.from('orders').select('total_amount').neq('status', 'Cancelled').limit(1000),
+    // Operational definitions used by the KPI cards. Cancelled orders are not
+    // sales, and profit comes from the live order line snapshots (the legacy
+    // sales table is seed-only, so it cannot answer this).
+    const [cancelledHead, detailsRes] = await Promise.all([
+      supabaseAdmin.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'Cancelled'),
+      supabaseAdmin
+        .from('order_details')
+        .select('quantity,unit_cost,unit_price,subtotal,discount_amount')
+        .limit(10000),
     ])
 
-    const totalSales = (ordersRes.data || []).reduce((s, r) => s + Number(r.total_amount || 0), 0)
-    const totalProfit = (salesData.data || []).reduce((s, r) => s + Number(r.profit || 0), 0)
-    const totalRevenue = (paymentData.data || []).reduce((s, r) => s + Number(r.amount || 0), 0)
+    if (detailsRes.error) {
+      logger.warn({ err: detailsRes.error }, 'order cost snapshot read failed for dashboard margin')
+    }
+    const costing = summarizeOrderCosting(detailsRes.error ? [] : detailsRes.data)
+    const cancelledOrders = cancelledHead.count ?? 0
+    const activeOrders = Math.max(0, base.totalOrders - cancelledOrders)
 
     res.json({
-      totalUsers: usersHead.count ?? 0,
-      totalProducts: productsHead.count ?? 0,
-      totalOrders: ordersHead.count ?? 0,
-      pendingOrders: pendingHead.count ?? 0,
-      totalSales,
-      totalProfit,
-      totalRevenue,
+      ...base,
+      cancelledOrders,
+      cancellationRate: base.totalOrders ? cancelledOrders / base.totalOrders : 0,
+      avgOrderValue: activeOrders ? base.totalSales / activeOrders : 0,
+      knownCostMargin: costing.margin,
+      costCoverage: costing.coverage,
+      costLines: costing.lines,
+      costKnownLines: costing.knownLines,
     })
   } catch (err) {
     logger.error({ err }, 'Admin stats error')
@@ -184,69 +225,61 @@ router.get('/stats', requireAdmin, async (req, res) => {
   }
 })
 
-// GET /api/admin/analytics - event data for charts
-router.get('/analytics', requireAdmin, async (req, res) => {
-  try {
-    const days = Math.min(90, Math.max(1, parseInt(req.query.days) || 30))
-    const since = new Date(Date.now() - days * 86400000).toISOString()
+const ANALYTICS_PAGE_SIZE = 1000
+const ANALYTICS_MAX_EVENTS = 20000
 
-    const { data: events, error } = await supabaseAdmin
+// PostgREST caps a response at 1000 rows, so a single .limit(5000) silently
+// truncated the 30-day dashboard to the newest 1000 events. Page through the
+// window instead, with a hard cap so a runaway event table cannot stall the
+// admin panel.
+async function fetchAnalyticsEvents(since) {
+  const rows = []
+  let from = 0
+
+  while (rows.length < ANALYTICS_MAX_EVENTS) {
+    const { data, error } = await supabaseAdmin
       .from('events')
       .select('event_type, page, metadata, created_at')
       .gte('created_at', since)
       .order('created_at', { ascending: false })
-      .limit(5000)
+      .range(from, from + ANALYTICS_PAGE_SIZE - 1)
     if (error) throw error
 
-    // traffic by source (utm_source)
-    const sourceCounts = {}
-    for (const e of events || []) {
-      const src = e.metadata?.utm_source || 'direct'
-      sourceCounts[src] = (sourceCounts[src] || 0) + 1
-    }
+    const page = data || []
+    rows.push(...page)
+    if (page.length < ANALYTICS_PAGE_SIZE) return { rows, truncated: false }
+    from += ANALYTICS_PAGE_SIZE
+  }
 
-    // campaign performance (utm_campaign)
-    const campaignCounts = {}
-    for (const e of events || []) {
-      const camp = e.metadata?.utm_campaign || null
-      if (camp) campaignCounts[camp] = (campaignCounts[camp] || 0) + 1
-    }
+  return { rows, truncated: true }
+}
 
-    // conversion funnel
-    const funnel = { page_view: 0, product_view: 0, add_to_cart: 0, checkout_complete: 0 }
-    for (const e of events || []) {
-      if (funnel[e.event_type] !== undefined) funnel[e.event_type]++
-    }
+// GET /api/admin/analytics - event data for charts
+router.get('/analytics', requireAdmin, async (req, res) => {
+  try {
+    const days = Math.min(90, Math.max(1, parseInt(req.query.days) || 30))
+    const now = new Date()
+    // Align the query to the first Manila day shown in the chart, otherwise the
+    // oldest partial day is fetched but has no bucket and silently disappears.
+    const firstDay = manilaDayKey(new Date(now.getTime() - (days - 1) * 86400000))
+    const since = new Date(`${firstDay}T00:00:00+08:00`).toISOString()
+    const { rows, truncated } = await fetchAnalyticsEvents(since)
 
-    // daily page views
-    const dailyViews = {}
-    for (const e of events || []) {
-      if (e.event_type === 'page_view') {
-        const day = e.created_at.slice(0, 10)
-        dailyViews[day] = (dailyViews[day] || 0) + 1
-      }
-    }
-
-    // top searched queries
-    const searchCounts = {}
-    for (const e of events || []) {
-      if (e.event_type === 'search' && e.metadata?.query) {
-        const q = e.metadata.query.toLowerCase()
-        searchCounts[q] = (searchCounts[q] || 0) + 1
-      }
-    }
-    const topSearches = Object.entries(searchCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([query, count]) => ({ query, count }))
+    const currentHost = (req.get('host') || '').split(':')[0]
+    const traffic = buildTraffic(rows, currentHost)
+    const funnel = buildFunnel(rows)
 
     res.json({
-      totalEvents: (events || []).length,
-      sources: Object.entries(sourceCounts).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count })),
-      campaigns: Object.entries(campaignCounts).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count })),
-      funnel,
-      dailyViews: Object.entries(dailyViews).sort((a, b) => a[0].localeCompare(b[0])).map(([date, count]) => ({ date, count })),
-      topSearches,
+      totalEvents: rows.length,
+      truncated,
+      days,
+      sources: traffic.items,
+      sourceMetric: traffic.metric,
+      funnel: funnel.counts,
+      funnelMetric: funnel.metric,
+      dailyViews: buildDailyViews(rows, days, now),
+      topPages: buildTopPages(rows),
+      topSearches: buildTopSearches(rows),
     })
   } catch (err) {
     logger.error({ err }, 'Admin analytics error')
@@ -259,20 +292,31 @@ router.get('/sales-analytics', requireAdmin, async (req, res) => {
   try {
     const period = PERIODS.includes(req.query.period) ? req.query.period : 'daily'
     const days = windowDays(period, parseInt(req.query.days))
-    const since = new Date(Date.now() - days * 86400000).toISOString()
+    const since = windowStart(period).toISOString()
+    const previousSince = previousWindowStart(period).toISOString()
 
     const [ordersRes, paymentsRes] = await Promise.all([
       supabaseAdmin.from('orders')
         .select('order_id, total_amount, status, created_at')
-        .gte('created_at', since)
+        .gte('created_at', previousSince)
         .order('created_at', { ascending: false }),
       supabaseAdmin.from('payment')
         .select('order_id, amount, method, payment_date')
-        .gte('payment_date', since),
+        .gte('payment_date', previousSince),
     ])
 
-    const orders = ordersRes.data || []
-    const payments = paymentsRes.data || []
+    const sinceMs = Date.parse(since)
+    const isCurrent = (value) => {
+      const ms = Date.parse(value)
+      return Number.isFinite(ms) && ms >= sinceMs
+    }
+
+    const allOrders = ordersRes.data || []
+    const allPayments = paymentsRes.data || []
+    const orders = allOrders.filter((order) => isCurrent(order.created_at))
+    const previousOrders = allOrders.filter((order) => !isCurrent(order.created_at))
+    const payments = allPayments.filter((payment) => isCurrent(payment.payment_date))
+    const previousPayments = allPayments.filter((payment) => !isCurrent(payment.payment_date))
 
     // daily revenue (kept for older clients) and the requested period buckets
     const dailyRevenue = bucketPayments(payments, 'daily')
@@ -307,7 +351,9 @@ router.get('/sales-analytics', requireAdmin, async (req, res) => {
       if (topErr) {
         logger.warn({ err: topErr }, 'admin_top_products() unavailable, falling back to order_details scan')
       }
-      const windowOrderIds = orders.map(o => o.order_id)
+      const windowOrderIds = orders
+        .filter((order) => order.status !== 'Cancelled')
+        .map((order) => order.order_id)
       const detailsRes = windowOrderIds.length > 0
         ? await supabaseAdmin.from('order_details')
             .select('prod_id, quantity, subtotal')
@@ -341,10 +387,42 @@ router.get('/sales-analytics', requireAdmin, async (req, res) => {
       statusCounts[s] = (statusCounts[s] || 0) + 1
     }
 
+    const summarizeOrders = (list) => {
+      const totalOrders = list.length
+      const cancelledOrders = list.filter((order) => order.status === 'Cancelled').length
+      const active = list.filter((order) => order.status !== 'Cancelled')
+      const orderValue = active.reduce((sum, order) => sum + Number(order.total_amount || 0), 0)
+      return {
+        totalOrders,
+        cancelledOrders,
+        orderValue: Math.round(orderValue * 100) / 100,
+        avgOrderValue: active.length ? Math.round((orderValue / active.length) * 100) / 100 : 0,
+        cancellationRate: totalOrders ? cancelledOrders / totalOrders : 0,
+      }
+    }
+
+    const current = summarizeOrders(orders)
+    const previous = summarizeOrders(previousOrders)
+    const totalRevenue = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0)
+    const previousRevenue = previousPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0)
+
     res.json({
-      totalRevenue: payments.reduce((s, p) => s + Number(p.amount || 0), 0),
-      totalOrders: orders.length,
+      totalRevenue: Math.round(totalRevenue * 100) / 100,
+      totalOrders: current.totalOrders,
+      orderValue: current.orderValue,
+      avgOrderValue: current.avgOrderValue,
+      cancelledOrders: current.cancelledOrders,
+      cancellationRate: current.cancellationRate,
+      previous: {
+        revenue: Math.round(previousRevenue * 100) / 100,
+        orders: previous.totalOrders,
+        orderValue: previous.orderValue,
+        avgOrderValue: previous.avgOrderValue,
+        cancelledOrders: previous.cancelledOrders,
+        cancellationRate: previous.cancellationRate,
+      },
       period,
+      windowDays: days,
       periodRevenue,
       dailyRevenue,
       methodRevenue: Object.entries(methodRevenue)

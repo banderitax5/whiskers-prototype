@@ -5,9 +5,6 @@ import App from './App.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { ShopProvider } from './context/ShopContext.jsx'
 import { PetsProvider } from './context/PetsContext.jsx'
-import { captureUTM } from './lib/utm'
-
-captureUTM()
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

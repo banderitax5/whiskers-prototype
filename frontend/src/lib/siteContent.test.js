@@ -112,10 +112,10 @@ describe('preview mode (5g)', () => {
   })
 
   test('?scPreview=1 arms preview for the tab and is stripped from the URL', () => {
-    window.history.replaceState({}, '', '/?scPreview=1&utm_source=x')
+    window.history.replaceState({}, '', '/?scPreview=1&keep=x')
     expect(consumePreviewParam()).toBe(true)
     expect(isPreviewMode()).toBe(true)
-    expect(window.location.search).toBe('?utm_source=x')
+    expect(window.location.search).toBe('?keep=x')
     expect(Number(sessionStorage.getItem('scPreviewUntil'))).toBeGreaterThan(Date.now())
   })
 

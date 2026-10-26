@@ -13,7 +13,7 @@ import SkipToContent from './SkipToContent.jsx'
 import RecoveryGate from './RecoveryGate.jsx'
 import AnnouncementBar from './AnnouncementBar.jsx'
 import PromoStrip from './PromoStrip.jsx'
-import { captureUtmParams, trackEvent } from '../lib/appEvents.js'
+import { initAnalyticsSession, trackEvent } from '../lib/appEvents.js'
 import { fetchSiteContent, contentSettings } from '../lib/siteContent.js'
 import supabase from '../lib/supabase'
 
@@ -42,8 +42,8 @@ function Layout() {
   const [maintenance, setMaintenance] = useState(null) // null = not loaded yet
   const [isAdmin, setIsAdmin] = useState(false)
 
-  // capture UTM params once on first load
-  useEffect(() => { captureUtmParams() }, [])
+  // establish the anonymous analytics session once on first load
+  useEffect(() => { initAnalyticsSession() }, [])
 
   // track page views on route change
   useEffect(() => {

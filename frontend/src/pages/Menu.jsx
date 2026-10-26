@@ -6,6 +6,7 @@ import { apiGet } from '../lib/api.js'
 import { attachSizeVariants } from '../lib/productUtils.js'
 import { formatPesos } from '../lib/cartLogic'
 import { fetchSiteContent, applyCategoryOverrides } from '../lib/siteContent'
+import { trackSearch } from '../lib/appEvents'
 
 const PAGE_SIZES = [8, 16, 24, 36]
 const SORT_OPTIONS = [
@@ -71,6 +72,15 @@ function Menu() {
       return { ...prev, search: nextSearch, categories: nextCategories, brands: nextBrands, maxPrice: nextMaxPrice }
     })
   }, [searchParams])
+
+  // Record searches after a short pause so the analytics page can show what
+  // shoppers actually looked for without logging every keystroke.
+  useEffect(() => {
+    const query = filters.search.trim()
+    if (query.length < 2) return undefined
+    const timer = setTimeout(() => trackSearch(query), 900)
+    return () => clearTimeout(timer)
+  }, [filters.search])
 
   // filter state -> URL. Discrete filter changes (category/brand/price) push a
   // history entry so Back/forward restores them; search text replaces so typing

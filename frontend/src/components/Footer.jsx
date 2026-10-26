@@ -27,7 +27,7 @@ function Footer() {
     { id: "about", label: "FAQs", href: "/about" },
   ]
   const socialLinks = contentNav(content, "footer_social") || [
-    { id: "instagram", label: "Instagram", href: "https://www.instagram.com/petcareswhiskers?igsh=aTN5NXN3Mm5nbXV1&utm_source=qr" },
+    { id: "instagram", label: "Instagram", href: "https://www.instagram.com/petcareswhiskers?igsh=aTN5NXN3Mm5nbXV1" },
     { id: "facebook", label: "Facebook", href: "https://facebook.com/profile.php?id=61561539844519" },
   ]
 
