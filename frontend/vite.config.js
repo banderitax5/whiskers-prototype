@@ -31,18 +31,25 @@ export default defineConfig(({ mode }) => {
       react(),
       VitePWA({
         registerType: 'autoUpdate',
+        includeAssets: ['icons/*.png', 'logo/logo-whiskers.png'],
         manifest: {
+          id: '/',
           name: 'Whiskers - Pet Food & Supplies',
           short_name: 'Whiskers',
           description: 'Personalized pet food recommendations based on your pet\'s health profile',
+          lang: 'en',
+          dir: 'ltr',
           start_url: '/',
+          scope: '/',
           display: 'standalone',
+          orientation: 'any',
           background_color: '#ffffff',
           theme_color: '#0b2e59',
           categories: ['shopping', 'pets'],
           icons: [
-            { src: '/logo/logo-whiskers.png', sizes: '192x192', type: 'image/png' },
-            { src: '/logo/logo-whiskers.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+            { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+            { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+            { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
           ],
         },
         // Serve the SPA shell for navigations. It must never be a static
@@ -51,7 +58,20 @@ export default defineConfig(({ mode }) => {
         // full page load (email links, typed URLs, reopen) show "You're offline".
         workbox: {
           navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/api/],
+          navigateFallbackDenylist: [/^\/api\//, /^\/health$/, /^\/sw\.js$/, /^\/registerSW\.js$/],
+          cleanupOutdatedCaches: true,
+          // Precache only the app shell; images are cached lazily after the
+          // first view so the install stays small on mobile connections.
+          runtimeCaching: [
+            {
+              urlPattern: /\.(?:png|jpe?g|webp|gif|svg)(?:\?.*)?$/i,
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'whiskers-images',
+                expiration: { maxEntries: 80, maxAgeSeconds: 30 * 24 * 60 * 60 },
+              },
+            },
+          ],
         },
       }),
       {

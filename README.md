@@ -101,6 +101,24 @@ npm run dev --prefix frontend
 
 Open http://localhost:5173 — the Vite dev server proxies `/api` requests to the backend, so no CORS setup is needed locally.
 
+## Install as an app (PWA)
+
+The app ships a web app manifest, maskable icons, and a Workbox service worker, so it can be installed on desktop and mobile. Installation needs a **production build over HTTPS** (or `http://localhost`), because browsers disable service workers on plain HTTP. The Vite dev server does not register the service worker.
+
+```bash
+# Build once, then serve the PWA locally on http://localhost:4173
+npm run build --prefix frontend
+npm run preview --prefix frontend
+```
+
+How to install:
+
+- **Chrome / Edge / Android Chrome** — use the install icon in the address bar, or the browser menu → *Install Whiskers*.
+- **iOS / iPadOS Safari** — tap *Share* → *Add to Home Screen*. The `apple-touch-icon` and standalone meta tags are already set.
+- **Docker / production** — `docker compose up --build` serves the built SPA through nginx with the service worker and manifest; put it behind HTTPS (Caddy, nginx, or a Cloudflare tunnel) before installing from another device.
+
+The service worker precaches the app shell, answers offline navigations with the SPA, and caches images after their first view. API calls always go to the network so prices, stock, and orders stay live.
+
 ## Demo accounts
 
 Pre-seeded in Supabase for demos and panel review:
