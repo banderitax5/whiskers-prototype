@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import supabase from '../lib/supabase';
 import { apiGetAuth } from '../lib/api';
 import { formatPesos } from '../lib/cartLogic';
@@ -302,10 +302,12 @@ function AdminDashboard() {
   const [analytics, setAnalytics] = useState(null);
   const [sales, setSales] = useState(null);
   const [period, setPeriod] = useState('daily');
+  const [salesLoading, setSalesLoading] = useState(false);
   const [error, setError] = useState(null);
   const [analyticsError, setAnalyticsError] = useState(null);
   const [chartsError, setChartsError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const salesCache = useRef({});
 
   useEffect(() => {
     let cancelled = false;
@@ -338,14 +340,25 @@ function AdminDashboard() {
   useEffect(() => {
     let cancelled = false;
     async function loadSales() {
-      setSales(null);
+      // Keep the chart that is already on screen while the next period loads.
+      // A cached period renders immediately, then refreshes in the background.
+      const cached = salesCache.current[period];
+      if (cached) setSales(cached);
+      setChartsError(null);
+      setSalesLoading(true);
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
         const sl = await apiGetAuth(`/admin/sales-analytics?period=${period}`, session.access_token);
-        if (!cancelled && sl) { setSales(sl); setChartsError(null); }
+        if (!cancelled && sl) {
+          salesCache.current[period] = sl;
+          setSales(sl);
+          setChartsError(null);
+        }
       } catch (err) {
         if (!cancelled) setChartsError(err.message || 'Could not load the sales charts.');
+      } finally {
+        if (!cancelled) setSalesLoading(false);
       }
     }
     loadSales();
@@ -356,10 +369,16 @@ function AdminDashboard() {
     setStats(null);
     setAnalytics(null);
     setSales(null);
+    salesCache.current = {};
     setReloadKey((k) => k + 1);
   }
 
-  const range = PERIOD_OPTIONS.find((option) => option.key === period) || PERIOD_OPTIONS[0];
+  // While a new period is loading, keep the previous chart's labels and totals
+  // until the response arrives. The toggle still shows the newly selected range.
+  const displayPeriod = PERIOD_OPTIONS.some((option) => option.key === sales?.period)
+    ? sales.period
+    : period;
+  const range = PERIOD_OPTIONS.find((option) => option.key === displayPeriod) || PERIOD_OPTIONS[0];
   const kpis = stats
     ? [
         {
@@ -411,7 +430,7 @@ function AdminDashboard() {
     : [];
 
   const revenuePoints = (sales?.periodRevenue || []).map((bucket) => ({
-    label: bucketLabel(bucket.date, period),
+    label: bucketLabel(bucket.date, displayPeriod),
     value: Number(bucket.amount || 0),
   }));
   const viewPoints = (analytics?.dailyViews || []).map((bucket) => ({
@@ -486,14 +505,22 @@ function AdminDashboard() {
             <section className={CARD}>
               <div className={CARD_HEADER}>
                 <div>
-                  <h2 className={CARD_TITLE}>Revenue collected</h2>
+                  <div className="flex items-center gap-2">
+                    <h2 className={CARD_TITLE}>Revenue collected</h2>
+                    {salesLoading ? (
+                      <span role="status" className="inline-flex items-center gap-1.5 whitespace-nowrap text-[10px] font-semibold text-gray-500 dark:text-slate-400">
+                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#0b2e59] dark:bg-yellow-400" aria-hidden="true" />
+                        Updating…
+                      </span>
+                    ) : null}
+                  </div>
                   <p className={CARD_DESC}>
                     {range.range} · {compactPesos(sales.totalRevenue)} total
                   </p>
                 </div>
                 <PeriodToggle period={period} onChange={setPeriod} />
               </div>
-              <div className={CARD_BODY}>
+              <div className={CARD_BODY} aria-busy={salesLoading ? 'true' : undefined}>
                 <AnalyticsAreaChart
                   points={revenuePoints}
                   height={250}
