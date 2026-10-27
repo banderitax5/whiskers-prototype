@@ -196,12 +196,62 @@ export function bulkSummary(action, res, noun = "item") {
 // onDrop(from, to). Transforms keep the DOM order stable (React never fights
 // us) and animate for free through each card's `transition` utility. Row
 // offsets are taken from the list container, not the viewport, so the preview
-// stays correct while the admin page scrolls under the pointer. The ↑↓ buttons
-// stay the accessible path; the grip is aria-hidden.
+// stays correct while the page scrolls under the pointer; holding the pointer
+// near an edge of the scrolling area keeps scrolling it for you (see
+// edgeScrollStep) so a slot that is off screen is still reachable. The ↑↓
+// buttons stay the accessible path; the grip is aria-hidden.
+
+// how close (px) to the edge of the scrolling area the pointer must be for the
+// list to scroll by itself, and the fastest it moves (px per animation frame)
+export const DRAG_SCROLL_EDGE = 56
+export const DRAG_SCROLL_MAX_STEP = 16
+
+// next scroll amount for a pointer at clientY inside a viewport of
+// top..bottom: negative scrolls up, positive scrolls down, 0 means "hold still"
+export function edgeScrollStep(clientY, top, bottom, edge = DRAG_SCROLL_EDGE, maxStep = DRAG_SCROLL_MAX_STEP) {
+  if (!Number.isFinite(clientY) || !Number.isFinite(top) || !Number.isFinite(bottom)) return 0
+  const zone = Math.max(0, Math.min(edge, (bottom - top) / 2))
+  if (zone === 0) return 0
+  if (clientY < top + zone) {
+    const depth = Math.min(1, (top + zone - clientY) / zone)
+    return -Math.max(1, Math.round(depth * maxStep))
+  }
+  if (clientY > bottom - zone) {
+    const depth = Math.min(1, (clientY - (bottom - zone)) / zone)
+    return Math.max(1, Math.round(depth * maxStep))
+  }
+  return 0
+}
+
+// nearest ancestor that can actually scroll vertically (null = the page itself)
+export function findScrollParent(el) {
+  let node = el
+  while (node && node !== document.body && node !== document.documentElement) {
+    const overflowY = window.getComputedStyle(node).overflowY
+    const scrolls = overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay"
+    if (scrolls && node.scrollHeight > node.clientHeight + 1) return node
+    node = node.parentElement
+  }
+  return null
+}
+
+// slot the pointer is over, from the geometry captured at pickup (the container
+// box is re-read so page scrolling never skews it)
+function slotAt(drag, clientY) {
+  if (!drag || !drag.heights.length) return 0
+  const base = drag.container ? drag.container.getBoundingClientRect().top : 0
+  for (let i = 0; i < drag.heights.length; i += 1) {
+    if (clientY < base + drag.offsets[i] + drag.heights[i] / 2) return i
+  }
+  // last row by default
+  return drag.heights.length - 1
+}
+
 export function useReorderDrag(onDrop) {
-  const [drag, setDrag] = useState(null) // { from, over, container, offsets, heights, steps }
+  const [drag, setDrag] = useState(null) // { from, over, container, scroller, offsets, heights, steps }
   const dragRef = useRef(null)
   const dropRef = useRef(onDrop)
+  const pointerRef = useRef({ x: 0, y: 0 })
   const suppressClick = useRef(false)
 
   useEffect(() => { dropRef.current = onDrop }, [onDrop])
@@ -226,15 +276,10 @@ export function useReorderDrag(onDrop) {
   useEffect(() => {
     if (!active) return undefined
     const move = (e) => {
+      pointerRef.current = { x: e.clientX, y: e.clientY }
       const d = dragRef.current
       if (!d || !d.heights.length) return
-      // measured against the live container box so scrolling cannot skew it
-      const base = d.container ? d.container.getBoundingClientRect().top : 0
-      // last row by default, else the first row whose middle is below the pointer
-      let over = d.heights.length - 1
-      for (let i = 0; i < d.heights.length; i += 1) {
-        if (e.clientY < base + d.offsets[i] + d.heights[i] / 2) { over = i; break }
-      }
+      const over = slotAt(d, e.clientY)
       if (over !== d.over) publish({ ...d, over })
     }
     const up = () => finish(true)
@@ -248,6 +293,38 @@ export function useReorderDrag(onDrop) {
       window.removeEventListener("pointercancel", cancel)
     }
   }, [active, publish, finish])
+
+  // hold the pointer near an edge and the list keeps scrolling, so a slot that
+  // is currently off screen can still be reached; the target slot is recomputed
+  // on every scrolled frame because scrolling moves the rows under a pointer
+  // that is standing still
+  useEffect(() => {
+    if (!active || typeof requestAnimationFrame !== "function") return undefined
+    let frame = 0
+    const tick = () => {
+      const d = dragRef.current
+      if (!d) return
+      const { y } = pointerRef.current
+      const scroller = d.scroller
+      const box = scroller
+        ? scroller.getBoundingClientRect()
+        : { top: 0, bottom: window.innerHeight || 0 }
+      const step = edgeScrollStep(y, box.top, box.bottom)
+      if (step !== 0) {
+        const before = scroller ? scroller.scrollTop : window.scrollY
+        if (scroller) scroller.scrollTop = before + step
+        else window.scrollBy(0, step)
+        const after = scroller ? scroller.scrollTop : window.scrollY
+        if (after !== before) {
+          const over = slotAt(d, y)
+          if (over !== d.over) publish({ ...d, over })
+        }
+      }
+      frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [active, publish])
 
   // no text selection / text caret while a row is being carried
   useEffect(() => {
@@ -265,6 +342,7 @@ export function useReorderDrag(onDrop) {
   const handleProps = (index) => ({
     onPointerDown: (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return
+      pointerRef.current = { x: e.clientX, y: e.clientY }
       const rowEl = e.currentTarget && e.currentTarget.closest ? e.currentTarget.closest("[data-sort-index]") : null
       const container = rowEl && rowEl.parentElement
       const rows = container
@@ -280,6 +358,7 @@ export function useReorderDrag(onDrop) {
         from: index,
         over: index,
         container,
+        scroller: findScrollParent(container),
         offsets: rects.map((r) => r.top - containerTop),
         heights,
         steps: heights.map((h) => h + gap),

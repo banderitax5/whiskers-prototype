@@ -10,6 +10,8 @@ import {
   bulkApply,
   bulkSummary,
   useReorderDrag,
+  edgeScrollStep,
+  findScrollParent,
   SelectionBar,
   SelectAllRow,
 } from './adminBulk.jsx'
@@ -62,9 +64,9 @@ function LPProbe({ onFire }) {
   )
 }
 
-function DragProbe({ onDrop, rows = 2 }) {
+function DragProbe({ onDrop, rows = 2, scroller = false }) {
   const drag = useReorderDrag(onDrop)
-  return (
+  const list = (
     <div>
       {Array.from({ length: rows }, (_, i) => (
         <div
@@ -79,6 +81,8 @@ function DragProbe({ onDrop, rows = 2 }) {
       ))}
     </div>
   )
+  if (!scroller) return list
+  return <div data-testid="scroller" style={{ overflowY: "auto" }}>{list}</div>
 }
 
 // jsdom reports every rect as 0x0 - give the probe real stacked geometry so the
@@ -292,6 +296,106 @@ describe('useReorderDrag', () => {
       await pointerUp()
       expect(onDrop).toHaveBeenCalledWith(2, 0)
     } finally { restore() }
+  })
+})
+
+describe('edgeScrollStep', () => {
+  it('holds still in the middle and ramps up toward the edges', () => {
+    expect(edgeScrollStep(100, 0, 200)).toBe(0)
+    expect(edgeScrollStep(56, 0, 200)).toBe(0) // just outside the 56px top zone
+    expect(edgeScrollStep(0, 0, 200)).toBe(-16) // pinned at the very top
+    expect(edgeScrollStep(200, 0, 200)).toBe(16) // pinned at the very bottom
+    expect(edgeScrollStep(150, 0, 200)).toBe(2) // 6px into the bottom zone
+    expect(edgeScrollStep(195, 0, 200)).toBe(15)
+  })
+
+  it('never exceeds the edge zone of a short viewport and ignores garbage input', () => {
+    // a 60px tall viewport: the zone shrinks to half its height (30px)
+    expect(edgeScrollStep(10, 0, 60)).toBe(-11)
+    expect(edgeScrollStep(30, 0, 60)).toBe(0)
+    expect(edgeScrollStep(Number.NaN, 0, 200)).toBe(0)
+    expect(edgeScrollStep(50, 0, 0)).toBe(0)
+  })
+})
+
+describe('findScrollParent', () => {
+  it('returns the nearest ancestor that can actually scroll', () => {
+    const outer = document.createElement('div')
+    outer.style.overflowY = 'auto'
+    const middle = document.createElement('div')
+    const inner = document.createElement('div')
+    outer.appendChild(middle)
+    middle.appendChild(inner)
+    document.body.appendChild(outer)
+    Object.defineProperty(outer, 'scrollHeight', { value: 800, configurable: true })
+    Object.defineProperty(outer, 'clientHeight', { value: 300, configurable: true })
+
+    expect(findScrollParent(inner)).toBe(outer)
+    expect(findScrollParent(document.body)).toBeNull() // nothing scrollable above it
+
+    // overflow declared but the content fits: not a scroller
+    Object.defineProperty(outer, 'scrollHeight', { value: 300, configurable: true })
+    expect(findScrollParent(inner)).toBeNull()
+    outer.remove()
+  })
+})
+
+describe('useReorderDrag auto-scroll', () => {
+  function stubScroller(c) {
+    const scroller = c.querySelector('[data-testid="scroller"]')
+    Object.defineProperty(scroller, 'scrollHeight', { value: 900, configurable: true })
+    Object.defineProperty(scroller, 'clientHeight', { value: 200, configurable: true })
+    scroller.getBoundingClientRect = () => ({ top: 0, bottom: 200, height: 200, left: 0, right: 300, width: 300, x: 0, y: 0, toJSON() {} })
+    return scroller
+  }
+
+  function stubFrames() {
+    const frames = []
+    const raf = window.requestAnimationFrame
+    const cancel = window.cancelAnimationFrame
+    window.requestAnimationFrame = (cb) => { frames.push(cb); return frames.length }
+    window.cancelAnimationFrame = () => {}
+    return {
+      frames,
+      restore: () => { window.requestAnimationFrame = raf; window.cancelAnimationFrame = cancel },
+    }
+  }
+
+  it('scrolls the list and re-targets the slot while the pointer sits at the edge', async () => {
+    const onDrop = vi.fn()
+    const { frames, restore: restoreFrames } = stubFrames()
+    const c = await mount(<DragProbe onDrop={onDrop} rows={6} scroller />)
+    const restoreGeometry = stubGeometry(c)
+    const scroller = stubScroller(c)
+    try {
+      await pointerDown(c.querySelector('[data-testid="h0"]'), { y: 195 }) // bottom zone
+      expect(scroller.scrollTop).toBe(0)
+
+      await act(async () => { frames.shift()() })
+      expect(scroller.scrollTop).toBeGreaterThan(0)
+
+      // the rows moved under a stationary pointer, so the target slot advanced
+      expect(c.querySelector('[data-testid="r0"]').style.transform).toBe('translateY(224px)')
+    } finally {
+      restoreFrames()
+      restoreGeometry()
+    }
+  })
+
+  it('stays put while the pointer is away from the edges', async () => {
+    const onDrop = vi.fn()
+    const { frames, restore: restoreFrames } = stubFrames()
+    const c = await mount(<DragProbe onDrop={onDrop} rows={6} scroller />)
+    const restoreGeometry = stubGeometry(c)
+    const scroller = stubScroller(c)
+    try {
+      await pointerDown(c.querySelector('[data-testid="h0"]'), { y: 100 }) // middle
+      await act(async () => { frames.shift()() })
+      expect(scroller.scrollTop).toBe(0)
+    } finally {
+      restoreFrames()
+      restoreGeometry()
+    }
   })
 })
 
