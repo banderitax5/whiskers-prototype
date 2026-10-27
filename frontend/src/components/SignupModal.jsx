@@ -47,6 +47,24 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
     }
   }, [])
 
+  // This dialog is mounted for the whole session, so typed values survive a
+  // close unless they are cleared here - and a shared browser would then show
+  // the previous person's name, email and password to the next one.
+  useEffect(() => {
+    if (!isOpen) {
+      setFirstName('')
+      setLastName('')
+      setEmail('')
+      setPassword('')
+      setConfirmPassword('')
+      setShowPassword(false)
+      setError('')
+      setNotice('')
+      setFieldErrors({})
+      setLoading(false)
+    }
+  }, [isOpen])
+
   useEffect(() => {
     if (!isOpen) return undefined
     setNotice('')
@@ -172,9 +190,10 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close"
             className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
