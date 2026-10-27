@@ -27,6 +27,11 @@ whiskerspet.me, www.whiskerspet.me {
 	@html path / /index.html /offline.html
 	header @html Cache-Control "no-cache"
 
+	# /login is not a client-side route (sign-in is a modal) and the folder of
+	# that name only holds the modal's artwork. Send the URL shoppers type by
+	# hand to the home page. Kept in sync with the nginx `location = /login`.
+	redir /login / 302
+
 	# The API and its health check go straight to the Node process.
 	#
 	# Deliberately no `header` directives in these two handlers: the API answers

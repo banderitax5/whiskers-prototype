@@ -174,5 +174,22 @@ if (!hasConfigs) {
       assert.match(nginx.text, /add_header X-Frame-Options "DENY" always;/)
       assert.equal(directive(caddy.policy, 'frame-ancestors'), "'none'")
     })
+
+    test('static folders never shadow a client-side route', () => {
+      // frontend/public/login/ holds the sign-in modal's artwork, and /login is
+      // a URL shoppers type by hand. `try_files $uri $uri/ /index.html` made
+      // nginx match that folder, emit "301 http://<host>:5173/login/" (internal
+      // container port, plain http) and then answer 403 because the directory
+      // has no index file. Only real files may match the fallback, and any
+      // redirect nginx does emit must stay relative.
+      assert.ok(
+        !/\$uri\s+\$uri\//.test(nginx.text),
+        'the SPA fallback must not test $uri/ - a public folder can shadow a route'
+      )
+      assert.match(nginx.text, /try_files \$uri \/index\.html;/)
+      assert.match(nginx.text, /absolute_redirect off;/)
+      assert.match(nginx.text, /location = \/login \{\s*return 302 \/;/)
+      assert.match(caddy.text, /redir \/login \/ 302/)
+    })
   })
 }
