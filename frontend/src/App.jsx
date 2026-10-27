@@ -257,15 +257,6 @@ function FoodBowlLoader() {
       </svg>
 
       <p className="text-sm font-medium text-gray-400 dark:text-gray-500 animate-pulse">Filling the bowl...</p>
-
-      <style>{`
-        @keyframes drop {
-          0% { transform: translateY(-20px); opacity: 0; }
-          10% { opacity: 1; }
-          90% { opacity: 1; }
-          100% { transform: translateY(85px); opacity: 0; }
-        }
-      `}</style>
     </div>
   )
 }

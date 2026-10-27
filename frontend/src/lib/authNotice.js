@@ -1,6 +1,6 @@
 // Tiny emitter for the big top-center auth confirmation banner. Kept separate
-// from react-hot-toast because that Toaster is fixed to the bottom-right and
-// renders every toast at one global position.
+// from the bottom-right toast stack (lib/toast.js) because that one renders
+// every toast at one global position.
 const listeners = new Set()
 
 export function notifyAuth({ title, body }) {

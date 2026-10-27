@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { BsEye, BsEyeSlash } from 'react-icons/bs'
-import toast from 'react-hot-toast'
+import toast from '../lib/toast.js'
 import supabase, { hadRecoveryMarker, RECOVERY_PENDING_KEY } from '../lib/supabase'
 import { notifyAuth } from '../lib/authNotice'
 import { passwordError } from '../lib/passwordRules'

@@ -7,7 +7,7 @@ import { formatMargin } from '../lib/adminCosting';
 import { AdminPage, AdminTable, AdminRowDropdown, EmptyState, StatCard, StatusPill, ConfirmDialog } from './adminTheme';
 import { BsBoxSeam, BsSearch, BsTrash, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 import { useRole } from '../context/RoleContext';
-import toast from 'react-hot-toast';
+import toast from '../lib/toast.js';
 
 const STATUS_KIND = {
   Pending: 'progress',

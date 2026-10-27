@@ -11,7 +11,7 @@ import { canSeeCosts, canManageProductLifecycle, canEditPrice } from '../lib/per
 import { fetchSiteContent, contentSettings } from '../lib/siteContent.js';
 import { useSelection, RowCheckBox, SelectionBar, SelectAllRow, LongPressBox, bulkApply, bulkSummary, barBtnPlain, barBtnAccent, barBtnDanger } from './adminBulk';
 import { BsBoxSeam, BsPlusLg, BsDashLg, BsPencilSquare, BsTrash, BsUpload, BsSearch, BsExclamationTriangle, BsArrowClockwise, BsArchive, BsArrowCounterclockwise, BsClockHistory, BsFiles, BsDownload, BsQuestionCircle } from 'react-icons/bs';
-import toast from 'react-hot-toast';
+import toast from '../lib/toast.js';
 
 // form-field label style shared by the desktop and mobile product forms -
 // placeholders alone vanish once a field has a value, which made the filled

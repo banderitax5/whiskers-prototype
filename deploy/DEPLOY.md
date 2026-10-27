@@ -268,7 +268,7 @@ Content-Security-Policy is duplicated verbatim in `frontend/nginx.conf` (the
 Docker path) and, minus one dev-only relaxation, in `frontend/vite.config.js`;
 `backend/test/securityHeaders.test.js` fails the build if the copies drift.
 
-Three things to know before editing it:
+Four things to know before editing it:
 
 1. **`script-src` stays `'self'`.** The built bundle has no inline scripts.
    The two extra hosts in `script-src`/`connect-src` are Cloudflare's Web
@@ -276,10 +276,16 @@ Three things to know before editing it:
    Analytics off in the Cloudflare dashboard, delete both entries. **Rocket
    Loader must stay off** — it rewrites the bundle into inline scripts, which
    this policy blocks.
-2. **Images are limited to this site, Supabase Storage, and `data:`/`blob:`
+2. **`style-src` stays `'self'`; inline style *attributes* are allowed by
+   `style-src-attr`.** React sizes chart/progress bars with `style` attributes,
+   and those keep working. Injecting a `<style>` element is blocked. If a new
+   dependency ships a CSS-in-JS runtime (react-hot-toast's goober did), the
+   OWASP scan reports "CSP: style-src unsafe-inline" again — replace that
+   dependency instead of adding `'unsafe-inline'` back.
+3. **Images are limited to this site, Supabase Storage, and `data:`/`blob:`
    previews.** An admin who pastes an image URL from another host will see a
    broken image; upload it to the Media Library instead.
-3. **`/api/*` and `/health` are excluded on purpose.** The Node API answers
+4. **`/api/*` and `/health` are excluded on purpose.** The Node API answers
    with helmet's own headers; letting Caddy add a second copy produced
    `Referrer-Policy: strict-origin-when-cross-origin,strict-origin-when-cross-origin`
    and similar duplicated values, which browsers can discard as malformed.

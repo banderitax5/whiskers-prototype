@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import toast from 'react-hot-toast'
+import toast from '../lib/toast.js'
 import supabase from '../lib/supabase'
 import { trackEvent } from '../lib/appEvents.js'
 
@@ -185,7 +185,7 @@ export function ShopProvider({ children }) {
   // type can be 'success', 'error', or 'info'
   function pushNotification(message, type = 'success') {
     if (type === 'error') toast.error(message)
-    else if (type === 'info') toast(message, { icon: 'ℹ️' })
+    else if (type === 'info') toast.info(message)
     else toast.success(message)
   }
 

@@ -22,13 +22,13 @@ vi.mock('../lib/api', () => ({
 const { toastMock } = vi.hoisted(() => ({
   toastMock: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }))
-vi.mock('react-hot-toast', () => ({
+vi.mock('../lib/toast.js', () => ({
   default: toastMock,
 }))
 
 import AdminCustomers from './AdminCustomers.jsx'
 import { apiGetAllPages, apiPatchAuth } from '../lib/api'
-import toast from 'react-hot-toast'
+import toast from '../lib/toast.js'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 

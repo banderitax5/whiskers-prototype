@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Navigate } from 'react-router-dom'
-import toast from 'react-hot-toast'
+import toast from '../lib/toast.js'
 import supabase from '../lib/supabase'
 import { philippinesData } from '../data/philippinesData.js'
 import { phoneError, addressLineError, postalError } from '../lib/addressValidation.js'

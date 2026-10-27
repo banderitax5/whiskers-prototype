@@ -214,12 +214,23 @@ duplicated, malformed value.
 - `script-src 'self'`: the built bundle has no inline scripts. The only
   third-party allowance is Cloudflare's edge-injected Web Analytics beacon, so
   **Rocket Loader must stay off** (it rewrites the bundle into inline scripts).
+- `style-src 'self'` with `style-src-attr 'unsafe-inline'`: React sets sizes and
+  colours through `style` **attributes** (chart bars, progress bars), which the
+  attribute directive allows. Injecting a `<style>` element is blocked, which is
+  the part of CSS injection that can restyle or overlay a page. Keep runtime
+  stylesheets out of the bundle for this to stay true — the loading-skeleton
+  keyframes live in `src/index.css` and the toast stack in `src/lib/toast.js`
+  renders with Tailwind classes (the previous toast library, react-hot-toast,
+  injected a `<style>` element and had to go).
 - Images are limited to this site, Supabase Storage, and `data:`/`blob:`
   previews. An admin who pastes an image URL from another host gets a broken
   image; upload it to the Media Library instead.
 - After changing the policy: rebuild the frontend image (`docker compose up -d
   --build frontend`), or on the Caddy host `sudo caddy validate --config
   /etc/caddy/Caddyfile --adapter caddyfile && sudo systemctl reload caddy`.
+  `npm run dev` relaxes `script-src` and `style-src` because Vite injects the
+  Fast Refresh preamble and HMR stylesheets as inline content; `npm run preview`
+  serves the built bundle with the exact production policy.
 
 ## Troubleshooting
 

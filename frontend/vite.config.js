@@ -4,29 +4,42 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // Production policy, byte-identical to deploy/Caddyfile and frontend/nginx.conf
 // (backend/test/securityHeaders.test.js fails if the two servers drift).
-// The dev server below adds 'unsafe-inline' to script-src because
-// @vitejs/plugin-react injects an inline Fast Refresh preamble into index.html
-// in dev only; the built bundle has no inline scripts.
+//
+// style-src stays at 'self' (no 'unsafe-inline') and the only inline style the
+// app needs - React's `style` attributes, e.g. the chart bar widths - is allowed
+// by the narrower style-src-attr. Anything that injects a <style> element is
+// therefore blocked, which is the part of CSS injection that can restyle or
+// overlay the page. The dev server below relaxes style-src too because Vite
+// injects its stylesheets as <style> elements for HMR.
 const CONTENT_SECURITY_POLICY =
-  "default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' https://static.cloudflareinsights.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cloudflareinsights.com; media-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-src 'none'; frame-ancestors 'none'; form-action 'self'"
+  "default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' https://static.cloudflareinsights.com; script-src-attr 'none'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cloudflareinsights.com; media-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-src 'none'; frame-ancestors 'none'; form-action 'self'"
 
-const securityHeaders = {
-  'Content-Security-Policy': CONTENT_SECURITY_POLICY.replace(
-    "script-src 'self'",
-    "script-src 'self' 'unsafe-inline'"
-  ),
+// @vitejs/plugin-react injects an inline Fast Refresh preamble into index.html
+// and Vite injects HMR stylesheets as <style> elements; the built bundle has
+// neither. Both relaxations exist only on `npm run dev`.
+const DEV_CONTENT_SECURITY_POLICY = CONTENT_SECURITY_POLICY.replace(
+  "script-src 'self'",
+  "script-src 'self' 'unsafe-inline'"
+).replace("style-src 'self';", "style-src 'self' 'unsafe-inline';")
+
+const baseHeaders = {
   'X-Frame-Options': 'DENY',
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
 }
 
-function applySecurityHeaders(_req, res, next) {
-  for (const [key, value] of Object.entries(securityHeaders)) {
-    res.setHeader(key, value)
+const devHeaders = { ...baseHeaders, 'Content-Security-Policy': DEV_CONTENT_SECURITY_POLICY }
+const previewHeaders = { ...baseHeaders, 'Content-Security-Policy': CONTENT_SECURITY_POLICY }
+
+function applyHeaders(headers) {
+  return function applySecurityHeaders(_req, res, next) {
+    for (const [key, value] of Object.entries(headers)) {
+      res.setHeader(key, value)
+    }
+    res.removeHeader('X-Powered-By')
+    next()
   }
-  res.removeHeader('X-Powered-By')
-  next()
 }
 
 export default defineConfig(({ mode }) => {
@@ -81,15 +94,17 @@ export default defineConfig(({ mode }) => {
         },
       }),
       {
-        // Same headers on `npm run dev` and `npm run preview`, so a local
-        // preview of the production build exercises the real policy (the
-        // preview server is the only way to test the PWA locally).
+        // The dev server relaxes the two directives that Vite's own tooling
+        // needs; `npm run preview` serves the built bundle and therefore uses
+        // the exact production policy, so a local preview exercises the real
+        // header (the preview server is also the only way to test the PWA
+        // locally).
         name: 'security-headers',
         configureServer(server) {
-          server.middlewares.use(applySecurityHeaders)
+          server.middlewares.use(applyHeaders(devHeaders))
         },
         configurePreviewServer(server) {
-          server.middlewares.use(applySecurityHeaders)
+          server.middlewares.use(applyHeaders(previewHeaders))
         },
       },
     ],

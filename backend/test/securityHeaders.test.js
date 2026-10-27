@@ -1,6 +1,6 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -43,13 +43,77 @@ if (!hasConfigs) {
       assert.equal(caddy.policy, nginx.policy)
     })
 
-    test('the dev server inherits the production policy and relaxes only script-src', () => {
+    test('the dev server inherits the production policy and relaxes only what Vite needs', () => {
       assert.equal(vite.policy, caddy.policy)
+      // script-src: the React Fast Refresh preamble is an inline script.
       assert.match(
         vite.text,
         /CONTENT_SECURITY_POLICY\.replace\(\s*"script-src 'self'",\s*"script-src 'self' 'unsafe-inline'"\s*\)/
       )
+      // style-src: Vite injects HMR stylesheets as <style> elements.
+      assert.match(
+        vite.text,
+        /\.replace\("style-src 'self';", "style-src 'self' 'unsafe-inline';"\)/
+      )
       assert.ok(!vite.text.includes("'unsafe-eval'"), "dev must not need 'unsafe-eval'")
+    })
+
+    test('the preview server serves the strict production policy', () => {
+      // `npm run preview` serves the built bundle, which has no inline scripts
+      // and no injected <style> elements, so it must not inherit the dev
+      // relaxations.
+      assert.match(vite.text, /configurePreviewServer\(server\) \{\s*server\.middlewares\.use\(applyHeaders\(previewHeaders\)\)/)
+      assert.match(vite.text, /const previewHeaders = \{ \.\.\.baseHeaders, 'Content-Security-Policy': CONTENT_SECURITY_POLICY \}/)
+    })
+
+    test("style-src never allows 'unsafe-inline' in the production servers", () => {
+      // ZAP rates "CSP: style-src unsafe-inline" as Medium. Inline `style`
+      // attributes (React, and previously react-hot-toast's goober runtime)
+      // are allowed by the narrower style-src-attr instead; injected <style>
+      // elements stay blocked.
+      for (const { policy } of [caddy, nginx]) {
+        const styleSrc = directive(policy, 'style-src')
+        assert.ok(styleSrc, 'style-src is missing')
+        assert.ok(!styleSrc.includes("'unsafe-inline'"), "style-src must not allow 'unsafe-inline'")
+        assert.equal(styleSrc, "'self'")
+        assert.equal(directive(policy, 'style-src-attr'), "'unsafe-inline'")
+      }
+      assert.equal(directive(vite.policy, 'style-src'), "'self'")
+      assert.equal(directive(vite.policy, 'style-src-attr'), "'unsafe-inline'")
+    })
+
+    test('the API serves the same strict style-src', () => {
+      // helmet's CSP only ever decorates JSON, but keeping the same shape
+      // stops a future HTML error page from re-introducing the ZAP finding.
+      const index = readFileSync(path.join(REPO_ROOT, 'backend', 'index.js'), 'utf8')
+      assert.match(index, /styleSrc: \["'self'"\]/)
+      assert.match(index, /styleSrcAttr: \["'unsafe-inline'"\]/)
+      assert.ok(!index.includes(`styleSrc: ["'self'", "'unsafe-inline'"]`))
+    })
+
+    test('the app ships no <style> element of its own', () => {
+      // A single <style> in the bundle would be blocked at runtime by
+      // style-src 'self'. Keep the loading-skeleton keyframes in index.css.
+      // Comments are stripped first: prose about <style> is not markup.
+      const src = path.join(REPO_ROOT, 'frontend', 'src')
+      const stripComments = (text) =>
+        text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      const offenders = []
+      const walk = (dir) => {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const full = path.join(dir, entry.name)
+          if (entry.isDirectory()) walk(full)
+          else if (/\.(jsx?|html)$/.test(entry.name) && /<style[\s>]/.test(stripComments(readFileSync(full, 'utf8')))) {
+            offenders.push(path.relative(REPO_ROOT, full))
+          }
+        }
+      }
+      if (existsSync(src)) walk(src)
+      const indexHtml = path.join(REPO_ROOT, 'frontend', 'index.html')
+      if (existsSync(indexHtml) && /<style[\s>]/.test(stripComments(readFileSync(indexHtml, 'utf8')))) {
+        offenders.push(path.relative(REPO_ROOT, indexHtml))
+      }
+      assert.deepEqual(offenders, [], `inline <style> blocks would be blocked by style-src: ${offenders.join(', ')}`)
     })
 
     test('script-src never allows inline or eval in the production servers', () => {

@@ -3,7 +3,7 @@ import supabase from '../lib/supabase'
 import { apiGetAllPages, apiPatchAuth } from '../lib/api'
 import { AdminPage, AdminTable, EmptyState, StatCard, StatusPill } from './adminTheme'
 import { BsChatDots, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs'
-import toast from 'react-hot-toast'
+import toast from '../lib/toast.js'
 
 const AdminSupports = () => {
   const [cases, setCases] = useState([])

@@ -6,7 +6,7 @@ import ProductPicker from './ProductPicker.jsx';
 import { formatPesos } from '../lib/cartLogic';
 import { dateWindowError, END_BEFORE_START } from '../lib/scheduleWindow';
 import { BsGift, BsPlusLg, BsPencilSquare, BsTrash } from 'react-icons/bs';
-import toast from 'react-hot-toast';
+import toast from '../lib/toast.js';
 
 const TYPES = [
   { value: 'percent', label: 'Percent Off' },

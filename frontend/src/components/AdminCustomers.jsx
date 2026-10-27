@@ -4,7 +4,7 @@ import { apiGetAllPages, apiPatchAuth, apiDeleteAuth } from '../lib/api';
 import { formatPesos } from '../lib/cartLogic';
 import { AdminPage, AdminTable, AdminRowDropdown, EmptyState, StatCard, StatusPill, ConfirmDialog } from './adminTheme';
 import { BsPeople, BsSearch, BsTrash, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
-import toast from 'react-hot-toast';
+import toast from '../lib/toast.js';
 
 const ROLES = ['user', 'staff', 'admin'];
 const ROLE_KIND = { user: 'progress', staff: 'info', admin: 'success' };

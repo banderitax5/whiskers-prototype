@@ -5,7 +5,7 @@ import { formatPesos } from '../lib/cartLogic';
 import { AdminPage, AdminTable, EmptyState, StatCard, ConfirmDialog, StatusPill } from './adminTheme';
 import { BsCreditCard, BsSearch, BsTrash, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 import { useRole } from '../context/RoleContext';
-import toast from 'react-hot-toast';
+import toast from '../lib/toast.js';
 
 // payment lifecycle labels (payment.status); null = pre-migration rows
 const PAYMENT_LABEL = { succeeded: 'Paid', pending: 'Pending', failed: 'Failed', expired: 'Expired' };
