@@ -90,19 +90,27 @@ describe('Navbar cart indicator', () => {
     const links = cartLinks()
     expect(links).toHaveLength(2)
     const mobile = links[1]
+    // plain-text count in the menu (the desktop pill covers the small icon)
     expect(mobile.textContent).toContain('Cart')
-    const pill = mobile.querySelector('.bg-yellow-400')
-    expect(pill).toBeTruthy()
-    expect(pill.textContent).toBe('3')
+    expect(mobile.textContent).toContain('(3)')
+    expect(mobile.querySelector('.bg-yellow-400')).toBeNull()
     // the accessible name still spells the count out for screen readers
     expect(mobile.getAttribute('aria-label')).toBe('Cart, 3 items')
   })
 
-  it('caps the pill at 99+', async () => {
+  it('caps the count at 99+', async () => {
     shopState.cartCount = 150
     await render()
+    expect(cartLinks()[0].querySelector('.bg-yellow-400').textContent).toBe('99+')
     await openMenu()
-    expect(cartLinks()[1].querySelector('.bg-yellow-400').textContent).toBe('99+')
+    expect(cartLinks()[1].textContent).toContain('(99+)')
+  })
+
+  it('spells the accessible name with a singular item', async () => {
+    shopState.cartCount = 1
+    await render()
+    await openMenu()
+    expect(cartLinks()[1].getAttribute('aria-label')).toBe('Cart, 1 item')
   })
 
   it('renders no badge for an empty cart', async () => {
@@ -112,6 +120,7 @@ describe('Navbar cart indicator', () => {
       expect(link.querySelector('.bg-yellow-400')).toBeNull()
       expect(link.querySelector('.animate-ping')).toBeNull()
     }
+    expect(cartLinks()[1].textContent).not.toContain('(0)')
   })
 
   it('pulses the cart when an item is added, then stops', async () => {

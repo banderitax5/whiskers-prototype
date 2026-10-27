@@ -246,7 +246,7 @@ function Navbar() {
           {/* Desktop: cart */}
           <NavLink
             to="/cart"
-            aria-label={`Cart${cartCount > 0 ? `, ${cartCount} items` : ''}`}
+            aria-label={`Cart${cartCount > 0 ? `, ${cartCount} item${cartCount === 1 ? '' : 's'}` : ''}`}
             className="hidden sm:flex relative w-9 h-9 sm:w-10 sm:h-10 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 dark:bg-white/5 dark:hover:bg-white/10 transition"
           >
             <BsCartFill className="text-white w-4 h-4 sm:w-5 sm:h-5" />
@@ -286,17 +286,27 @@ function Navbar() {
       {/* Mobile menu */}
       {mobileMenuOpen && (
         <div className="sm:hidden border-t border-white/10 bg-[#0b2e59] dark:bg-gray-900 px-4 py-3 space-y-1">
+          {/* The count is plain text here, not the desktop pill: on a 16px icon
+              the pill covered the cart glyph and the ping halo underneath it
+              was invisible (yellow on yellow). A text count plus a pulsing dot
+              reads clearly and still says "there is something in here". */}
           <NavLink
             to="/cart"
             onClick={() => setMobileMenuOpen(false)}
-            aria-label={`Cart${cartCount > 0 ? `, ${cartCount} items` : ''}`}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium"
+            aria-label={`Cart${cartCount > 0 ? `, ${cartCount} item${cartCount === 1 ? '' : 's'}` : ''}`}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium ${isCartPinging ? 'bg-white/10' : ''}`}
           >
-            <span className="relative flex h-5 w-5 items-center justify-center">
-              <BsCartFill className="w-4 h-4" />
-              <CartBadge count={cartCount} pinging={isCartPinging} />
-            </span>
+            <BsCartFill className="w-4 h-4" />
             Cart
+            {cartCount > 0 && (
+              <span className="text-yellow-300">({cartCount > 99 ? '99+' : cartCount})</span>
+            )}
+            {isCartPinging && (
+              <span aria-hidden="true" className="relative ml-1 inline-flex h-2 w-2">
+                <span className="absolute inset-0 inline-flex rounded-full bg-yellow-300/70 animate-ping motion-reduce:animate-none" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-yellow-300" />
+              </span>
+            )}
           </NavLink>
 
           <NavLink to="/pets" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2 px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium">
