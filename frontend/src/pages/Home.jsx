@@ -352,7 +352,12 @@ function Home() {
             <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-red-600 dark:text-red-400 tracking-wide">{row.title}</h2>
             <button type="button" onClick={() => navigate('/menu')} className="text-blue-600 dark:text-blue-400 hover:underline text-xs sm:text-sm font-semibold uppercase whitespace-nowrap transition-colors hover:text-blue-800 dark:hover:text-blue-300">VIEW ALL</button>
           </div>
-          <div className={`${CARD_ROW} overflow-x-auto scrollbar-hide snap-x snap-mandatory touch-pan-x scroll-smooth`}>
+          {/* No touch-action restriction here: `touch-pan-x` told the browser
+              that only horizontal panning was allowed inside this row, so a
+              vertical swipe that started on a card scrolled nothing at all.
+              With the default the browser locks the axis itself: sideways
+              swipes move the row, up/down swipes scroll the page. */}
+          <div className={`${CARD_ROW} overflow-x-auto scrollbar-hide snap-x snap-mandatory scroll-smooth`}>
             {row.products.slice(0, 7).map((product) => (
               <div
                 key={product.prod_id}
