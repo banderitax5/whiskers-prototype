@@ -7,6 +7,16 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  // Touch screens keep a tapped element in the :hover state until the next tap,
+  // so a card that scales on hover appeared to "stick" while a shopper tried to
+  // swipe the grid - the tap looked swallowed and the layout jumped. This wraps
+  // every `hover:` utility (and `group-hover:`, which Tailwind builds from the
+  // same pseudo-variant) in `@media (hover: hover) and (pointer: fine)`, so the
+  // effect only exists for a real pointer. `active:` is untouched, so press
+  // feedback on buttons still works on phones.
+  future: {
+    hoverOnlyWhenSupported: true,
+  },
   theme: 
   {
     extend: 
