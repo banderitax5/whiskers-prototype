@@ -259,6 +259,37 @@ describe('AdminNavigation categories tab', () => {
     expect(body.items[1].label).toBe('Felines')
   })
 
+  it('drag-reorders category rows locally and marks the batch dirty', async () => {
+    apiGetAuth.mockImplementation(async (path) => {
+      if (path === '/admin/categories') return cats
+      return { items: [], total: 0 }
+    })
+    apiPostAuth.mockResolvedValue({ success: true, count: 2 })
+    const c = await render()
+    await flush()
+    await act(async () => { button(c, 'Categories').click() })
+    await flush()
+    expect(button(c, 'Save changes').disabled).toBe(true)
+
+    // jsdom has no layout, so a downward move resolves to the last slot
+    const grip = c.querySelector('[data-sort-index="0"] [data-drag-handle]')
+    await act(async () => {
+      grip.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, clientX: 5, clientY: 5 }))
+    })
+    await act(async () => {
+      window.dispatchEvent(new window.MouseEvent('pointermove', { clientX: 5, clientY: 400 }))
+    })
+    await act(async () => { window.dispatchEvent(new window.MouseEvent('pointerup')) })
+    await flush()
+
+    expect(button(c, 'Save changes').disabled).toBe(false)
+    await act(async () => { button(c, 'Save changes').click() })
+    await flush()
+    const [, body] = apiPostAuth.mock.calls[0]
+    expect(body.items.map((i) => i.name)).toEqual(['Cats', 'Birds'])
+    expect(body.items.map((i) => i.sort_order)).toEqual([0, 1])
+  })
+
   it('adds a category that has no products yet and batch-saves it', async () => {
     apiGetAuth.mockImplementation(async (path) => {
       if (path === '/admin/categories') return cats

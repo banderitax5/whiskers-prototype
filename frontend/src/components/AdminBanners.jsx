@@ -380,21 +380,20 @@ function BannerDialog({ title, placement, initial, onClose, onSubmit }) {
   )
 }
 
-function BannerCard({ banner, index, total, onMove, onEdit, onArchive, busy, selected, onToggleSelect, dragHandleProps, dragging, dragOver }) {
+function BannerCard({ banner, index, total, onMove, onEdit, onArchive, busy, selected, onToggleSelect, dragHandleProps, dragging, dragStyle }) {
   const [imgFailed, setImgFailed] = useState(false)
   // long-press the card (not its buttons/inputs) to select it
   const longPress = useLongPress(() => onToggleSelect())
   const ctr = banner.impressions > 0 ? `${Math.round((banner.clicks / banner.impressions) * 100)}%` : "—"
   const ring = selected || dragging
     ? "border-[#0b2e59] ring-2 ring-[#0b2e59]/50 dark:border-yellow-400 dark:ring-yellow-400/50"
-    : dragOver
-      ? "border-[#0b2e59] ring-2 ring-[#0b2e59]/25 dark:border-yellow-400 dark:ring-yellow-400/25"
-      : "border-gray-200 dark:border-[#2c4a6f]"
+    : "border-gray-200 dark:border-[#2c4a6f]"
   return (
     <div
       {...longPress}
       data-sort-index={index}
-      className={`rounded-2xl border bg-white dark:bg-[#16283f] overflow-hidden flex flex-col sm:flex-row transition ${ring} ${dragging ? "opacity-60" : ""}`}
+      style={dragStyle}
+      className={`rounded-2xl border bg-white dark:bg-[#16283f] overflow-hidden flex flex-col sm:flex-row transition duration-150 ease-out ${ring} ${dragging ? "border-dashed opacity-70 shadow-xl shadow-slate-900/25 dark:shadow-black/60" : ""}`}
     >
       <div className="relative sm:w-48 shrink-0 aspect-video sm:aspect-auto bg-gray-100 dark:bg-[#0f2036]">
         {imgFailed ? (
@@ -500,12 +499,15 @@ function AdminBanners() {
     if (from === to || to < 0 || to >= visible.length) return
     const ids = visible.map((b) => b.id)
     ids.splice(to, 0, ids.splice(from, 1)[0])
+    // optimistic: the drag already previewed this order, so keep it instead of
+    // snapping back to the server order for the length of the round-trip
+    setItems(ids.map((id) => visible.find((b) => b.id === id)))
     setBusy(true)
     try {
       const token = await sessionToken()
       await apiPostAuth("/admin/banners/reorder", { placement, ids }, token)
       await load()
-    } catch (err) { setToast(err.message) } finally { setBusy(false) }
+    } catch (err) { setToast(err.message); await load() } finally { setBusy(false) }
   }
 
   async function handleMove(banner, dir) {
@@ -685,7 +687,7 @@ function AdminBanners() {
               onToggleSelect={() => sel.toggle(b.id)}
               dragHandleProps={archived ? null : drag.handleProps(i)}
               dragging={drag.isDragging(i)}
-              dragOver={drag.isOver(i)}
+              dragStyle={drag.rowStyle(i)}
               onMove={handleMove}
               onEdit={(item) => setDialog({ mode: "edit", item })}
               onArchive={(item) => setConfirm({ item })}

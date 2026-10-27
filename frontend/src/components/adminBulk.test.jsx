@@ -62,17 +62,54 @@ function LPProbe({ onFire }) {
   )
 }
 
-function DragProbe({ onDrop }) {
+function DragProbe({ onDrop, rows = 2 }) {
   const drag = useReorderDrag(onDrop)
   return (
     <div>
-      {[0, 1].map((i) => (
-        <div key={i} data-sort-index={i} data-testid={`r${i}`}>
+      {Array.from({ length: rows }, (_, i) => (
+        <div
+          key={i}
+          data-sort-index={i}
+          data-testid={`r${i}`}
+          data-dragging={drag.isDragging(i) ? "1" : undefined}
+          style={drag.rowStyle(i)}
+        >
           <button type="button" data-testid={`h${i}`} {...drag.handleProps(i)}>grip {i}</button>
         </div>
       ))}
     </div>
   )
+}
+
+// jsdom reports every rect as 0x0 - give the probe real stacked geometry so the
+// hit-testing and the preview maths can be asserted (height 100, 12px gap).
+function stubGeometry(c, { height = 100, gap = 12 } = {}) {
+  const rects = new Map()
+  ;[...c.querySelectorAll("[data-sort-index]")].forEach((row, i) => {
+    const top = i * (height + gap)
+    rects.set(row, { top, y: top, bottom: top + height, height, left: 0, x: 0, right: 300, width: 300, toJSON() {} })
+  })
+  const real = window.Element.prototype.getBoundingClientRect
+  window.Element.prototype.getBoundingClientRect = function () {
+    return rects.get(this) || real.call(this)
+  }
+  return () => { window.Element.prototype.getBoundingClientRect = real }
+}
+
+async function pointerDown(el, { x = 5, y = 5 } = {}) {
+  await act(async () => {
+    el.dispatchEvent(new window.MouseEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }))
+  })
+}
+
+async function pointerMove({ x = 5, y = 5 } = {}) {
+  await act(async () => {
+    window.dispatchEvent(new window.MouseEvent("pointermove", { clientX: x, clientY: y }))
+  })
+}
+
+async function pointerUp() {
+  await act(async () => { window.dispatchEvent(new window.MouseEvent("pointerup")) })
 }
 
 function BarProbe() {
@@ -191,32 +228,70 @@ describe('bulkApply / bulkSummary', () => {
 describe('useReorderDrag', () => {
   it('commits a drop only when the row changed', async () => {
     const onDrop = vi.fn()
-    const c = await mount(<DragProbe onDrop={onDrop} />)
-    const row1 = c.querySelector('[data-testid="r1"]')
-    document.elementFromPoint = vi.fn(() => row1)
-    const h0 = c.querySelector('[data-testid="h0"]')
-
-    await act(async () => {
-      h0.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, clientX: 5, clientY: 5 }))
-    })
-    await act(async () => {
-      window.dispatchEvent(new window.MouseEvent('pointermove', { clientX: 30, clientY: 30 }))
-    })
-    await act(async () => { window.dispatchEvent(new window.MouseEvent('pointerup')) })
-    expect(onDrop).toHaveBeenCalledTimes(1)
-    expect(onDrop).toHaveBeenCalledWith(0, 1)
+    const c = await mount(<DragProbe onDrop={onDrop} rows={3} />)
+    const restore = stubGeometry(c)
+    try {
+      await pointerDown(c.querySelector('[data-testid="h0"]'))
+      await pointerMove({ y: 150 }) // past row 1's midpoint, before row 2's
+      await pointerUp()
+      expect(onDrop).toHaveBeenCalledTimes(1)
+      expect(onDrop).toHaveBeenCalledWith(0, 1)
+    } finally { restore() }
   })
 
   it('does not commit when the pointer never left the starting row', async () => {
     const onDrop = vi.fn()
-    const c = await mount(<DragProbe onDrop={onDrop} />)
-    const h0 = c.querySelector('[data-testid="h0"]')
+    const c = await mount(<DragProbe onDrop={onDrop} rows={3} />)
+    const restore = stubGeometry(c)
+    try {
+      await pointerDown(c.querySelector('[data-testid="h0"]'))
+      await pointerUp()
+      expect(onDrop).not.toHaveBeenCalled()
+    } finally { restore() }
+  })
 
-    await act(async () => {
-      h0.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, clientX: 5, clientY: 5 }))
-    })
-    await act(async () => { window.dispatchEvent(new window.MouseEvent('pointerup')) })
-    expect(onDrop).not.toHaveBeenCalled()
+  it('previews the move with transforms without touching the DOM order', async () => {
+    const onDrop = vi.fn()
+    const c = await mount(<DragProbe onDrop={onDrop} rows={3} />)
+    const restore = stubGeometry(c)
+    try {
+      const r0 = c.querySelector('[data-testid="r0"]')
+      const r1 = c.querySelector('[data-testid="r1"]')
+      const r2 = c.querySelector('[data-testid="r2"]')
+      await pointerDown(c.querySelector('[data-testid="h0"]'))
+      await pointerMove({ y: 250 }) // first row down to the last slot
+
+      // carried row slides into the slot, the rows it passes step up one pitch
+      expect(r0.style.transform).toBe("translateY(224px)")
+      expect(r1.style.transform).toBe("translateY(-112px)")
+      expect(r2.style.transform).toBe("translateY(-112px)")
+      expect(r0.dataset.dragging).toBe("1")
+
+      // layout is untouched: React order stays 0,1,2 (only transforms move)
+      const order = [...c.querySelectorAll("[data-sort-index]")].map((el) => el.dataset.sortIndex)
+      expect(order).toEqual(["0", "1", "2"])
+
+      await pointerUp()
+      // transforms are dropped once the gesture ends
+      expect(r0.style.transform).toBe("")
+      expect(r1.style.transform).toBe("")
+      expect(onDrop).toHaveBeenCalledWith(0, 2)
+    } finally { restore() }
+  })
+
+  it('moves rows down when dragging upward', async () => {
+    const onDrop = vi.fn()
+    const c = await mount(<DragProbe onDrop={onDrop} rows={3} />)
+    const restore = stubGeometry(c)
+    try {
+      await pointerDown(c.querySelector('[data-testid="h2"]'), { y: 230 })
+      await pointerMove({ y: 10 }) // above row 0's midpoint
+      expect(c.querySelector('[data-testid="r2"]').style.transform).toBe("translateY(-224px)")
+      expect(c.querySelector('[data-testid="r0"]').style.transform).toBe("translateY(112px)")
+      expect(c.querySelector('[data-testid="r1"]').style.transform).toBe("translateY(112px)")
+      await pointerUp()
+      expect(onDrop).toHaveBeenCalledWith(2, 0)
+    } finally { restore() }
   })
 })
 

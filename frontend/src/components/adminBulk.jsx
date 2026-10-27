@@ -73,7 +73,7 @@ export function useLongPress(onActivate, { ms = 450 } = {}) {
   return {
     onPointerDown: (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return
-      if (e.target && typeof e.target.closest === "function" && e.target.closest("button, a, input, select, textarea, label")) return
+      if (e.target && typeof e.target.closest === "function" && e.target.closest("button, a, input, select, textarea, label, [data-drag-handle]")) return
       fired.current = false
       start.current = { x: e.clientX, y: e.clientY }
       stop()
@@ -187,45 +187,103 @@ export function bulkSummary(action, res, noun = "item") {
 }
 
 // ── drag to reorder ───────────────────────────────────────────────────────
-// pointer-based so it works with touch (implicit pointer capture on the
-// handle) and mouse alike. Rows carry data-sort-index; the drop commits once
-// through onDrop(from, to). The ↑↓ buttons stay the accessible path.
+// Pointer-based so touch (implicit pointer capture on the handle) and mouse
+// share one code path. On pickup the list is measured once - rows keep their
+// layout position and only CSS transforms move them - then every pointer move
+// turns the pointer height into a target slot. The picked row slides to that
+// slot at reduced opacity while the rows in between shift one step out of the
+// way, so the list previews the result before the drop commits once through
+// onDrop(from, to). Transforms keep the DOM order stable (React never fights
+// us) and animate for free through each card's `transition` utility. Row
+// offsets are taken from the list container, not the viewport, so the preview
+// stays correct while the admin page scrolls under the pointer. The ↑↓ buttons
+// stay the accessible path; the grip is aria-hidden.
 export function useReorderDrag(onDrop) {
-  const [drag, setDrag] = useState(null) // { from, over }
+  const [drag, setDrag] = useState(null) // { from, over, container, offsets, heights, steps }
+  const dragRef = useRef(null)
   const dropRef = useRef(onDrop)
   const suppressClick = useRef(false)
 
   useEffect(() => { dropRef.current = onDrop }, [onDrop])
 
+  const publish = useCallback((next) => {
+    dragRef.current = next
+    setDrag(next)
+  }, [])
+
+  const finish = useCallback((commit) => {
+    const d = dragRef.current
+    if (!d) return
+    if (commit && d.over !== d.from) {
+      suppressClick.current = true
+      dropRef.current(d.from, d.over)
+    }
+    publish(null)
+  }, [publish])
+
+  const active = Boolean(drag)
+
   useEffect(() => {
-    if (!drag) return undefined
+    if (!active) return undefined
     const move = (e) => {
-      const el = document.elementFromPoint(e.clientX, e.clientY)
-      const row = el && typeof el.closest === "function" ? el.closest("[data-sort-index]") : null
-      if (row) {
-        const over = Number(row.dataset.sortIndex)
-        setDrag((d) => (d && d.over !== over ? { ...d, over } : d))
+      const d = dragRef.current
+      if (!d || !d.heights.length) return
+      // measured against the live container box so scrolling cannot skew it
+      const base = d.container ? d.container.getBoundingClientRect().top : 0
+      // last row by default, else the first row whose middle is below the pointer
+      let over = d.heights.length - 1
+      for (let i = 0; i < d.heights.length; i += 1) {
+        if (e.clientY < base + d.offsets[i] + d.heights[i] / 2) { over = i; break }
       }
+      if (over !== d.over) publish({ ...d, over })
     }
-    const end = () => {
-      suppressClick.current = Boolean(drag && drag.over !== drag.from)
-      if (drag && drag.over !== null && drag.over !== drag.from) dropRef.current(drag.from, drag.over)
-      setDrag(null)
-    }
+    const up = () => finish(true)
+    const cancel = () => finish(false)
     window.addEventListener("pointermove", move)
-    window.addEventListener("pointerup", end)
-    window.addEventListener("pointercancel", end)
+    window.addEventListener("pointerup", up)
+    window.addEventListener("pointercancel", cancel)
     return () => {
       window.removeEventListener("pointermove", move)
-      window.removeEventListener("pointerup", end)
-      window.removeEventListener("pointercancel", end)
+      window.removeEventListener("pointerup", up)
+      window.removeEventListener("pointercancel", cancel)
     }
-  }, [drag])
+  }, [active, publish, finish])
+
+  // no text selection / text caret while a row is being carried
+  useEffect(() => {
+    if (!active) return undefined
+    const prevSelect = document.body.style.userSelect
+    const prevCursor = document.body.style.cursor
+    document.body.style.userSelect = "none"
+    document.body.style.cursor = "grabbing"
+    return () => {
+      document.body.style.userSelect = prevSelect
+      document.body.style.cursor = prevCursor
+    }
+  }, [active])
 
   const handleProps = (index) => ({
     onPointerDown: (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return
-      setDrag({ from: index, over: index })
+      const rowEl = e.currentTarget && e.currentTarget.closest ? e.currentTarget.closest("[data-sort-index]") : null
+      const container = rowEl && rowEl.parentElement
+      const rows = container
+        ? Array.from(container.querySelectorAll("[data-sort-index]"))
+          .sort((a, b) => Number(a.dataset.sortIndex) - Number(b.dataset.sortIndex))
+        : []
+      const containerTop = container ? container.getBoundingClientRect().top : 0
+      const rects = rows.map((r) => r.getBoundingClientRect())
+      const heights = rects.map((r) => r.height)
+      // row pitch = own height + the gap the list puts between rows
+      const gap = rects.length > 1 ? Math.max(0, rects[1].top - rects[0].top - heights[0]) : 0
+      publish({
+        from: index,
+        over: index,
+        container,
+        offsets: rects.map((r) => r.top - containerTop),
+        heights,
+        steps: heights.map((h) => h + gap),
+      })
     },
     onClickCapture: (e) => {
       if (suppressClick.current) {
@@ -236,11 +294,31 @@ export function useReorderDrag(onDrop) {
     },
   })
 
+  // transform for each row while a drag is live (undefined when idle)
+  const rowStyle = (index) => {
+    if (!drag) return undefined
+    const { from, over, offsets, steps } = drag
+    if (!offsets.length) return undefined
+    if (index === from) {
+      // slide the carried row into the slot it would land in
+      const dy = over > from
+        ? offsets[over] + steps[over] - steps[from] - offsets[from]
+        : over < from
+          ? offsets[over] - offsets[from]
+          : 0
+      return { transform: `translateY(${Math.round(dy)}px)`, position: "relative", zIndex: 40 }
+    }
+    let dy = 0
+    if (over > from && index > from && index <= over) dy = -steps[from]
+    else if (over < from && index >= over && index < from) dy = steps[from]
+    return dy ? { transform: `translateY(${Math.round(dy)}px)` } : undefined
+  }
+
   return {
     handleProps,
+    rowStyle,
     isDragging: (index) => drag?.from === index,
-    isOver: (index) => Boolean(drag && drag.from !== index && drag.over === index),
-    active: Boolean(drag),
+    active,
   }
 }
 
@@ -250,6 +328,7 @@ export function GripHandle({ handleProps, label = "Drag to reorder" }) {
     <span
       aria-hidden="true"
       title={label}
+      data-drag-handle
       {...handleProps}
       className="inline-flex shrink-0 items-center cursor-grab active:cursor-grabbing touch-none select-none text-gray-400 dark:text-slate-500 hover:text-[#0b2e59] dark:hover:text-yellow-300 px-1"
     >

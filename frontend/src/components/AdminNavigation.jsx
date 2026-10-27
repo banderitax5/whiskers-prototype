@@ -332,19 +332,18 @@ function LinkDialog({ section, initial, onClose, onSubmit }) {
   )
 }
 
-function LinkCard({ item, index, total, onMove, onEdit, onArchive, busy, selected, onToggleSelect, dragHandleProps, dragging, dragOver }) {
+function LinkCard({ item, index, total, onMove, onEdit, onArchive, busy, selected, onToggleSelect, dragHandleProps, dragging, dragStyle }) {
   // long-press the card (not its buttons/inputs) to select it
   const longPress = useLongPress(() => onToggleSelect())
   const ring = selected || dragging
     ? "border-[#0b2e59] ring-2 ring-[#0b2e59]/50 dark:border-yellow-400 dark:ring-yellow-400/50"
-    : dragOver
-      ? "border-[#0b2e59] ring-2 ring-[#0b2e59]/25 dark:border-yellow-400 dark:ring-yellow-400/25"
-      : "border-gray-200 dark:border-[#2c4a6f]"
+    : "border-gray-200 dark:border-[#2c4a6f]"
   return (
     <div
       {...longPress}
       data-sort-index={index}
-      className={`rounded-2xl border bg-white dark:bg-[#16283f] p-4 flex flex-col sm:flex-row sm:items-center gap-3 transition ${ring} ${dragging ? "opacity-60" : ""}`}
+      style={dragStyle}
+      className={`rounded-2xl border bg-white dark:bg-[#16283f] p-4 flex flex-col sm:flex-row sm:items-center gap-3 transition duration-150 ease-out ${ring} ${dragging ? "border-dashed opacity-70 shadow-xl shadow-slate-900/25 dark:shadow-black/60" : ""}`}
     >
       <div className="flex-1 min-w-0">
         <div className="flex flex-wrap items-center gap-2">
@@ -478,12 +477,15 @@ function AdminNavigation() {
     if (from === to || to < 0 || to >= visible.length) return
     const ids = visible.map((s) => s.id)
     ids.splice(to, 0, ids.splice(from, 1)[0])
+    // optimistic: the drag already previewed this order, so keep it instead of
+    // snapping back to the server order for the length of the round-trip
+    setItems(ids.map((id) => visible.find((s) => s.id === id)))
     setBusy(true)
     try {
       const token = await sessionToken()
       await apiPostAuth("/admin/nav-items/reorder", { section: tab, ids }, token)
       await loadLinks(tab, archived)
-    } catch (err) { setToast(err.message) } finally { setBusy(false) }
+    } catch (err) { setToast(err.message); await loadLinks(tab, archived) } finally { setBusy(false) }
   }
 
   async function handleMoveLink(item, dir) {
@@ -494,6 +496,8 @@ function AdminNavigation() {
 
   // drag-to-reorder over the current tab's live list (archived has no order)
   const drag = useReorderDrag((from, to) => { moveLinkTo(from, to) })
+  // same gesture on the category rows - local until "Save changes" (no API)
+  const catDrag = useReorderDrag(moveCatTo)
 
   async function bulkVisibility(isVisible) {
     setBusy(true)
@@ -564,6 +568,15 @@ function AdminNavigation() {
       const j = index + dir
       if (j < 0 || j >= next.length) return rows
       ;[next[index], next[j]] = [next[j], next[index]]
+      return next
+    })
+  }
+
+  function moveCatTo(from, to) {
+    setCatRows((rows) => {
+      if (!rows || from === to || to < 0 || to >= rows.length) return rows
+      const next = [...rows]
+      next.splice(to, 0, next.splice(from, 1)[0])
       return next
     })
   }
@@ -701,8 +714,16 @@ function AdminNavigation() {
           ) : (
             <div className="space-y-2">
               {catRows.map((r, i) => (
-                <div key={r.name} className="rounded-2xl border border-gray-200 dark:border-[#2c4a6f] bg-white dark:bg-[#16283f] p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div
+                  key={r.name}
+                  data-sort-index={i}
+                  style={catDrag.rowStyle(i)}
+                  className={`rounded-2xl border bg-white dark:bg-[#16283f] p-3 flex flex-col sm:flex-row sm:items-center gap-3 transition duration-150 ease-out ${catDrag.isDragging(i)
+                    ? "border-dashed border-[#0b2e59] ring-2 ring-[#0b2e59]/40 opacity-70 shadow-xl shadow-slate-900/25 dark:border-yellow-400 dark:ring-yellow-400/40 dark:shadow-black/60"
+                    : "border-gray-200 dark:border-[#2c4a6f]"}`}
+                >
                   <div className="flex items-center gap-1.5 shrink-0">
+                    <GripHandle handleProps={catDrag.handleProps(i)} />
                     <button type="button" onClick={() => moveCat(i, -1)} disabled={i === 0} aria-label={`Move ${r.name} up`} className="px-2 py-1 rounded-lg text-[10px] font-bold text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-40">↑</button>
                     <button type="button" onClick={() => moveCat(i, 1)} disabled={i === catRows.length - 1} aria-label={`Move ${r.name} down`} className="px-2 py-1 rounded-lg text-[10px] font-bold text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition disabled:opacity-40">↓</button>
                     <span className="ml-1 text-xs font-bold text-gray-700 dark:text-slate-200">{r.name}</span>
@@ -817,7 +838,7 @@ function AdminNavigation() {
                   onToggleSelect={() => sel.toggle(s.id)}
                   dragHandleProps={drag.handleProps(i)}
                   dragging={drag.isDragging(i)}
-                  dragOver={drag.isOver(i)}
+                  dragStyle={drag.rowStyle(i)}
                   onMove={handleMoveLink}
                   onEdit={(item) => setDialog({ mode: "edit", item })}
                   onArchive={(item) => setConfirm({ item })}
