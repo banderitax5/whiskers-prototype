@@ -70,7 +70,7 @@ async function rerender() {
   await act(async () => { root.render(<Navbar />) })
 }
 
-const menuButton = () => [...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Menu')
+const menuButton = () => [...document.querySelectorAll('button')].find((b) => /^Menu/.test(b.getAttribute('aria-label') || ''))
 const cartLinks = () => [...document.querySelectorAll('a[href="/cart"]')]
 const pings = () => [...document.querySelectorAll('.animate-ping')]
 
@@ -98,10 +98,37 @@ describe('Navbar cart indicator', () => {
     expect(mobile.getAttribute('aria-label')).toBe('Cart, 3 items')
   })
 
+  it('shows the count on the burger itself, without opening the menu', async () => {
+    shopState.cartCount = 2
+    await render()
+    // the menu is closed - a phone shopper must still see that the cart has
+    // something in it, otherwise the indicator is invisible until they open it
+    expect(cartLinks()).toHaveLength(1)
+    const badge = menuButton().querySelector('.bg-yellow-400')
+    expect(badge).toBeTruthy()
+    expect(badge.textContent).toBe('2')
+    expect(menuButton().getAttribute('aria-label')).toBe('Menu, 2 items in cart')
+  })
+
+  it('pulses the burger when an item is added, then stops', async () => {
+    vi.useFakeTimers()
+    await render()
+    expect(menuButton().querySelector('.animate-ping')).toBeNull()
+
+    shopState.cartCount = 1
+    shopState.lastAddedAt = Date.now()
+    await rerender()
+    expect(menuButton().querySelector('.animate-ping')).toBeTruthy()
+
+    await act(async () => { vi.advanceTimersByTime(1400) })
+    expect(menuButton().querySelector('.animate-ping')).toBeNull()
+  })
+
   it('caps the count at 99+', async () => {
     shopState.cartCount = 150
     await render()
     expect(cartLinks()[0].querySelector('.bg-yellow-400').textContent).toBe('99+')
+    expect(menuButton().querySelector('.bg-yellow-400').textContent).toBe('99+')
     await openMenu()
     expect(cartLinks()[1].textContent).toContain('(99+)')
   })
@@ -115,6 +142,11 @@ describe('Navbar cart indicator', () => {
 
   it('renders no badge for an empty cart', async () => {
     await render()
+    // the burger must not claim there is anything to check
+    expect(menuButton().querySelector('.bg-yellow-400')).toBeNull()
+    expect(menuButton().querySelector('.animate-ping')).toBeNull()
+    expect(menuButton().getAttribute('aria-label')).toBe('Menu')
+
     await openMenu()
     for (const link of cartLinks()) {
       expect(link.querySelector('.bg-yellow-400')).toBeNull()

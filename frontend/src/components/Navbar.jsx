@@ -19,15 +19,16 @@ function CartBadge({ count, pinging }) {
   if (!(count > 0)) return null
   return (
     <>
-      <span className="absolute -right-1 -top-1 inline-flex min-w-[18px] items-center justify-center rounded-full bg-yellow-400 px-1 text-[10px] font-bold text-[#0b2e59]">
-        {count > 99 ? '99+' : count}
-      </span>
+      {/* halo first so it expands behind the pill instead of washing it out */}
       {pinging && (
         <span
           aria-hidden="true"
           className="absolute -right-1 -top-1 h-[18px] w-[18px] rounded-full bg-yellow-300/80 animate-ping motion-reduce:animate-none"
         />
       )}
+      <span className="absolute -right-1 -top-1 inline-flex min-w-[18px] items-center justify-center rounded-full bg-yellow-400 px-1 text-[10px] font-bold text-[#0b2e59]">
+        {count > 99 ? '99+' : count}
+      </span>
     </>
   )
 }
@@ -274,10 +275,29 @@ function Navbar() {
           <button
             type="button"
             onClick={() => setMobileMenuOpen((v) => !v)}
-            className="sm:hidden w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 dark:bg-white/5 dark:hover:bg-white/10 transition"
-            aria-label="Menu"
+            className="relative sm:hidden w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 dark:bg-white/5 dark:hover:bg-white/10 transition"
+            aria-label={`Menu${cartCount > 0 ? `, ${cartCount} item${cartCount === 1 ? '' : 's'} in cart` : ''}`}
           >
             {mobileMenuOpen ? <BsXLg className="text-white w-4 h-4" /> : <BsList className="text-white w-4 h-4" />}
+            {/* The badge has to live on the burger itself: a phone shopper needs
+                to see that something landed in the cart without opening the
+                menu first. Same yellow pill as the desktop cart; the ping halo
+                scales out from under it, so it is actually visible (the menu
+                row version was drawn behind an opaque pill of the same size). */}
+            {cartCount > 0 && (
+              <>
+                {/* halo first so it expands behind the pill instead of washing it out */}
+                {isCartPinging && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-yellow-300/80 animate-ping motion-reduce:animate-none"
+                  />
+                )}
+                <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-yellow-400 px-1 text-[10px] font-bold leading-none text-[#0b2e59]">
+                  {cartCount > 99 ? '99+' : cartCount}
+                </span>
+              </>
+            )}
           </button>
         </div>
         </div>
