@@ -11,6 +11,27 @@ import { useShop } from '../context/ShopContext.jsx'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
+// The yellow count pill and the "just added" pulse, shared by the desktop cart
+// button and the Cart row inside the mobile menu. They have to be the same
+// component: on a phone the desktop cart is hidden, so the menu row is the only
+// place a shopper can see that something landed in the cart.
+function CartBadge({ count, pinging }) {
+  if (!(count > 0)) return null
+  return (
+    <>
+      <span className="absolute -right-1 -top-1 inline-flex min-w-[18px] items-center justify-center rounded-full bg-yellow-400 px-1 text-[10px] font-bold text-[#0b2e59]">
+        {count > 99 ? '99+' : count}
+      </span>
+      {pinging && (
+        <span
+          aria-hidden="true"
+          className="absolute -right-1 -top-1 h-[18px] w-[18px] rounded-full bg-yellow-300/80 animate-ping motion-reduce:animate-none"
+        />
+      )}
+    </>
+  )
+}
+
 function Navbar() {
   const navigate = useNavigate()
   const [isLoginOpen, setIsLoginOpen] = useState(false)
@@ -24,6 +45,8 @@ function Navbar() {
   const [theme, setTheme] = useState('light')
   const [isCartPinging, setIsCartPinging] = useState(false)
   const { cartCount, lastAddedAt, setOpenLoginFn } = useShop()
+  const cartPulseTimerRef = useRef(null)
+  const pendingCartPulseRef = useRef(false)
 
   const getInitial = () => {
     if (!user) return "?"
@@ -54,6 +77,12 @@ function Navbar() {
     } catch {
       return false
     }
+  }
+
+  function pulseCart() {
+    setIsCartPinging(true)
+    clearTimeout(cartPulseTimerRef.current)
+    cartPulseTimerRef.current = setTimeout(() => setIsCartPinging(false), 1300)
   }
 
   function applyTheme(nextTheme) {
@@ -117,10 +146,21 @@ function Navbar() {
 
   useEffect(() => {
     if (!lastAddedAt) return
-    setIsCartPinging(true)
-    const timer = setTimeout(() => setIsCartPinging(false), 1300)
-    return () => clearTimeout(timer)
+    pulseCart()
+    // On a phone the menu is usually closed when the item is added, so a 1.3s
+    // flash would be over before the shopper can open it. Remember the add and
+    // replay the pulse the next time the menu opens.
+    if (!mobileMenuOpen) pendingCartPulseRef.current = true
+    return () => clearTimeout(cartPulseTimerRef.current)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastAddedAt])
+
+  useEffect(() => {
+    if (!mobileMenuOpen || !pendingCartPulseRef.current) return
+    pendingCartPulseRef.current = false
+    pulseCart()
+    return () => clearTimeout(cartPulseTimerRef.current)
+  }, [mobileMenuOpen])
 
   function onLoginSuccess() { setIsLoginOpen(false) }
   function onSignupSuccess() { setIsSignupOpen(false) }
@@ -210,16 +250,7 @@ function Navbar() {
             className="hidden sm:flex relative w-9 h-9 sm:w-10 sm:h-10 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 dark:bg-white/5 dark:hover:bg-white/10 transition"
           >
             <BsCartFill className="text-white w-4 h-4 sm:w-5 sm:h-5" />
-            {cartCount > 0 && (
-              <>
-                <span className="absolute -right-1 -top-1 inline-flex min-w-[18px] items-center justify-center rounded-full bg-yellow-400 px-1 text-[10px] font-bold text-[#0b2e59]">
-                  {cartCount > 99 ? '99+' : cartCount}
-                </span>
-                {isCartPinging && (
-                  <span className="absolute -right-1 -top-1 h-[18px] w-[18px] rounded-full bg-yellow-300/80 animate-ping" />
-                )}
-              </>
-            )}
+            <CartBadge count={cartCount} pinging={isCartPinging} />
           </NavLink>
 
           {/* Desktop: theme toggle */}
@@ -255,9 +286,17 @@ function Navbar() {
       {/* Mobile menu */}
       {mobileMenuOpen && (
         <div className="sm:hidden border-t border-white/10 bg-[#0b2e59] dark:bg-gray-900 px-4 py-3 space-y-1">
-          <NavLink to="/cart" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2 px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium">
-            <BsCartFill className="w-4 h-4" />
-            Cart {cartCount > 0 && <span className="text-yellow-300">({cartCount})</span>}
+          <NavLink
+            to="/cart"
+            onClick={() => setMobileMenuOpen(false)}
+            aria-label={`Cart${cartCount > 0 ? `, ${cartCount} items` : ''}`}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium"
+          >
+            <span className="relative flex h-5 w-5 items-center justify-center">
+              <BsCartFill className="w-4 h-4" />
+              <CartBadge count={cartCount} pinging={isCartPinging} />
+            </span>
+            Cart
           </NavLink>
 
           <NavLink to="/pets" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2 px-3 py-2 rounded-lg text-white/90 hover:bg-white/10 transition text-sm font-medium">
