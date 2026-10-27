@@ -35,6 +35,19 @@ rsync -az --delete "$REPO_ROOT/frontend/dist/" "$HOST:$REMOTE_DIR/frontend/dist/
 echo "==> Installing backend dependencies on the VM"
 ssh "$HOST" "cd $REMOTE_DIR/backend && npm ci --omit=dev --no-audit --no-fund"
 
+# The Caddyfile carries the production security headers (CSP included), so a
+# header change has to ship with the code. Validate first: a bad config would
+# otherwise only surface on the next reload/restart. Set SKIP_CADDYFILE=1 if
+# the VM's live Caddyfile is hand-tuned (e.g. a Cloudflare Origin Certificate)
+# and you would rather merge deploy/Caddyfile by hand.
+if [[ "${SKIP_CADDYFILE:-0}" == "1" ]]; then
+  echo "==> Skipping Caddyfile install (SKIP_CADDYFILE=1) - merge deploy/Caddyfile by hand"
+else
+  echo "==> Installing Caddy config"
+  scp "$REPO_ROOT/deploy/Caddyfile" "$HOST:/tmp/whiskers-Caddyfile"
+  ssh "$HOST" "sudo caddy validate --config /tmp/whiskers-Caddyfile --adapter caddyfile && sudo install -m 0644 /tmp/whiskers-Caddyfile /etc/caddy/Caddyfile && rm -f /tmp/whiskers-Caddyfile"
+fi
+
 echo "==> Restarting services"
 ssh "$HOST" "sudo systemctl restart whiskers-api && sudo systemctl reload caddy"
 

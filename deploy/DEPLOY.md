@@ -161,7 +161,8 @@ HOST=azureuser@<VM_IP> ./deploy/deploy.sh
 
 This builds the frontend locally, rsyncs backend sources + `frontend/dist` to
 the VM, runs `npm ci --omit=dev` on the VM (so `sharp` downloads the binary
-matching the VM's CPU), restarts the API, and curls `/health`.
+matching the VM's CPU), validates and installs `deploy/Caddyfile`, restarts the
+API, reloads Caddy, and curls `/health`.
 
 `.env` is excluded from the upload, so this never overwrites your secrets.
 
@@ -190,6 +191,17 @@ Smoke-test the panel paths a panelist will open:
 - sign in as `demo-admin@example.com`, open **Dashboard**, **Products**,
   **Orders**
 - place one order end to end (this also proves `/pay/simulate` works)
+
+Confirm the security headers the OWASP scan checks for:
+
+```bash
+curl -sI https://<your-domain>/ | grep -iE 'content-security-policy|x-frame-options|strict-transport|x-content-type|referrer-policy|permissions-policy'
+```
+
+Every one of those must be present on `/`, and `Content-Security-Policy` must
+appear exactly **once** (two CSP headers, or a header repeated twice with a
+comma, is treated as invalid by browsers). The same `curl` against
+`/api/products?pageSize=1` should show helmet's copy, not a duplicate.
 
 ---
 
@@ -248,6 +260,45 @@ confirm the tables come back. An untested backup is not a backup.
 `unattended-upgrades` is on by default in Ubuntu 24.04, so security patches
 apply themselves. Schedule the occasional `sudo reboot` yourself — a kernel
 update does not take effect until you do.
+
+### Security headers (CSP)
+
+`deploy/Caddyfile` sends the security headers for every static response. The
+Content-Security-Policy is duplicated verbatim in `frontend/nginx.conf` (the
+Docker path) and, minus one dev-only relaxation, in `frontend/vite.config.js`;
+`backend/test/securityHeaders.test.js` fails the build if the copies drift.
+
+Three things to know before editing it:
+
+1. **`script-src` stays `'self'`.** The built bundle has no inline scripts.
+   The two extra hosts in `script-src`/`connect-src` are Cloudflare's Web
+   Analytics beacon, which Cloudflare injects at the edge. If you turn Web
+   Analytics off in the Cloudflare dashboard, delete both entries. **Rocket
+   Loader must stay off** — it rewrites the bundle into inline scripts, which
+   this policy blocks.
+2. **Images are limited to this site, Supabase Storage, and `data:`/`blob:`
+   previews.** An admin who pastes an image URL from another host will see a
+   broken image; upload it to the Media Library instead.
+3. **`/api/*` and `/health` are excluded on purpose.** The Node API answers
+   with helmet's own headers; letting Caddy add a second copy produced
+   `Referrer-Policy: strict-origin-when-cross-origin,strict-origin-when-cross-origin`
+   and similar duplicated values, which browsers can discard as malformed.
+
+To change a header without a full deploy:
+
+```bash
+sudo nano /etc/caddy/Caddyfile        # edit
+sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+sudo systemctl reload caddy           # no dropped connections
+```
+
+`deploy.sh` now validates and installs `deploy/Caddyfile` on every run, so the
+repo copy is what the VM runs. If the VM's Caddyfile was hand-tuned (for
+example it terminates a Cloudflare Origin Certificate instead of Let's
+Encrypt), run the deploy with `SKIP_CADDYFILE=1` and merge the `header` block
+by hand. The site block addresses `whiskerspet.me` and `www.whiskerspet.me`;
+change that line if the VM serves a different name.
+
 
 ---
 

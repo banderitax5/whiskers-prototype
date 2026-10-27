@@ -2,25 +2,31 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// Production policy, byte-identical to deploy/Caddyfile and frontend/nginx.conf
+// (backend/test/securityHeaders.test.js fails if the two servers drift).
+// The dev server below adds 'unsafe-inline' to script-src because
+// @vitejs/plugin-react injects an inline Fast Refresh preamble into index.html
+// in dev only; the built bundle has no inline scripts.
+const CONTENT_SECURITY_POLICY =
+  "default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' https://static.cloudflareinsights.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cloudflareinsights.com; media-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-src 'none'; frame-ancestors 'none'; form-action 'self'"
+
 const securityHeaders = {
-  'Content-Security-Policy': [
-    "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob: https://*.supabase.co",
-    "font-src 'self' data:",
-    "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
-    "frame-ancestors 'self'",
-    "form-action 'self'",
-    "base-uri 'self'",
-    "object-src 'none'",
-    "media-src 'self'",
-    "worker-src 'self' blob:",
-  ].join('; '),
-  'X-Frame-Options': 'SAMEORIGIN',
+  'Content-Security-Policy': CONTENT_SECURITY_POLICY.replace(
+    "script-src 'self'",
+    "script-src 'self' 'unsafe-inline'"
+  ),
+  'X-Frame-Options': 'DENY',
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+}
+
+function applySecurityHeaders(_req, res, next) {
+  for (const [key, value] of Object.entries(securityHeaders)) {
+    res.setHeader(key, value)
+  }
+  res.removeHeader('X-Powered-By')
+  next()
 }
 
 export default defineConfig(({ mode }) => {
@@ -75,15 +81,15 @@ export default defineConfig(({ mode }) => {
         },
       }),
       {
+        // Same headers on `npm run dev` and `npm run preview`, so a local
+        // preview of the production build exercises the real policy (the
+        // preview server is the only way to test the PWA locally).
         name: 'security-headers',
         configureServer(server) {
-          server.middlewares.use((_req, res, next) => {
-            for (const [key, value] of Object.entries(securityHeaders)) {
-              res.setHeader(key, value)
-            }
-            res.removeHeader('X-Powered-By')
-            next()
-          })
+          server.middlewares.use(applySecurityHeaders)
+        },
+        configurePreviewServer(server) {
+          server.middlewares.use(applySecurityHeaders)
         },
       },
     ],

@@ -29,6 +29,9 @@ if (process.env.TRUST_PROXY) {
   app.set('trust proxy', Number(process.env.TRUST_PROXY) || 1)
 }
 
+// API responses are JSON, never framed. Keep the framing policy identical to
+// the static site (deploy/Caddyfile, frontend/nginx.conf) so the same origin
+// does not advertise two different answers to "may I embed this?".
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -38,7 +41,7 @@ app.use(helmet({
       imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co"],
       fontSrc: ["'self'", "data:"],
       connectSrc: ["'self'", "https://*.supabase.co", "wss://*.supabase.co"],
-      frameAncestors: ["'self'"],
+      frameAncestors: ["'none'"],
       formAction: ["'self'"],
       baseUri: ["'self'"],
       objectSrc: ["'none'"],
@@ -47,7 +50,7 @@ app.use(helmet({
     },
   },
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
-  xFrameOptions: { action: 'sameorigin' },
+  xFrameOptions: { action: 'deny' },
 }))
 app.use(cors({ origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/] }))
 

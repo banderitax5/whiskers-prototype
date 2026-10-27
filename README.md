@@ -201,6 +201,26 @@ The deployment target is a **Microsoft Azure virtual machine** (Azure for Studen
 
 Render/Railway free tiers sleep after inactivity, so they do not satisfy the 24/7 requirement.
 
+### Security headers
+
+Every static response carries HSTS, `X-Content-Type-Options`, `X-Frame-Options`,
+`Referrer-Policy`, `Permissions-Policy`, and a `Content-Security-Policy`. The CSP
+lives in `frontend/nginx.conf` (Docker image) and `deploy/Caddyfile` (systemd +
+Caddy host); `backend/test/securityHeaders.test.js` fails if the two copies
+drift. `/api/*` and `/health` are excluded on purpose — helmet already sets
+those headers on API responses, and sending a second copy makes browsers see a
+duplicated, malformed value.
+
+- `script-src 'self'`: the built bundle has no inline scripts. The only
+  third-party allowance is Cloudflare's edge-injected Web Analytics beacon, so
+  **Rocket Loader must stay off** (it rewrites the bundle into inline scripts).
+- Images are limited to this site, Supabase Storage, and `data:`/`blob:`
+  previews. An admin who pastes an image URL from another host gets a broken
+  image; upload it to the Media Library instead.
+- After changing the policy: rebuild the frontend image (`docker compose up -d
+  --build frontend`), or on the Caddy host `sudo caddy validate --config
+  /etc/caddy/Caddyfile --adapter caddyfile && sudo systemctl reload caddy`.
+
 ## Troubleshooting
 
 - **`EADDRINUSE` on 4141 or 5173** — a previous dev server is still running. Close it or kill the process holding the port.

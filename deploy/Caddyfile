@@ -1,48 +1,75 @@
-{
-	admin off
-}
-
-# Production config for a single Azure VM running Caddy + the Node API.
+# Production config for a single Ubuntu VM running Caddy + the Node API.
 # Same-origin topology: Caddy serves the built frontend and reverse-proxies
 # /api and /health to the API on 127.0.0.1:4141, so the browser never makes a
 # cross-origin request and the API's localhost-only CORS stays correct.
+#
+# Everything below the site address is scoped to that address on purpose: a
+# Caddyfile made only of directives (no site block) does not parse at all -
+# "parsed 'encode' as a site address, but it is a known directive".
+#
+# TLS is automatic (Let's Encrypt) as long as ports 80/443 reach this VM.
+# If the VM sits behind Cloudflare with an Origin Certificate instead, add
+# this inside the site block:
+#   tls /etc/caddy/origin.pem /etc/caddy/origin.key
+whiskerspet.me, www.whiskerspet.me {
+	encode zstd gzip
 
-encode zstd gzip
+	# The hashed asset filenames are content-addressed, so they can be cached forever.
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
 
-header {
-	Strict-Transport-Security "max-age=31536000; includeSubDomains"
-	X-Content-Type-Options "nosniff"
-	X-Frame-Options "DENY"
-	Referrer-Policy "strict-origin-when-cross-origin"
-	Permissions-Policy "camera=(), geolocation=(), microphone=()"
-	del X-Powered-By
-}
+	# The service worker must be revalidated or stale clients keep an old bundle.
+	@service-worker path /sw.js
+	header @service-worker Cache-Control "no-cache"
 
-# The hashed asset filenames are content-addressed, so they can be cached forever.
-@assets path /assets/*
-header @assets Cache-Control "public, max-age=31536000, immutable"
+	# index.html and offline.html must never be cached, otherwise a deploy is
+	# invisible until every visitor clears their cache.
+	@html path / /index.html /offline.html
+	header @html Cache-Control "no-cache"
 
-# The service worker must be revalidated or stale clients keep an old bundle.
-@service-worker path /sw.js
-header @service-worker Cache-Control "no-cache"
+	# The API and its health check go straight to the Node process.
+	#
+	# Deliberately no `header` directives in these two handlers: the API answers
+	# with helmet's own security headers, and setting them here as well emits a
+	# second copy of the same header (browsers see e.g. "Referrer-Policy:
+	# strict-origin-when-cross-origin,strict-origin-when-cross-origin" and can
+	# discard the value as malformed).
+	handle /health {
+		reverse_proxy 127.0.0.1:4141
+	}
 
-# index.html and offline.html must never be cached, otherwise a deploy is
-# invisible until every visitor clears their cache.
-@html path / /index.html /offline.html
-header @html Cache-Control "no-cache"
+	handle /api/* {
+		reverse_proxy 127.0.0.1:4141
+	}
 
-# The API and its health check go straight to the Node process.
-handle /health {
-	reverse_proxy 127.0.0.1:4141
-}
+	# Static SPA with client-side routing fallback.
+	handle {
+		root * /opt/whiskers/frontend/dist
+		try_files {path} /index.html
+		file_server
 
-handle /api/* {
-	reverse_proxy 127.0.0.1:4141
-}
-
-# Static SPA with client-side routing fallback.
-handle {
-	root * /opt/whiskers/frontend/dist
-	try_files {path} /index.html
-	file_server
+		# Security headers for the HTML/JS/CSS/asset responses. The CSP is the
+		# production policy - keep it byte-identical to frontend/nginx.conf and
+		# the dev middleware in frontend/vite.config.js (backend/test/
+		# securityHeaders.test.js fails if they drift).
+		#
+		# Notes on the two non-obvious sources:
+		#   * static.cloudflareinsights.com / cloudflareinsights.com - Cloudflare
+		#     injects its Web Analytics beacon into the HTML at the edge. Remove
+		#     both entries if Web Analytics is turned off in the Cloudflare
+		#     dashboard. Rocket Loader must stay OFF: it rewrites the bundle into
+		#     inline scripts, which this policy blocks.
+		#   * img-src allows Supabase Storage (product/banner/media images) plus
+		#     data:/blob: for the upload previews. Admin-pasted images from any
+		#     other host are blocked by design - upload them to the Media Library.
+		header {
+			Strict-Transport-Security "max-age=31536000; includeSubDomains"
+			X-Content-Type-Options "nosniff"
+			X-Frame-Options "DENY"
+			Referrer-Policy "strict-origin-when-cross-origin"
+			Permissions-Policy "camera=(), geolocation=(), microphone=()"
+			Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' https://static.cloudflareinsights.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cloudflareinsights.com; media-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-src 'none'; frame-ancestors 'none'; form-action 'self'"
+			del X-Powered-By
+		}
+	}
 }
