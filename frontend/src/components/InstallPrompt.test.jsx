@@ -63,6 +63,16 @@ describe('InstallPrompt', () => {
     expect(card.textContent).not.toContain('Install')
   })
 
+  it('shows a desktop card with a browser-menu hint when no install is offered', async () => {
+    mountPrompt()
+    await passCookieAndDelay()
+    const card = document.querySelector('[role="dialog"]')
+    expect(card).not.toBeNull()
+    expect(card.textContent).toContain('address bar')
+    const buttons = [...card.querySelectorAll('button')].map((b) => b.textContent)
+    expect(buttons).not.toContain('Install')
+  })
+
   it('stays hidden in the installed app', async () => {
     window.matchMedia = vi.fn().mockImplementation(() => ({ matches: true }))
     mountPrompt()
@@ -78,6 +88,14 @@ describe('InstallPrompt', () => {
     act(() => notNow.click())
     expect(document.querySelector('[role="dialog"]')).toBeNull()
     expect(localStorage.getItem('whiskers_install_dismissed_at')).not.toBeNull()
+  })
+
+  it('tells the shopper that Not now hides the card for at least 30 days', async () => {
+    setUA(IPHONE_SAFARI)
+    mountPrompt()
+    await passCookieAndDelay()
+    const card = document.querySelector('[role="dialog"]')
+    expect(card.textContent).toContain('at least 30 days')
   })
 
   it('stays hidden during the 30 days after a dismissal', async () => {

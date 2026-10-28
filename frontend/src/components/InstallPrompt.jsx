@@ -52,8 +52,10 @@ export default function InstallPrompt() {
     window.addEventListener('beforeinstallprompt', onBeforeInstall)
     window.addEventListener('appinstalled', onInstalled)
 
-    // iOS never fires beforeinstallprompt, so show the hint directly.
-    if (isIosSafari()) setMode('ios')
+    // iOS never fires beforeinstallprompt, so it gets the Share hint directly.
+    // Other browsers get the card with a menu hint; the Install button replaces
+    // it only if the browser actually offers an install.
+    setMode(isIosSafari() ? 'ios' : 'desktop')
 
     // wait until the cookie banner has been answered so the two do not overlap,
     // then wait a few seconds so the card is not the first thing a shopper sees
@@ -103,11 +105,17 @@ export default function InstallPrompt() {
         <img src="/icons/icon-192.png" alt="" width="40" height="40" className="h-10 w-10 rounded-lg shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Add Whiskers to your home screen</p>
-          {mode === 'install' ? (
+          {mode === 'install' && (
             <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400">Open the shop in its own window, one tap away.</p>
-          ) : (
+          )}
+          {mode === 'ios' && (
             <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400">
               Tap the Share button, then &ldquo;Add to Home Screen&rdquo;.
+            </p>
+          )}
+          {mode === 'desktop' && (
+            <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400">
+              Click the install icon in the address bar, or open the browser menu and choose Install.
             </p>
           )}
         </div>
@@ -120,7 +128,10 @@ export default function InstallPrompt() {
           &times;
         </button>
       </div>
-      <div className="mt-3 flex justify-end gap-2">
+      <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">
+        Tap &ldquo;Not now&rdquo; and we won&rsquo;t show this again for at least 30 days.
+      </p>
+      <div className="mt-2 flex justify-end gap-2">
         <button
           type="button"
           onClick={dismiss}
