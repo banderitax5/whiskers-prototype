@@ -9,6 +9,7 @@ import ScrollProgress from './ScrollProgress.jsx'
 import BackToTop from './BackToTop.jsx'
 import FloatingContact from './FloatingContact.jsx'
 import CookieBanner from './CookieBanner.jsx'
+import InstallPrompt from './InstallPrompt.jsx'
 import RecoveryGate from './RecoveryGate.jsx'
 import AnnouncementBar from './AnnouncementBar.jsx'
 import PromoStrip from './PromoStrip.jsx'
@@ -96,6 +97,7 @@ function Layout() {
       <BackToTop />
       <FloatingContact />
       <CookieBanner />
+      <InstallPrompt />
     </div>
   )
 }
