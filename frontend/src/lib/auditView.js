@@ -178,9 +178,34 @@ const MONEY_FIELDS = new Set([
   'shipping_fee', 'free_shipping_threshold',
 ])
 
+// Product info sections are stored as [{label, content}] (a list of boxes such
+// as "Feeding Guide"). Show them as plain words: one "Label: text" per section,
+// with bullet dashes and line-break markers flattened so no code shows.
+function plainSections(value) {
+  const parts = []
+  for (const section of value) {
+    if (!section || typeof section !== 'object') continue
+    const label = String(section.label || '').trim()
+    const content = String(section.content || '')
+      .replace(/\\n|\r\n|\r|\n/g, ' ')
+      .replace(/(^|\s)[-*•]\s+/g, '$1')
+      .replace(/\s*\|\s*/g, ', ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    if (label && content) parts.push(`${label}: ${content}`)
+    else if (content) parts.push(content)
+  }
+  return parts.join('. ')
+}
+
 export function formatChangeValue(field, value) {
   if (value === null || value === undefined) return '—'
   if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (Array.isArray(value) && value.some((v) => v && typeof v === 'object' && 'content' in v)) {
+    const text = plainSections(value)
+    if (!text) return '—'
+    return text.length > 160 ? `${text.slice(0, 160)}...` : text
+  }
   if (MONEY_FIELDS.has(String(field)) && typeof value === 'number' && Number.isFinite(value)) {
     return `₱${formatPesos(value)}`
   }

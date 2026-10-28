@@ -1,7 +1,14 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import supabase from '../lib/supabase'
 import { apiGetAuth } from '../lib/api'
-import { AdminPage, StatusPill, EmptyState, AdminSelect, btnGhost, btnPrimary } from './adminTheme'
+import { AdminPage, StatusPill, EmptyState, AdminSelect, Pagination, btnGhost, btnPrimary } from './adminTheme'
+
+const AUDIT_HELP = [
+  { title: 'What this page shows', body: 'A list of every change made in the admin panel: who did it, what changed, and when.' },
+  { title: 'Filters', body: 'Use the search, date range and dropdowns to find one change. Use Clear filters to start over.' },
+  { title: 'Important only', body: 'Tick Important only to hide routine changes and see the ones that need a closer look.' },
+  { title: 'Technical details', body: 'Open Technical details on a row to see the full record. You do not need this for everyday checks.' },
+]
 import CopyToClipboard from './CopyToClipboard'
 import {
   CATEGORIES, CATEGORY_PILL, describeEntry, humanizeField, maskValue, parseTarget,
@@ -286,7 +293,7 @@ const AdminAuditLogs = () => {
   }
 
   return (
-    <AdminPage title="Audit logs" subtitle="A readable history of changes made in the admin panel.">
+    <AdminPage title="Audit logs" subtitle="A readable history of changes made in the admin panel." help={AUDIT_HELP}>
       {error && !loading ? (
         <EmptyState
           icon={<BsExclamationTriangle />}
@@ -465,9 +472,7 @@ const AdminAuditLogs = () => {
                             className="inline-flex items-center gap-1 hover:text-yellow-200 uppercase font-black tracking-widest"
                           >
                             When
-                            {sortDir === 'asc'
-                              ? <BsChevronUp className="text-[10px]" aria-hidden="true" />
-                              : <BsChevronDown className="text-[10px]" aria-hidden="true" />}
+                            <span aria-hidden="true" className="text-yellow-300">{sortDir === 'asc' ? '▲' : '▼'}</span>
                           </button>
                         </th>
                         <th scope="col" className="py-3 px-4 text-left w-48">Who</th>
@@ -531,34 +536,13 @@ const AdminAuditLogs = () => {
                 </div>
 
                 {totalPages > 1 && (
-                  <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-5 py-2 sm:py-3 border-t border-gray-100 dark:border-[#1e3a5f]">
-                    <span className="text-[10px] sm:text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">
-                      {(current - 1) * PAGE_SIZE + 1}–{Math.min(current * PAGE_SIZE, filtered.length)} of {filtered.length}
-                    </span>
-                    <div className="flex items-center gap-1" role="navigation" aria-label="Pagination">
-                      <button
-                        type="button"
-                        onClick={() => setPage(current - 1)}
-                        disabled={current <= 1}
-                        aria-label="Previous page"
-                        className={btnGhost}
-                      >
-                        Prev
-                      </button>
-                      <span className="text-[10px] sm:text-xs text-gray-500 dark:text-slate-400 px-1">
-                        Page {current} of {totalPages}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setPage(current + 1)}
-                        disabled={current >= totalPages}
-                        aria-label="Next page"
-                        className={btnGhost}
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
+                  <Pagination
+                    page={current}
+                    totalPages={totalPages}
+                    rowsLength={filtered.length}
+                    pageSize={PAGE_SIZE}
+                    onPageChange={setPage}
+                  />
                 )}
               </>
             )}

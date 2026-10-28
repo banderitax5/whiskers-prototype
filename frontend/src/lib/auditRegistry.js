@@ -676,6 +676,10 @@ export const REGISTRY = {
       return `${who} saved the menu category list (${c.saved} kept${removed})`
     },
   },
+  category_delete: {
+    category: 'Products',
+    describe: ({ who, target }) => `${who} deleted the ${target?.replace(/^category:/, '') || ''} category`,
+  },
   content_restore_defaults: {
     category: 'Website content',
     describe: ({ who, parsed, target }) => {

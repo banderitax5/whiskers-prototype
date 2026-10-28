@@ -38,8 +38,23 @@ test('truncates long strings and stringifies objects', () => {
   assert.ok(out.alt_text.from.endsWith('...'))
   assert.equal(out.alt_text.to, 'ok')
   assert.equal(typeof out.details.from, 'string')
-  assert.ok(out.details.from.startsWith('[{'))
+  assert.equal(out.details.from, 'Ingredients: beef')
   assert.equal(out.details.to, null)
+})
+
+test('product info sections are stored as plain sentences, not JSON', () => {
+  const out = sanitizeChanges({
+    details: {
+      from: null,
+      to: [
+        { label: 'Product Info', content: '- Name: Aozi (K) Tuna\n- Brand: Aozi' },
+        { label: 'Feeding Guide', content: 'Serve daily | 2 cups' },
+      ],
+    },
+  })
+  assert.equal(out.details.to, 'Product Info: Name: Aozi (K) Tuna Brand: Aozi. Feeding Guide: Serve daily, 2 cups')
+  assert.ok(!out.details.to.includes('[{'))
+  assert.ok(!out.details.to.includes('\\n'))
 })
 
 test('caps the number of fields at 20', () => {

@@ -17,11 +17,36 @@ function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v)
 }
 
+// Product info sections are [{label, content}] lists. Store them as plain
+// sentences ("Label: text. Label: text.") instead of JSON, so the audit log
+// can show them without code. Bullet dashes and line-break codes are flattened.
+function plainSections(v) {
+  const parts = []
+  for (const section of v) {
+    if (!isPlainObject(section)) continue
+    const label = String(section.label || '').trim()
+    const content = String(section.content || '')
+      .replace(/\r\n|\r|\n/g, ' ')
+      .replace(/(^|\s)[-*•]\s+/g, '$1')
+      .replace(/\s*\|\s*/g, ', ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    if (label && content) parts.push(`${label}: ${content}`)
+    else if (content) parts.push(content)
+  }
+  return parts.join('. ')
+}
+
 function clampValue(v) {
   if (v === undefined) return null
   if (v === null || typeof v === 'boolean' || typeof v === 'number') return v
   if (typeof v === 'string') {
     return v.length > MAX_VALUE ? `${v.slice(0, MAX_VALUE)}...` : v
+  }
+  if (Array.isArray(v) && v.some((s) => isPlainObject(s) && 'content' in s)) {
+    const text = plainSections(v)
+    if (!text) return null
+    return text.length > MAX_VALUE ? `${text.slice(0, MAX_VALUE)}...` : text
   }
   // arrays / objects / dates-as-strings-that-came-through-json: one readable line
   let text
