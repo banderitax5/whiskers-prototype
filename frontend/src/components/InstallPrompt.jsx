@@ -117,7 +117,7 @@ export default function InstallPrompt() {
           )}
           {mode === 'ios' && (
             <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400">
-              Tap the Share button, then &ldquo;Add to Home Screen&rdquo;.
+              Open this page in Safari, tap the Share button, then &ldquo;Add to Home Screen&rdquo;.
             </p>
           )}
           {mode === 'mac' && (

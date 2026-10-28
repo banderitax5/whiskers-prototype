@@ -60,6 +60,7 @@ describe('InstallPrompt', () => {
     const card = document.querySelector('[role="dialog"]')
     expect(card).not.toBeNull()
     expect(card.textContent).toContain('Add to Home Screen')
+    expect(card.textContent).toContain('Open this page in Safari')
     expect(card.textContent).not.toContain('Install')
   })
 
