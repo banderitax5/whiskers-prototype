@@ -91,9 +91,11 @@ export function deriveProfile(product) {
     }
   }
 
+  // the description also feeds the health keywords (e.g. "for sensitive stomachs")
+  const healthText = `${haystack} ${(product.description || '').toLowerCase()}`
   const healthTags = ['healthy']
   for (const { tag, words } of TAG_KEYWORDS) {
-    if (words.some((w) => haystack.includes(w))) healthTags.push(tag)
+    if (words.some((w) => healthText.includes(w))) healthTags.push(tag)
   }
 
   return { species, lifeStage, healthTags, stageExplicit }

@@ -9,7 +9,6 @@ import ScrollProgress from './ScrollProgress.jsx'
 import BackToTop from './BackToTop.jsx'
 import FloatingContact from './FloatingContact.jsx'
 import CookieBanner from './CookieBanner.jsx'
-import SkipToContent from './SkipToContent.jsx'
 import RecoveryGate from './RecoveryGate.jsx'
 import AnnouncementBar from './AnnouncementBar.jsx'
 import PromoStrip from './PromoStrip.jsx'
@@ -69,7 +68,6 @@ function Layout() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
-      <SkipToContent />
       <RecoveryGate />
       <ScrollProgress />
       <AnnouncementBar />
