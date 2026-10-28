@@ -3,6 +3,13 @@ import supabase from '../lib/supabase';
 import { apiGetAllPages, apiDeleteAuth } from '../lib/api';
 import { formatPesos } from '../lib/cartLogic';
 import { AdminPage, AdminTable, EmptyState, StatCard, ConfirmDialog, StatusPill } from './adminTheme';
+
+const PAYMENTS_HELP = [
+  { title: 'What this page shows', body: 'Every payment attempt that came through the store, with its amount and result.' },
+  { title: 'Payment status', body: 'Paid means the money came in. Pending, Failed and Expired mean it did not finish, so check the order before you ship it.' },
+  { title: 'Price filter', body: 'Type a Min Price and Max Price to see payments in a range. Press Clear to reset it.' },
+  { title: 'Searching', body: 'Search by customer name, payment method or order ID. Click a column title to sort.' },
+]
 import { BsCreditCard, BsSearch, BsTrash, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 import { useRole } from '../context/RoleContext';
 import toast from '../lib/toast.js';
@@ -218,7 +225,7 @@ const AdminPayments = () => {
   ];
 
   return (
-    <AdminPage title="Payment Transactions" subtitle="Every transaction that flowed through the store.">
+    <AdminPage title="Payment Transactions" subtitle="Every transaction that flowed through the store." help={PAYMENTS_HELP}>
 
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4 mb-6">
         <StatCard label="Revenue in View" value={`PHP ${formatPesos(totalRevenue)}`} loading={loading} />

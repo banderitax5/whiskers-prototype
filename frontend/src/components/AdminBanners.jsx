@@ -2,6 +2,14 @@ import React, { useCallback, useEffect, useMemo, useState } from "react"
 import supabase from "../lib/supabase"
 import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from "../lib/api.js"
 import { AdminPage, StatusPill, EmptyState, btnPrimary, btnGhost, ConfirmDialog, AdminSelect } from "./adminTheme.jsx"
+
+const BANNERS_HELP = [
+  { title: 'New banners', body: 'Press New banner to add a slide, strip or bar. New banners start as drafts, so nothing shows in the store until you publish it.' },
+  { title: 'Edit and archive', body: 'Press Edit to change a banner. Press Archive to take it off the store. Archived banners can be brought back with Restore.' },
+  { title: 'Bulk publish', body: 'Tick banners, then press Publish to make them all live at once.' },
+  { title: 'Preview and history', body: 'Press Preview storefront to see the live look in a new tab. Press History to see earlier changes.' },
+  { title: 'Refresh', body: 'Press Refresh to reload the list from the server if something looks out of date.' },
+]
 import ImagePicker from "./ImagePicker.jsx"
 import ProductPicker from "./ProductPicker.jsx"
 import ContentHistoryDialog from "./ContentHistoryDialog.jsx"
@@ -450,8 +458,10 @@ function AdminBanners() {
   const pruneSelection = sel.prune
   const clearSelection = sel.clear
 
-  const load = useCallback(async () => {
-    setLoading(true); setError("")
+  // silent: keep the current list on screen while it refreshes (no skeleton)
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true)
+    setError("")
     try {
       const token = await sessionToken()
       const data = await apiGetAuth(`/admin/banners?placement=${placement}&archived=${archived}`, token)
@@ -483,20 +493,43 @@ function AdminBanners() {
   }
   const singleSelected = sel.count === 1 ? listRows.find((b) => sel.isSelected(b.id)) : null
 
+  // replace one row in place with the server's copy (or the local patch)
+  function patchLocalBanner(id, patch) {
+    let before = null
+    setItems((list) => list.map((b) => {
+      if (b.id !== id) return b
+      before = b
+      return { ...b, ...patch }
+    }))
+    return () => { if (before) setItems((list) => list.map((b) => (b.id === id ? before : b))) }
+  }
+
   async function handleSubmitBanner(payload) {
     const token = await sessionToken()
     if (dialog?.mode === "edit") {
-      await apiPatchAuth(`/admin/banners/${dialog.item.id}`, payload, token)
+      const id = dialog.item.id
+      // show the edit right away; roll back if the server refuses it
+      const rollback = patchLocalBanner(id, payload)
+      try {
+        await apiPatchAuth(`/admin/banners/${id}`, payload, token)
+      } catch (err) {
+        rollback()
+        throw err
+      }
       setToast("Banner saved")
-    } else {
-      await apiPostAuth("/admin/banners", payload, token)
-      setToast("Banner created as draft" + (payload.status !== "draft" ? ` (${payload.status})` : ""))
+      setDialog(null)
+      load({ silent: true })
+      return
     }
-    setDialog(null); await load()
+    await apiPostAuth("/admin/banners", payload, token)
+    setToast("Banner created as draft" + (payload.status !== "draft" ? ` (${payload.status})` : ""))
+    setDialog(null)
+    load({ silent: true })
   }
 
   async function moveBannerTo(from, to) {
     if (from === to || to < 0 || to >= visible.length) return
+    const prevItems = items
     const ids = visible.map((b) => b.id)
     ids.splice(to, 0, ids.splice(from, 1)[0])
     // optimistic: the drag already previewed this order, so keep it instead of
@@ -506,8 +539,11 @@ function AdminBanners() {
     try {
       const token = await sessionToken()
       await apiPostAuth("/admin/banners/reorder", { placement, ids }, token)
-      await load()
-    } catch (err) { setToast(err.message); await load() } finally { setBusy(false) }
+    } catch (err) {
+      // put the previous order back if the server refuses the new one
+      setItems(prevItems)
+      setToast(err.message)
+    } finally { setBusy(false) }
   }
 
   async function handleMove(banner, dir) {
@@ -526,7 +562,7 @@ function AdminBanners() {
       const res = await bulkApply([...sel.selected], (id) => apiPatchAuth(`/admin/banners/${id}`, { status }, token))
       sel.clear()
       setToast(bulkSummary(action, res, "banner"))
-      await load()
+      await load({ silent: true })
     } catch (err) { setToast(err.message || "Update failed") } finally { setBusy(false) }
   }
 
@@ -538,7 +574,7 @@ function AdminBanners() {
       setConfirm(null)
       sel.clear()
       setToast(bulkSummary("Archived", res, "banner"))
-      await load()
+      await load({ silent: true })
     } catch (err) { setConfirm(null); setToast(err.message || "Archive failed") } finally { setBusy(false) }
   }
 
@@ -549,26 +585,35 @@ function AdminBanners() {
       const res = await bulkApply([...sel.selected], (id) => apiPostAuth(`/admin/banners/${id}/restore`, {}, token))
       sel.clear()
       setToast(bulkSummary("Restored", res, "banner"))
-      await load()
+      await load({ silent: true })
     } catch (err) { setToast(err.message || "Restore failed") } finally { setBusy(false) }
   }
 
   async function handleArchive() {
+    const id = confirm.item.id
     setBusy(true)
+    // archived rows leave the active list at once; back if the server refuses
+    const prevItems = items
+    setConfirm(null)
+    setItems((list) => list.map((b) => (b.id === id ? { ...b, archived_at: new Date().toISOString() } : b)))
     try {
       const token = await sessionToken()
-      await apiDeleteAuth(`/admin/banners/${confirm.item.id}`, token)
-      setConfirm(null); setToast("Banner archived"); await load()
-    } catch (err) { setConfirm(null); setToast(err.message) } finally { setBusy(false) }
+      await apiDeleteAuth(`/admin/banners/${id}`, token)
+      setToast("Banner archived")
+      load({ silent: true })
+    } catch (err) { setItems(prevItems); setToast(err.message) } finally { setBusy(false) }
   }
 
   async function handleRestore(banner) {
     setBusy(true)
+    const prevItems = items
+    setItems((list) => list.map((b) => (b.id === banner.id ? { ...b, archived_at: null } : b)))
     try {
       const token = await sessionToken()
       await apiPostAuth(`/admin/banners/${banner.id}/restore`, {}, token)
-      setToast("Banner restored"); await load()
-    } catch (err) { setToast(err.message) } finally { setBusy(false) }
+      setToast("Banner restored")
+      load({ silent: true })
+    } catch (err) { setItems(prevItems); setToast(err.message) } finally { setBusy(false) }
   }
 
   async function handleRestoreDefaults() {
@@ -578,7 +623,7 @@ function AdminBanners() {
       const res = await apiPostAuth("/admin/content/restore-defaults", { scope: placement }, token)
       setConfirmRestore(false)
       setToast(`Restored ${res.restored} default slide${res.restored === 1 ? "" : "s"} (${res.archived} previous archived)`)
-      await load()
+      await load({ silent: true })
     } catch (err) { setConfirmRestore(false); setToast(err.message) } finally { setBusy(false) }
   }
 
@@ -588,7 +633,7 @@ function AdminBanners() {
   const hasDefaults = ["home_hero", "brand_strip"].includes(placement)
 
   return (
-    <AdminPage title="Banners & Carousel" subtitle="Slides, strips and bars across the storefront. New banners start as drafts.">
+    <AdminPage title="Banners & Carousel" subtitle="Slides, strips and bars across the storefront. New banners start as drafts." help={BANNERS_HELP}>
       <div className="mb-4 flex flex-col gap-3">
         <div role="tablist" aria-label="Banner placements" className="flex flex-wrap gap-1.5">
           {PLACEMENTS.map((p) => (
@@ -618,6 +663,7 @@ function AdminBanners() {
               <input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} className="rounded border-gray-300" />
               Show archived
             </label>
+            <button type="button" onClick={() => load({ silent: true })} disabled={loading} title="Reload the list from the server" className="px-3 py-2 rounded-lg text-xs font-black uppercase tracking-widest bg-white dark:bg-[#162d4a] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] text-gray-600 dark:text-slate-300 border border-gray-200 dark:border-[#1e3a5f] disabled:opacity-50 whitespace-nowrap">Refresh</button>
             <button type="button" onClick={() => setDialog({ mode: "create" })} className={`${btnPrimary} whitespace-nowrap`}>New banner</button>
           </div>
         </div>

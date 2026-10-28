@@ -5,6 +5,13 @@ import { formatPesos } from '../lib/cartLogic';
 import { orderCode } from '../lib/orderDoc';
 import { formatMargin } from '../lib/adminCosting';
 import { AdminPage, AdminTable, AdminRowDropdown, EmptyState, StatCard, StatusPill, ConfirmDialog } from './adminTheme';
+
+const ORDERS_HELP = [
+  { title: 'What this page shows', body: 'Every order from shoppers. Use the status menu on a row to move it along: Pending, Processing, Shipped, Delivered or Cancelled.' },
+  { title: 'Seeing an order', body: 'Press View to open the full order with its items and details.' },
+  { title: 'Finding an order', body: 'Type a name or order ID in the search box. Click a column title to sort the list.' },
+  { title: 'Deleting an order', body: 'Delete removes an order for good. Ask first, because you cannot undo it.' },
+]
 import { BsBoxSeam, BsSearch, BsTrash, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 import { useRole } from '../context/RoleContext';
 import toast from '../lib/toast.js';
@@ -232,9 +239,10 @@ const AdminOrders = () => {
     },
     { key: 'status', label: 'Status', sortable: true,
       render: (o) => (
-        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-          <StatusPill kind={STATUS_KIND[o.status] || 'neutral'}>{o.status}</StatusPill>
+        <div className="flex items-center gap-2 w-[15rem]" onClick={(e) => e.stopPropagation()}>
+          <div className="w-[7rem] shrink-0"><StatusPill kind={STATUS_KIND[o.status] || 'neutral'}>{o.status}</StatusPill></div>
           <AdminRowDropdown
+            triggerWidth="7.5rem"
             open={openDropdown === o.order_id}
             onToggle={() => setOpenDropdown(openDropdown === o.order_id ? null : o.order_id)}
             onClose={() => setOpenDropdown(null)}
@@ -262,7 +270,7 @@ const AdminOrders = () => {
   ];
 
   return (
-    <AdminPage title="Order Management" subtitle="Track and move orders through their lifecycle.">
+    <AdminPage title="Order Management" subtitle="Track and move orders through their lifecycle." help={ORDERS_HELP}>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-4 mb-6">
         <StatCard label="Orders in View" value={orders.length} loading={loading} />

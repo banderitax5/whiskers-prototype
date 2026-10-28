@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { BsChevronExpand, BsArrowUp, BsArrowDown } from 'react-icons/bs';
+import { BsQuestionCircle } from 'react-icons/bs';
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function useThemeDetection() {
@@ -36,17 +36,63 @@ function skeletonCell(col) {
   return <div className={`${PULSE} h-4 w-3/4`} />;
 }
 
-export function AdminPage({ title, subtitle, children }) {
+// one help guide per admin page: `help` is a list of { title, body } sections.
+// The "?" button sits at the top right of every page header and opens the guide.
+export function AdminPage({ title, subtitle, help, children }) {
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpTitle = `How to use ${title}`;
   return (
     <div className={`p-3 sm:p-4 lg:p-6 ${TEXT}`}>
-      <div className="mb-4 sm:mb-6">
-        <h1 className="text-xl sm:text-2xl lg:text-3xl font-black uppercase tracking-wide text-[#0b2e59] dark:text-yellow-200">
-          {title}
-        </h1>
-        {subtitle && <p className={`text-xs sm:text-sm ${TEXT_DIM} mt-1`}>{subtitle}</p>}
+      <div className="mb-4 sm:mb-6 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-black uppercase tracking-wide text-[#0b2e59] dark:text-yellow-200">
+            {title}
+          </h1>
+          {subtitle && <p className={`text-xs sm:text-sm ${TEXT_DIM} mt-1`}>{subtitle}</p>}
+        </div>
+        {help && (
+          <button
+            type="button"
+            onClick={() => setHelpOpen(true)}
+            className="shrink-0 p-2 rounded-lg bg-white dark:bg-[#162d4a] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-[#1e3a5f]"
+            title={helpTitle}
+            aria-label={helpTitle}
+          >
+            <BsQuestionCircle />
+          </button>
+        )}
       </div>
       {children}
+      {help && helpOpen && <AdminHelpDialog title={helpTitle} sections={help} onClose={() => setHelpOpen(false)} />}
     </div>
+  );
+}
+
+function AdminHelpDialog({ title, sections, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <dialog className="modal modal-open" aria-label={title}>
+      <div className="modal-box max-w-2xl my-4 max-h-[calc(100vh-2rem)] bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] p-0 gap-0">
+        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#1e3a5f]">
+          <h3 className="font-bold text-gray-900 dark:text-slate-100 text-sm">{title}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 text-lg leading-none" aria-label="Close">&times;</button>
+        </div>
+        <div className="p-4 space-y-3 text-sm text-gray-700 dark:text-slate-300 max-h-[65vh] overflow-y-auto">
+          {sections.map((s) => (
+            <div key={s.title}>
+              <h4 className="font-black text-[10px] uppercase tracking-widest text-[#0b2e59] dark:text-yellow-200 mb-1">{s.title}</h4>
+              <p className="leading-relaxed">{s.body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+      <form method="dialog" className="modal-backdrop"><button onClick={onClose}>close</button></form>
+    </dialog>
   );
 }
 
@@ -68,7 +114,7 @@ export function StatCard({ label, value, loading, hint, valueClass = '' }) {
   );
 }
 
-function Pagination({ page, totalPages, rowsLength, pageSize, onPageChange }) {
+export function Pagination({ page, totalPages, rowsLength, pageSize, onPageChange }) {
   const getPageNumbers = () => {
     const pages = [];
     const delta = 1;
@@ -201,9 +247,9 @@ export function AdminTable({ columns, rows, rowKey, loading, empty, colSpan, onR
                   <span className="inline-flex items-center gap-1">
                     {c.label}
                     {c.sortable && (
-                      sortKey === c.key
-                        ? (sortDir === 'asc' ? <BsArrowUp className="text-[10px]" aria-hidden="true" /> : <BsArrowDown className="text-[10px]" aria-hidden="true" />)
-                        : <BsChevronExpand className="text-[10px] opacity-40" aria-hidden="true" />
+                      <span aria-hidden="true" className={sortKey === c.key ? 'text-yellow-300' : 'text-yellow-300 opacity-50'}>
+                        {sortKey === c.key ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}
+                      </span>
                     )}
                   </span>
                 </th>
@@ -270,7 +316,7 @@ const SELECT_CHEVRON = <svg className="w-2.5 h-2.5 shrink-0 opacity-50" fill="no
 // card each render an AdminRowDropdown per row; only the clicked one portals)
 let lastClickedTrigger = null;
 
-export function AdminRowDropdown({ open, onToggle, onClose, value, options, onSelect, disabled }) {
+export function AdminRowDropdown({ open, onToggle, onClose, value, options, onSelect, disabled, triggerWidth = '6rem' }) {
   const triggerRef = useRef(null);
   const menuRef = useRef(null);
   const [pos, setPos] = useState(null);
@@ -351,7 +397,8 @@ export function AdminRowDropdown({ open, onToggle, onClose, value, options, onSe
         aria-expanded={open}
         aria-label={`${value} — change status`}
         onClick={(e) => { e.stopPropagation(); lastClickedTrigger = triggerRef.current; onToggle(); }}
-        className={`w-[6rem] ${SELECT_TRIGGER}`}
+        style={{ width: triggerWidth }}
+        className={`${SELECT_TRIGGER}`}
       >
         <span className="truncate">{value}</span>
         {SELECT_CHEVRON}
@@ -361,7 +408,7 @@ export function AdminRowDropdown({ open, onToggle, onClose, value, options, onSe
           ref={menuRef}
           role="listbox"
           aria-label="Status options"
-          style={{ position: 'fixed', left: pos.left, top: pos.top, bottom: pos.bottom, width: pos.width, zIndex: 10000 }}
+          style={{ position: 'fixed', left: pos.left, top: pos.top, bottom: pos.bottom, width: pos.width, zIndex: 10000, maxHeight: 240, overflowY: 'auto', overscrollBehavior: 'contain' }}
           className={SELECT_PANEL}
         >
           {options.map((opt) => (
@@ -470,7 +517,7 @@ export function AdminSelect({ value, options, onChange, disabled, ariaLabel, cla
           ref={menuRef}
           role="listbox"
           aria-label={ariaLabel || 'Options'}
-          style={{ position: 'fixed', left: pos.left, top: pos.top, bottom: pos.bottom, width: pos.width, zIndex: 10000 }}
+          style={{ position: 'fixed', left: pos.left, top: pos.top, bottom: pos.bottom, width: pos.width, zIndex: 10000, maxHeight: 240, overflowY: 'auto', overscrollBehavior: 'contain' }}
           className={SELECT_PANEL}
         >
           {opts.map((o) => (

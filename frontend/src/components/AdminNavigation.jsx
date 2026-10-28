@@ -3,6 +3,13 @@ import supabase from "../lib/supabase"
 import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from "../lib/api.js"
 import { fetchSiteContent, contentPolicies } from "../lib/siteContent.js"
 import { AdminPage, StatusPill, EmptyState, btnPrimary, btnGhost, ConfirmDialog, AdminSelect } from "./adminTheme.jsx"
+
+const NAVIGATION_HELP = [
+  { title: 'Menu and footer links', body: 'Press New link to add a link to the top menu or the footer. Use Edit to change one, and Archive to remove it.' },
+  { title: 'Which page or category?', body: 'Pick where the link goes: a page, a category, a brand or a promotion. The dropdown shows only what exists.' },
+  { title: 'Category list', body: 'Use + Add category to add a new category. Remove takes it off the Menu page list. Delete removes the category itself, after you confirm.' },
+  { title: 'Going live', body: 'Changes show up on the next visit to the store. No rebuild is needed.' },
+]
 import ImagePicker from "./ImagePicker.jsx"
 import ProductPicker from "./ProductPicker.jsx"
 import ContentHistoryDialog from "./ContentHistoryDialog.jsx"
@@ -391,6 +398,10 @@ function AdminNavigation() {
   const [addingCat, setAddingCat] = useState(false)
   const [newCatName, setNewCatName] = useState("")
   const [catAddError, setCatAddError] = useState("")
+  // permanent category delete: the name being deleted, what the admin typed, and busy state
+  const [catDeleteTarget, setCatDeleteTarget] = useState(null)
+  const [catDeleteTyped, setCatDeleteTyped] = useState("")
+  const [catDeleting, setCatDeleting] = useState(false)
 
   const isCats = tab === "categories"
   const activeTab = TABS.find((t) => t.key === tab)
@@ -402,8 +413,10 @@ function AdminNavigation() {
   const pruneSelection = sel.prune
   const clearSelection = sel.clear
 
-  const loadLinks = useCallback(async (section, showArchived) => {
-    setLoading(true); setError("")
+  // silent: keep the current list on screen while it refreshes (no skeleton)
+  const loadLinks = useCallback(async (section, showArchived, { silent = false } = {}) => {
+    if (!silent) setLoading(true)
+    setError("")
     try {
       const token = await sessionToken()
       const data = await apiGetAuth(`/admin/nav-items?section=${section}&archived=${showArchived}`, token)
@@ -461,20 +474,42 @@ function AdminNavigation() {
   }
   const singleSelected = sel.count === 1 ? listRows.find((s) => sel.isSelected(s.id)) : null
 
+  // change one row on screen at once; returns a function that restores it
+  function patchLocalLink(id, patch) {
+    let before = null
+    setItems((list) => list.map((s) => {
+      if (s.id !== id) return s
+      before = s
+      return { ...s, ...patch }
+    }))
+    return () => { if (before) setItems((list) => list.map((s) => (s.id === id ? before : s))) }
+  }
+
   async function handleSubmitLink(payload) {
     const token = await sessionToken()
     if (dialog?.mode === "edit") {
-      await apiPatchAuth(`/admin/nav-items/${dialog.item.id}`, payload, token)
+      const id = dialog.item.id
+      const rollback = patchLocalLink(id, payload)
+      try {
+        await apiPatchAuth(`/admin/nav-items/${id}`, payload, token)
+      } catch (err) {
+        rollback()
+        throw err
+      }
       setToast("Link saved")
-    } else {
-      await apiPostAuth("/admin/nav-items", { section: tab, ...payload }, token)
-      setToast("Link created")
+      setDialog(null)
+      loadLinks(tab, archived, { silent: true })
+      return
     }
-    setDialog(null); await loadLinks(tab, archived)
+    await apiPostAuth("/admin/nav-items", { section: tab, ...payload }, token)
+    setToast("Link created")
+    setDialog(null)
+    loadLinks(tab, archived, { silent: true })
   }
 
   async function moveLinkTo(from, to) {
     if (from === to || to < 0 || to >= visible.length) return
+    const prevItems = items
     const ids = visible.map((s) => s.id)
     ids.splice(to, 0, ids.splice(from, 1)[0])
     // optimistic: the drag already previewed this order, so keep it instead of
@@ -484,8 +519,11 @@ function AdminNavigation() {
     try {
       const token = await sessionToken()
       await apiPostAuth("/admin/nav-items/reorder", { section: tab, ids }, token)
-      await loadLinks(tab, archived)
-    } catch (err) { setToast(err.message); await loadLinks(tab, archived) } finally { setBusy(false) }
+    } catch (err) {
+      // put the previous order back if the server refuses the new one
+      setItems(prevItems)
+      setToast(err.message)
+    } finally { setBusy(false) }
   }
 
   async function handleMoveLink(item, dir) {
@@ -506,7 +544,7 @@ function AdminNavigation() {
       const res = await bulkApply([...sel.selected], (id) => apiPatchAuth(`/admin/nav-items/${id}`, { is_visible: isVisible }, token))
       sel.clear()
       setToast(bulkSummary(isVisible ? "Shown" : "Hidden", res, "link"))
-      await loadLinks(tab, archived)
+      await loadLinks(tab, archived, { silent: true })
     } catch (err) { setToast(err.message || "Update failed") } finally { setBusy(false) }
   }
 
@@ -518,7 +556,7 @@ function AdminNavigation() {
       setConfirm(null)
       sel.clear()
       setToast(bulkSummary("Archived", res, "link"))
-      await loadLinks(tab, archived)
+      await loadLinks(tab, archived, { silent: true })
     } catch (err) { setConfirm(null); setToast(err.message || "Archive failed") } finally { setBusy(false) }
   }
 
@@ -529,26 +567,35 @@ function AdminNavigation() {
       const res = await bulkApply([...sel.selected], (id) => apiPostAuth(`/admin/nav-items/${id}/restore`, {}, token))
       sel.clear()
       setToast(bulkSummary("Restored", res, "link"))
-      await loadLinks(tab, archived)
+      await loadLinks(tab, archived, { silent: true })
     } catch (err) { setToast(err.message || "Restore failed") } finally { setBusy(false) }
   }
 
   async function handleArchive() {
+    const id = confirm.item.id
     setBusy(true)
+    // the link leaves the active list at once; back if the server refuses
+    const prevItems = items
+    setConfirm(null)
+    setItems((list) => list.map((s) => (s.id === id ? { ...s, archived_at: new Date().toISOString() } : s)))
     try {
       const token = await sessionToken()
-      await apiDeleteAuth(`/admin/nav-items/${confirm.item.id}`, token)
-      setConfirm(null); setToast("Link archived"); await loadLinks(tab, archived)
-    } catch (err) { setConfirm(null); setToast(err.message) } finally { setBusy(false) }
+      await apiDeleteAuth(`/admin/nav-items/${id}`, token)
+      setToast("Link archived")
+      loadLinks(tab, archived, { silent: true })
+    } catch (err) { setItems(prevItems); setToast(err.message) } finally { setBusy(false) }
   }
 
   async function handleRestore(item) {
     setBusy(true)
+    const prevItems = items
+    setItems((list) => list.map((s) => (s.id === item.id ? { ...s, archived_at: null } : s)))
     try {
       const token = await sessionToken()
       await apiPostAuth(`/admin/nav-items/${item.id}/restore`, {}, token)
-      setToast("Link restored"); await loadLinks(tab, archived)
-    } catch (err) { setToast(err.message) } finally { setBusy(false) }
+      setToast("Link restored")
+      loadLinks(tab, archived, { silent: true })
+    } catch (err) { setItems(prevItems); setToast(err.message) } finally { setBusy(false) }
   }
 
   async function handleRestoreDefaults() {
@@ -558,7 +605,7 @@ function AdminNavigation() {
       const res = await apiPostAuth("/admin/content/restore-defaults", { scope: tab }, token)
       setConfirmRestore(false)
       setToast(`Restored ${res.restored} default link${res.restored === 1 ? "" : "s"} (${res.archived} previous archived)`)
-      await loadLinks(tab, archived)
+      await loadLinks(tab, archived, { silent: true })
     } catch (err) { setConfirmRestore(false); setToast(err.message) } finally { setBusy(false) }
   }
 
@@ -610,6 +657,24 @@ function AdminNavigation() {
     setCatRows((rows) => rows.filter((_, j) => j !== index))
   }
 
+  // permanent delete of a live category: hides its products and removes it from
+  // the shop. Runs at once (not with "Save changes") behind a type-the-name dialog.
+  async function deleteCategory() {
+    const name = catDeleteTarget
+    if (!name || catDeleteTyped.trim() !== name) return
+    setCatDeleting(true)
+    try {
+      const token = await sessionToken()
+      const res = await apiPostAuth("/admin/categories/delete", { name, confirm: catDeleteTyped.trim() }, token)
+      setCatDeleteTarget(null)
+      setCatDeleteTyped("")
+      setToast(`"${name}" deleted - ${res.hidden} product${res.hidden === 1 ? "" : "s"} hidden`)
+      await loadCats()
+    } catch (err) {
+      setToast(err.message || "Delete failed")
+    } finally { setCatDeleting(false) }
+  }
+
   async function saveCats() {
     setCatSaving(true); setCatError("")
     try {
@@ -630,7 +695,7 @@ function AdminNavigation() {
   }
 
   return (
-    <AdminPage title="Navigation & Categories" subtitle="Menu links, footer links and the category filter list on the Menu page. Changes are live on the next visit - no rebuild needed.">
+    <AdminPage title="Navigation & Categories" subtitle="Menu links, footer links and the category filter list on the Menu page. Changes are live on the next visit - no rebuild needed." help={NAVIGATION_HELP}>
       <div role="tablist" aria-label="Navigation sections" className="mb-4 flex flex-wrap gap-1.5">
         {TABS.map((t) => (
           <button
@@ -751,8 +816,10 @@ function AdminNavigation() {
                       />
                       In filter list
                     </label>
-                    {r.in_catalog === false && (
+                    {r.in_catalog === false ? (
                       <button type="button" onClick={() => removeCat(i)} aria-label={`Remove ${r.name} from this list`} className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/40 transition">Remove</button>
+                    ) : (
+                      <button type="button" onClick={() => { setCatDeleteTarget(r.name); setCatDeleteTyped("") }} aria-label={`Delete ${r.name} category`} className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/40 transition">Delete</button>
                     )}
                   </div>
                 </div>
@@ -773,6 +840,7 @@ function AdminNavigation() {
               <button type="button" onClick={() => setConfirmRestore(true)} disabled={busy} className={`${btnGhost} border-amber-300 text-amber-700 dark:border-amber-600 dark:text-amber-300 disabled:opacity-50`}>
                 Restore default links
               </button>
+              <button type="button" onClick={() => loadLinks(tab, archived, { silent: true })} disabled={loading} title="Reload the list from the server" className="px-3 py-2 rounded-lg text-xs font-black uppercase tracking-widest bg-white dark:bg-[#162d4a] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] text-gray-600 dark:text-slate-300 border border-gray-200 dark:border-[#1e3a5f] disabled:opacity-50 whitespace-nowrap">Refresh</button>
               <button type="button" onClick={() => setDialog({ mode: "create" })} className={`${btnPrimary} whitespace-nowrap`}>New link</button>
             </div>
           </div>
@@ -882,6 +950,50 @@ function AdminNavigation() {
           onConfirm={() => (confirm.mode === "bulk" ? bulkArchive() : handleArchive())}
           onCancel={() => setConfirm(null)}
         />
+      )}
+      {catDeleteTarget && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4" onClick={() => !catDeleting && setCatDeleteTarget(null)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cat-delete-title"
+            className="bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] rounded-xl shadow-2xl p-5 sm:p-6 w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="cat-delete-title" className="text-base font-bold text-red-700 dark:text-red-400">Delete the "{catDeleteTarget}" category?</h2>
+            <p className="mt-3 text-sm text-gray-700 dark:text-slate-300">
+              This is a destructive action. Please check carefully before you do it.
+            </p>
+            <ul className="mt-3 list-disc pl-5 text-sm text-gray-700 dark:text-slate-300 space-y-1">
+              <li>The category is removed from the shop filter and its settings are lost.</li>
+              <li>Every active product in it is <strong>hidden from the shop</strong> (not deleted).</li>
+              <li>Hidden products can be shown again by switching them back to Active.</li>
+            </ul>
+            <label htmlFor="cat-delete-confirm" className="mt-4 block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400">
+              Type <span className="text-gray-900 dark:text-slate-100 normal-case tracking-normal">{catDeleteTarget}</span> to confirm
+            </label>
+            <input
+              id="cat-delete-confirm"
+              type="text"
+              autoFocus
+              autoComplete="off"
+              value={catDeleteTyped}
+              onChange={(e) => setCatDeleteTyped(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-gray-300 dark:border-[#2c4a6f] bg-white dark:bg-[#0f2036] px-3 py-2 text-sm text-gray-900 dark:text-slate-100"
+            />
+            <div className="mt-5 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+              <button type="button" onClick={() => setCatDeleteTarget(null)} disabled={catDeleting} className={btnGhost}>Keep category</button>
+              <button
+                type="button"
+                onClick={deleteCategory}
+                disabled={catDeleting || catDeleteTyped.trim() !== catDeleteTarget}
+                className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              >
+                {catDeleting ? "Deleting…" : "Delete category"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {confirmRestore && (
         <ConfirmDialog

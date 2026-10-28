@@ -3,6 +3,12 @@ import supabase from '../lib/supabase';
 import { apiGetAuth } from '../lib/api';
 import { formatPesos } from '../lib/cartLogic';
 import { AdminPage, StatCard, EmptyState, StatusPill } from './adminTheme';
+
+const DASHBOARD_HELP = [
+  { title: 'What this page shows', body: 'A live look at how the store is performing, with quick numbers at the top and charts below.' },
+  { title: 'Revenue range', body: 'Use the buttons above the revenue chart: 30D (last 30 days), 12W (last 12 weeks), 12M (last 12 months) or 5Y (last 5 years).' },
+  { title: 'Problems', body: 'If a box says the data is unavailable, press Retry.' },
+]
 import { BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 import AnalyticsAreaChart from './AnalyticsAreaChart';
 import {
@@ -440,7 +446,7 @@ function AdminDashboard() {
   const totalViews = viewPoints.reduce((sum, point) => sum + point.value, 0);
 
   return (
-    <AdminPage title="Data Analytics" subtitle="A live look at how the store is performing.">
+    <AdminPage title="Data Analytics" subtitle="A live look at how the store is performing." help={DASHBOARD_HELP}>
       {error && !stats ? (
         <EmptyState
           icon={<BsExclamationTriangle />}

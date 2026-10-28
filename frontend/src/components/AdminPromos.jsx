@@ -2,6 +2,13 @@ import { useState, useEffect, useMemo } from 'react';
 import supabase from '../lib/supabase';
 import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from '../lib/api';
 import { AdminPage, AdminTable, EmptyState, StatCard, btnPrimary, StatusPill, ConfirmDialog, AdminSelect } from './adminTheme';
+
+const PROMOS_HELP = [
+  { title: 'New promo', body: 'Press New Promo, type a Promo Code, and pick a Discount Type. Leave the usage limit blank for no limit.' },
+  { title: 'Applies to', body: 'Choose Sitewide (the whole store), Category, or Product. For Category or Product, fill in the target field.' },
+  { title: 'Limits', body: 'Minimum Subtotal sets the smallest cart it works on. Max Discount caps the peso amount. Usage and per-user limits stop a code being used too much.' },
+  { title: 'Dates', body: 'Starts At and Ends At control when the code works. Leave Ends At blank for a code that never expires.' },
+]
 import ProductPicker from './ProductPicker.jsx';
 import { formatPesos } from '../lib/cartLogic';
 import { dateWindowError, END_BEFORE_START } from '../lib/scheduleWindow';
@@ -116,8 +123,9 @@ useEffect(() => {
     return session?.access_token;
   }
 
-  async function fetchPromos() {
-    setLoading(true);
+  // skeleton shows only on the first load; later reloads keep the table on screen
+  async function fetchPromos({ silent = false } = {}) {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const token = await getToken();
@@ -197,15 +205,24 @@ useEffect(() => {
       if (!token) throw new Error('Your session has expired. Please sign in again.');
       const payload = formToPayload(formData);
       if (editing) {
-        await apiPatchAuth(`/admin/promos/${editing.code}`, payload, token);
+        // show the edit right away; put the old row back if the server refuses
+        const prevPromos = promos;
+        const optimistic = { ...editing, ...payload };
+        setPromos((list) => list.map((p) => (p.code === editing.code ? optimistic : p)));
+        try {
+          await apiPatchAuth(`/admin/promos/${editing.code}`, payload, token);
+        } catch (err) {
+          setPromos(prevPromos);
+          throw err;
+        }
         toast.success(`Promo ${payload.code} updated`);
       } else {
         await apiPostAuth('/admin/promos', payload, token);
         toast.success(`Promo ${payload.code} created`);
+        fetchPromos({ silent: true });
       }
       setShowForm(false);
       setEditing(null);
-      await fetchPromos();
     } catch (err) {
       setFormError(err.message || 'Failed to save promo');
     } finally {
@@ -215,26 +232,32 @@ useEffect(() => {
 
   async function confirmDelete() {
     if (!deleteTarget) return;
+    const target = deleteTarget;
+    const prevPromos = promos;
+    // remove the row now; put it back if the server refuses
+    setDeleteTarget(null);
+    setPromos((list) => list.filter((p) => p.code !== target.code));
     try {
       const token = await getToken();
       if (!token) throw new Error('Your session has expired. Please sign in again.');
-      await apiDeleteAuth(`/admin/promos/${deleteTarget.code}`, token);
-      toast.success(`Promo ${deleteTarget.code} deleted`);
-      setDeleteTarget(null);
-      await fetchPromos();
+      await apiDeleteAuth(`/admin/promos/${target.code}`, token);
+      toast.success(`Promo ${target.code} deleted`);
     } catch (err) {
+      setPromos(prevPromos);
       toast.error(err.message || 'Failed to delete promo');
-      setDeleteTarget(null);
     }
   }
 
   async function toggleActive(promo) {
+    const nextActive = promo.is_active === false;
+    const prevPromos = promos;
+    setPromos((list) => list.map((p) => (p.code === promo.code ? { ...p, is_active: nextActive } : p)));
     try {
       const token = await getToken();
       if (!token) throw new Error('Your session has expired. Please sign in again.');
-      await apiPatchAuth(`/admin/promos/${promo.code}`, { is_active: promo.is_active === false }, token);
-      await fetchPromos();
+      await apiPatchAuth(`/admin/promos/${promo.code}`, { is_active: nextActive }, token);
     } catch (err) {
+      setPromos(prevPromos);
       toast.error(err.message || 'Failed to update promo');
     }
   }
@@ -293,7 +316,7 @@ useEffect(() => {
 
   if (loading) {
     return (
-      <AdminPage title="Promos" subtitle="Discount codes and promotions">
+      <AdminPage title="Promos" subtitle="Discount codes and promotions" help={PROMOS_HELP}>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {[1, 2, 3].map((i) => <StatCard key={i} label="Loading" value="" loading />)}
         </div>
@@ -303,7 +326,7 @@ useEffect(() => {
 
   if (error) {
     return (
-      <AdminPage title="Promos" subtitle="Discount codes and promotions">
+      <AdminPage title="Promos" subtitle="Discount codes and promotions" help={PROMOS_HELP}>
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200" role="alert">
           <p className="font-semibold mb-2">Could not load promos.</p>
           <p className="mb-3 text-xs">{error}</p>
@@ -314,14 +337,23 @@ useEffect(() => {
   }
 
   return (
-    <AdminPage title="Promos" subtitle="Discount codes and promotions">
+    <AdminPage title="Promos" subtitle="Discount codes and promotions" help={PROMOS_HELP}>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard label="Total Promos" value={stats.total} />
         <StatCard label="Active Now" value={stats.active} />
         <StatCard label="Total Redemptions" value={stats.redemptions} />
       </div>
 
-      <div className="mt-4 flex justify-end">
+      <div className="mt-4 flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => fetchPromos({ silent: true })}
+          disabled={loading}
+          className="px-3 py-2 rounded-lg text-xs font-black uppercase tracking-widest bg-white dark:bg-[#162d4a] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] text-gray-600 dark:text-slate-300 border border-gray-200 dark:border-[#1e3a5f] disabled:opacity-50"
+          title="Reload the list from the server"
+        >
+          Refresh
+        </button>
         <button type="button" onClick={openCreate} className={btnPrimary}>
           <span className="flex items-center gap-2"><BsPlusLg /> New Promo</span>
         </button>

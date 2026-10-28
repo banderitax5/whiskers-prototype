@@ -1,5 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
 import { AdminPage, StatusPill, EmptyState, btnPrimary, ConfirmDialog } from "./adminTheme.jsx"
+
+const MEDIA_HELP = [
+  { title: 'Uploading an image', body: 'Press Upload image and pick a file from your computer. Each image needs alt text.' },
+  { title: 'Alt text', body: 'Alt text is a short description of the picture. It is read out loud for people who cannot see the image. Press Edit alt to change it.' },
+  { title: 'Finding an image', body: 'Type in the search box to find images by their alt text. Tick Show archived to see removed images.' },
+  { title: 'Archive and restore', body: 'Archive hides an image from the store without deleting it. Press Restore to bring it back.' },
+]
 import supabase from "../lib/supabase"
 import { apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth, apiUploadAuth } from "../lib/api.js"
 import {
@@ -354,6 +361,7 @@ function AdminMedia() {
     <AdminPage
       title="Media Library"
       subtitle="Every banner, slide and icon image. Required alt text keeps the storefront accessible."
+      help={MEDIA_HELP}
     >
       <div className="mb-4">{headerControls}</div>
       {toast && <div role="status" className="mb-4 rounded-lg border border-[#0b2e59]/30 bg-[#0b2e59]/10 px-4 py-2 text-sm font-semibold text-[#0b2e59] dark:border-yellow-400/30 dark:bg-yellow-400/10 dark:text-yellow-200">{toast}</div>}

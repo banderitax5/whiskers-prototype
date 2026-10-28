@@ -6,6 +6,13 @@ import React, { useCallback, useEffect, useState } from 'react'
 import supabase from '../lib/supabase'
 import { apiGetAuth, apiPatchAuth, apiPostAuth, apiDeleteAuth } from '../lib/api.js'
 import { AdminPage, btnPrimary, btnGhost, StatusPill, ConfirmDialog } from './adminTheme.jsx'
+
+const SETTINGS_HELP = [
+  { title: 'Store details', body: 'Store identity, contact and shipping hold what shoppers see about your business and delivery.' },
+  { title: 'Payment methods', body: 'Turn GCash, PayMaya or COD on or off. Shoppers only see the methods that are on at checkout.' },
+  { title: 'FAQs and policy pages', body: 'Press New FAQ or New policy page to add one. Edit changes the text. Archive hides it, and Show archived lets you Restore it.' },
+  { title: 'Warning thresholds', body: 'Set the low stock level here. The dashboard uses it, and it also decides when the storefront shows "Only N left".' },
+]
 import ImagePicker from './ImagePicker.jsx'
 import ContentHistoryDialog from './ContentHistoryDialog.jsx'
 
@@ -228,7 +235,7 @@ export default function AdminSettings() {
   }
 
   return (
-    <AdminPage title="Site Settings" subtitle="Store identity, contact, shipping, payments, FAQs and policy pages - everything the storefront shows outside the catalog.">
+    <AdminPage title="Site Settings" subtitle="Store identity, contact, shipping, payments, FAQs and policy pages - everything the storefront shows outside the catalog." help={SETTINGS_HELP}>
       <div className="flex flex-wrap gap-2 mb-5" role="tablist" aria-label="Settings sections">
         {TABS.map((t) => (
           <button

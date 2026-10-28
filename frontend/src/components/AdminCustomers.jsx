@@ -3,6 +3,13 @@ import supabase from '../lib/supabase';
 import { apiGetAllPages, apiPatchAuth, apiDeleteAuth } from '../lib/api';
 import { formatPesos } from '../lib/cartLogic';
 import { AdminPage, AdminTable, AdminRowDropdown, EmptyState, StatCard, StatusPill, ConfirmDialog } from './adminTheme';
+
+const CUSTOMERS_HELP = [
+  { title: 'What this page shows', body: 'Everyone who signed up to your store. Each person has a role: user (shopper), staff or admin.' },
+  { title: 'Finding someone', body: 'Type a name or phone number in the search box. Click a column title to sort the list.' },
+  { title: 'Changing a role', body: 'Use the role menu on a row to pick user, staff or admin. Give admin only to people you trust.' },
+  { title: 'Deleting an account', body: 'Delete removes the account. Ask first, because you cannot undo it.' },
+]
 import { BsPeople, BsSearch, BsTrash, BsExclamationTriangle, BsArrowClockwise } from 'react-icons/bs';
 import toast from '../lib/toast.js';
 
@@ -171,7 +178,7 @@ const AdminCustomers = () => {
   ];
 
   return (
-    <AdminPage title="Customer Management" subtitle="People who signed up to your store.">
+    <AdminPage title="Customer Management" subtitle="People who signed up to your store." help={CUSTOMERS_HELP}>
 
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4 mb-6">
         <StatCard label="Total Registered" value={customers.length} loading={loading} />

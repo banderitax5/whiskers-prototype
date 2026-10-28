@@ -1,7 +1,14 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
 import supabase from "../lib/supabase"
 import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth } from "../lib/api.js"
 import { AdminPage, StatusPill, EmptyState, btnPrimary, btnGhost, ConfirmDialog, AdminSelect } from "./adminTheme.jsx"
+
+const HOME_SECTIONS_HELP = [
+  { title: 'What a section is', body: 'A row of products on the home page, such as Best sellers. Rows appear in the order you set.' },
+  { title: 'New section', body: 'Press New section, pick which products go in (Which products?), then set the status. New rows start as drafts.' },
+  { title: 'Start and end dates', body: 'Use Starts at and Ends at to show a row only for a set time, such as a holiday sale. Leave them blank to keep it on.' },
+  { title: 'Hero and banners', body: 'The big top picture, brand tiles and promo strip are not here. Manage them under Banners.' },
+]
 import ProductPicker from "./ProductPicker.jsx"
 import ContentHistoryDialog from "./ContentHistoryDialog.jsx"
 import { dateWindowError } from "../lib/scheduleWindow.js"
@@ -170,7 +177,7 @@ function SectionDialog({ initial, onClose, onSubmit }) {
                   ariaLabel={form.rule === "category" ? "Which category?" : "Which brand?"}
                   className="mt-1.5 w-full"
                   options={[
-                    { value: "", label: `Choose ${form.rule === "category" ? "a category" : "a brand"}…` },
+                    { value: "", label: `Choose ${form.rule === "category" ? "a category" : "a brand"}�` },
                     ...(form.rule === "category" ? categories : brands).map((n) => ({ value: n, label: n })),
                     ...(form.name && !(form.rule === "category" ? categories : brands).includes(form.name)
                       ? [{ value: form.name, label: `${form.name} (saved)` }]
@@ -213,7 +220,7 @@ function SectionDialog({ initial, onClose, onSubmit }) {
           {error && <p role="alert" className="mt-3 text-sm font-semibold text-red-600 dark:text-red-400">{error}</p>}
           <div className="mt-5 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#1e3a5f] transition">Cancel</button>
-            <button type="submit" disabled={saving} className={`${btnPrimary} disabled:opacity-60`}>{saving ? "Saving…" : initial ? "Save changes" : "Create draft"}</button>
+            <button type="submit" disabled={saving} className={`${btnPrimary} disabled:opacity-60`}>{saving ? "Saving�" : initial ? "Save changes" : "Create draft"}</button>
           </div>
         </form>
       </div>
@@ -245,7 +252,7 @@ function SectionCard({ section, index, total, onMove, onEdit, onArchive, busy, s
         </div>
         <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">{ruleSummary(section)}</p>
         {(section.starts_at || section.ends_at) && (
-          <p className="text-xs text-gray-500 dark:text-slate-400">{fmtDate(section.starts_at) || "now"} → {fmtDate(section.ends_at) || "no end"}</p>
+          <p className="text-xs text-gray-500 dark:text-slate-400">{fmtDate(section.starts_at) || "now"} ? {fmtDate(section.ends_at) || "no end"}</p>
         )}
         {!typeMeta?.renders && (
           <p className="mt-1 text-xs font-semibold text-amber-600 dark:text-amber-400">Not rendered on the home page yet.</p>
@@ -281,8 +288,10 @@ function AdminHomeSections() {
   const pruneSelection = sel.prune
   const clearSelection = sel.clear
 
-  const load = useCallback(async () => {
-    setLoading(true); setError("")
+  // silent: keep the current list on screen while it refreshes (no skeleton)
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true)
+    setError("")
     try {
       const token = await sessionToken()
       const data = await apiGetAuth(`/admin/sections?archived=${archived}`, token)
@@ -313,20 +322,42 @@ function AdminHomeSections() {
   }
   const singleSelected = sel.count === 1 ? listRows.find((s) => sel.isSelected(s.id)) : null
 
+  // change one row on screen at once; returns a function that restores it
+  function patchLocalSection(id, patch) {
+    let before = null
+    setItems((list) => list.map((s) => {
+      if (s.id !== id) return s
+      before = s
+      return { ...s, ...patch }
+    }))
+    return () => { if (before) setItems((list) => list.map((s) => (s.id === id ? before : s))) }
+  }
+
   async function handleSubmitSection(payload) {
     const token = await sessionToken()
     if (dialog?.mode === "edit") {
-      await apiPatchAuth(`/admin/sections/${dialog.item.id}`, payload, token)
+      const id = dialog.item.id
+      const rollback = patchLocalSection(id, payload)
+      try {
+        await apiPatchAuth(`/admin/sections/${id}`, payload, token)
+      } catch (err) {
+        rollback()
+        throw err
+      }
       setToast("Section saved")
-    } else {
-      await apiPostAuth("/admin/sections", payload, token)
-      setToast("Section created as draft")
+      setDialog(null)
+      load({ silent: true })
+      return
     }
-    setDialog(null); await load()
+    await apiPostAuth("/admin/sections", payload, token)
+    setToast("Section created as draft")
+    setDialog(null)
+    load({ silent: true })
   }
 
   async function moveSectionTo(from, to) {
     if (from === to || to < 0 || to >= visible.length) return
+    const prevItems = items
     const ids = visible.map((s) => s.id)
     ids.splice(to, 0, ids.splice(from, 1)[0])
     // optimistic: the drag already previewed this order, so keep it instead of
@@ -336,8 +367,11 @@ function AdminHomeSections() {
     try {
       const token = await sessionToken()
       await apiPostAuth("/admin/sections/reorder", { ids }, token)
-      await load()
-    } catch (err) { setToast(err.message); await load() } finally { setBusy(false) }
+    } catch (err) {
+      // put the previous order back if the server refuses the new one
+      setItems(prevItems)
+      setToast(err.message)
+    } finally { setBusy(false) }
   }
 
   async function handleMove(section, dir) {
@@ -356,7 +390,7 @@ function AdminHomeSections() {
       const res = await bulkApply([...sel.selected], (id) => apiPatchAuth(`/admin/sections/${id}`, { status }, token))
       sel.clear()
       setToast(bulkSummary(action, res, "row"))
-      await load()
+      await load({ silent: true })
     } catch (err) { setToast(err.message || "Update failed") } finally { setBusy(false) }
   }
 
@@ -368,7 +402,7 @@ function AdminHomeSections() {
       setConfirm(null)
       sel.clear()
       setToast(bulkSummary("Archived", res, "row"))
-      await load()
+      await load({ silent: true })
     } catch (err) { setConfirm(null); setToast(err.message || "Archive failed") } finally { setBusy(false) }
   }
 
@@ -379,26 +413,35 @@ function AdminHomeSections() {
       const res = await bulkApply([...sel.selected], (id) => apiPostAuth(`/admin/sections/${id}/restore`, {}, token))
       sel.clear()
       setToast(bulkSummary("Restored", res, "row"))
-      await load()
+      await load({ silent: true })
     } catch (err) { setToast(err.message || "Restore failed") } finally { setBusy(false) }
   }
 
   async function handleArchive() {
+    const id = confirm.item.id
     setBusy(true)
+    // the row leaves the active list at once; back if the server refuses
+    const prevItems = items
+    setConfirm(null)
+    setItems((list) => list.map((s) => (s.id === id ? { ...s, archived_at: new Date().toISOString() } : s)))
     try {
       const token = await sessionToken()
-      await apiDeleteAuth(`/admin/sections/${confirm.item.id}`, token)
-      setConfirm(null); setToast("Section archived"); await load()
-    } catch (err) { setConfirm(null); setToast(err.message) } finally { setBusy(false) }
+      await apiDeleteAuth(`/admin/sections/${id}`, token)
+      setToast("Section archived")
+      load({ silent: true })
+    } catch (err) { setItems(prevItems); setToast(err.message) } finally { setBusy(false) }
   }
 
   async function handleRestore(section) {
     setBusy(true)
+    const prevItems = items
+    setItems((list) => list.map((s) => (s.id === section.id ? { ...s, archived_at: null } : s)))
     try {
       const token = await sessionToken()
       await apiPostAuth(`/admin/sections/${section.id}/restore`, {}, token)
-      setToast("Section restored"); await load()
-    } catch (err) { setToast(err.message) } finally { setBusy(false) }
+      setToast("Section restored")
+      load({ silent: true })
+    } catch (err) { setItems(prevItems); setToast(err.message) } finally { setBusy(false) }
   }
 
   async function handleRestoreDefaults() {
@@ -408,12 +451,12 @@ function AdminHomeSections() {
       const res = await apiPostAuth("/admin/content/restore-defaults", { scope: "home_sections" }, token)
       setConfirmRestore(false)
       setToast(`Restored ${res.restored} default row${res.restored === 1 ? "" : "s"} (${res.archived} previous archived)`)
-      await load()
+      await load({ silent: true })
     } catch (err) { setConfirmRestore(false); setToast(err.message) } finally { setBusy(false) }
   }
 
   return (
-    <AdminPage title="Home Sections" subtitle="Product rows on the home page, in order. The hero, brand tiles, promo strip and announcement are managed under Banners. New rows start as drafts.">
+    <AdminPage title="Home Sections" subtitle="Product rows on the home page, in order. The hero, brand tiles, promo strip and announcement are managed under Banners. New rows start as drafts." help={HOME_SECTIONS_HELP}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => window.open("/?scPreview=1", "_blank")} className={btnGhost}>Preview storefront</button>
@@ -425,6 +468,7 @@ function AdminHomeSections() {
             <input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} className="rounded border-gray-300" />
             Show archived
           </label>
+          <button type="button" onClick={() => load({ silent: true })} disabled={loading} title="Reload the list from the server" className="px-3 py-2 rounded-lg text-xs font-black uppercase tracking-widest bg-white dark:bg-[#162d4a] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] text-gray-600 dark:text-slate-300 border border-gray-200 dark:border-[#1e3a5f] disabled:opacity-50 whitespace-nowrap">Refresh</button>
           <button type="button" onClick={() => setDialog({ mode: "create" })} className={`${btnPrimary} whitespace-nowrap`}>New section</button>
         </div>
       </div>
