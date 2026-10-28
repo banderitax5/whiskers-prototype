@@ -106,7 +106,7 @@ export default function InstallPrompt() {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Add Whiskers to your home screen</p>
           {mode === 'install' && (
-            <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400">Open the shop in its own window, one tap away.</p>
+            <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400">Tap Install to open the shop in its own window.</p>
           )}
           {mode === 'ios' && (
             <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400">
