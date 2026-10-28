@@ -3,6 +3,7 @@ import { supabaseAdmin } from '../config/supabase.js'
 import { productLimiter } from '../middleware/rateLimiter.js'
 import { isUuid } from '../utils/uuid.js'
 import { missingColumnOf } from '../utils/pgErrors.js'
+import { parseSearchQuery } from '../utils/searchParser.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -92,6 +93,19 @@ router.get('/', async (req, res) => {
   } catch (err) {
     logger.error({ err: err.message }, 'Products fetch error')
     res.status(500).json({ error: 'Failed to fetch products' })
+  }
+})
+
+// POST /api/products/parse-search - turns a shopper sentence into criteria.
+// Always answers 200: criteria is null when the AI is off, slow, or unsure, and
+// the frontend then falls back to plain text search.
+router.post('/parse-search', async (req, res) => {
+  try {
+    const criteria = await parseSearchQuery(req.body?.query)
+    res.json({ criteria })
+  } catch (err) {
+    logger.error({ err: err.message }, 'Parse search error')
+    res.json({ criteria: null })
   }
 })
 

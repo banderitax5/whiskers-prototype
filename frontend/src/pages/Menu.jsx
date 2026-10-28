@@ -7,6 +7,7 @@ import { attachSizeVariants } from '../lib/productUtils.js'
 import { formatPesos } from '../lib/cartLogic'
 import { fetchSiteContent, applyCategoryOverrides } from '../lib/siteContent'
 import { trackSearch } from '../lib/appEvents'
+import { looksLikeSentence, parseSearch, smartSearchProducts } from '../lib/smartSearch'
 
 const PAGE_SIZES = [8, 16, 24, 36]
 const SORT_OPTIONS = [
@@ -53,7 +54,10 @@ function Menu() {
   const [activeSizeVariants, setActiveSizeVariants] = useState([])
   const [pageSize, setPageSize] = useState(8)
   const [currentPage, setCurrentPage] = useState(1)
-  const [showFilters, setShowFilters] = useState(true)
+  const [showFilters, setShowFilters] = useState(false)
+  // opt-in sentence search from the empty state
+  const [sentenceBusy, setSentenceBusy] = useState(false)
+  const [sentenceNoMatchFor, setSentenceNoMatchFor] = useState(null)
 
   // URL -> filter state (authoritative). Runs on mount, deep links, and
   // browser back/forward, so the exact filter set is always restored.
@@ -172,13 +176,42 @@ function Menu() {
     setCurrentPage(1)
   }
 
+  // Runs once per click: the AI only translates the sentence, the existing
+  // engine picks the products, and the result is handed over as ?ids=...
+  async function runSentenceSearch() {
+    const query = filters.search.trim()
+    if (!looksLikeSentence(query)) return
+    setSentenceBusy(true)
+    setSentenceNoMatchFor(null)
+    const criteria = await parseSearch(query)
+    const matched = criteria ? smartSearchProducts(criteria, enrichedProducts) : null
+    setSentenceBusy(false)
+    if (!matched || matched.length === 0) {
+      setSentenceNoMatchFor(query)
+      return
+    }
+    // keep the other filters (category, brand, price) in the URL as they are
+    const next = new URLSearchParams(searchParams)
+    next.set('ids', matched.map((p) => p.prod_id).join(','))
+    next.set('search', query)
+    setSearchParams(next)
+    setCurrentPage(1)
+  }
+
   // count how many filters are active
   const activeFilterCount = filters.categories.length + filters.brands.length + (filters.maxPrice !== 'all' ? 1 : 0) + (filters.search ? 1 : 0)
+
+  // product ids handed over from the navbar's sentence search (?ids=1,2,3)
+  const smartIds = useMemo(() => {
+    const raw = searchParams.get('ids')
+    return raw ? new Set(parseList(raw)) : null
+  }, [searchParams])
 
   const filteredProducts = useMemo(() => {
     const search = filters.search.trim().toLowerCase()
     let result = enrichedProducts.filter((product) => {
-      const matchSearch = !search || product.prod_name.toLowerCase().includes(search) || (product.brand || '').toLowerCase().includes(search)
+      if (smartIds && !smartIds.has(String(product.prod_id))) return false
+      const matchSearch = smartIds || !search || product.prod_name.toLowerCase().includes(search) || (product.brand || '').toLowerCase().includes(search)
       const matchCategory = filters.categories.length === 0 || filters.categories.some((cat) => product.category?.toLowerCase().includes(cat.toLowerCase()))
       const matchBrand = filters.brands.length === 0 || filters.brands.some((b) => product.brand?.toLowerCase() === b.toLowerCase())
       const matchPrice =
@@ -201,7 +234,7 @@ function Menu() {
     })
 
     return result
-  }, [filters, enrichedProducts, sortBy])
+  }, [filters, enrichedProducts, sortBy, smartIds])
 
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize))
   const safeCurrentPage = Math.min(currentPage, totalPages)
@@ -322,8 +355,8 @@ function Menu() {
         {/* main content */}
         <div className="flex-1 min-w-0">
           {/* toolbar */}
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            <p className="text-sm text-gray-500 dark:text-gray-400 mr-auto">
+          <div className="sticky top-[3.5rem] z-30 px-1 py-2 bg-gray-50/95 dark:bg-[#0f1f38]/95 backdrop-blur flex flex-nowrap items-center gap-2 mb-4 lg:flex-wrap lg:static lg:mx-0 lg:px-0 lg:py-0 lg:bg-transparent lg:backdrop-blur-none">
+            <p className="hidden lg:block text-sm text-gray-500 dark:text-gray-400 mr-auto">
               {filteredProducts.length} product{filteredProducts.length !== 1 ? 's' : ''}
             </p>
 
@@ -331,7 +364,7 @@ function Menu() {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="h-9 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-xs font-medium text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-[#0b2e59]/30"
+              className="h-9 min-w-0 flex-1 lg:flex-none whitespace-nowrap rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-xs font-medium text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-[#0b2e59]/30"
             >
               {SORT_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
@@ -420,6 +453,21 @@ function Menu() {
               <svg className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
               <p className="mt-3 text-sm font-medium text-gray-500 dark:text-gray-400">No products match your filters</p>
               <button type="button" onClick={resetFilters} className="mt-3 text-sm font-semibold text-[#0b2e59] dark:text-blue-400 hover:underline">Reset filters</button>
+              {!smartIds && looksLikeSentence(filters.search) && (
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={runSentenceSearch}
+                    disabled={sentenceBusy}
+                    className="h-9 px-4 rounded-lg border border-[#0b2e59] text-sm font-semibold text-[#0b2e59] dark:text-blue-400 dark:border-blue-400 hover:bg-[#0b2e59]/5 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {sentenceBusy ? 'Searching by sentence...' : 'Try a sentence search'}
+                  </button>
+                  {sentenceNoMatchFor === filters.search.trim() && (
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">No sentence match found. Try different words.</p>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className={viewMode === 'grid'
@@ -565,8 +613,8 @@ function Menu() {
         </div>
 
         {/* filter sidebar - sticky on large screens */}
-        <aside className={`w-full lg:w-72 flex-shrink-0 ${showFilters ? '' : 'hidden lg:block'}`}>
-          <div className="lg:sticky lg:top-24 rounded-xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm overflow-hidden">
+        <aside className={`w-full lg:w-72 flex-shrink-0 ${showFilters ? 'fixed inset-0 z-[10010] flex items-end bg-black/40 lg:static lg:z-auto lg:block lg:bg-transparent' : 'hidden lg:block'}`} onClick={(e) => { if (e.target === e.currentTarget) setShowFilters(false) }}>
+          <div className={`lg:sticky lg:top-24 rounded-xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm overflow-hidden ${showFilters ? 'w-full max-h-[85vh] overflow-y-auto rounded-b-none rounded-t-2xl lg:max-h-none lg:overflow-hidden lg:rounded-xl' : ''}`}>
             {/* header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-700">
               <div className="flex items-center gap-2">

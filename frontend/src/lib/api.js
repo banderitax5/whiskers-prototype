@@ -54,6 +54,7 @@ async function request(path, opts = {}) {
 
 // public (no auth)
 export const apiGet = (path) => request(path)
+export const apiPost = (path, body) => request(path, { method: 'POST', body })
 
 // authed helpers - pass the current Supabase access token
 export const apiGetAuth = (path, token) => request(path, { token })

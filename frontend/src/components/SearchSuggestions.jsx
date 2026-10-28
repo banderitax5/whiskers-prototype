@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getCachedProducts } from '../lib/productSearchCache'
 import { formatPesos } from '../lib/cartLogic'
+import { looksLikeSentence, parseSearch, smartSearchProducts } from '../lib/smartSearch'
+import { suggestPhrases } from '../lib/searchSuggestions'
 import { BsSearch, BsClockHistory, BsFire, BsX } from 'react-icons/bs'
 
 const RECENT_KEY = 'whiskers_recent_searches'
@@ -90,14 +92,30 @@ export default function SearchSuggestions({ className = '' }) {
     return [...new Set(products.map((p) => p.category).filter(Boolean))].sort().slice(0, 6)
   }, [products])
 
-  function submit(term) {
-    const t = term || query
-    if (!t.trim()) return
-    saveRecent(t.trim())
+  async function submit(term) {
+    const t = (term || query).trim()
+    if (!t) return
+    saveRecent(t)
     setRecentSearches(getRecent())
     setQuery('')
     setOpen(false)
-    navigate(`/menu?search=${encodeURIComponent(t.trim())}`)
+
+    // Sentence search: only when plain matching finds nothing. The AI only
+    // translates the sentence; the existing engine picks the products. Any
+    // failure, or no match, goes to the normal search page.
+    const plainMatch = products.some((p) =>
+      (p.prod_name || '').toLowerCase().includes(t.toLowerCase()) ||
+      (p.brand || '').toLowerCase().includes(t.toLowerCase()))
+    if (!plainMatch && looksLikeSentence(t)) {
+      const criteria = await parseSearch(t)
+      const matched = criteria ? smartSearchProducts(criteria, products) : null
+      if (matched && matched.length > 0) {
+        const ids = matched.map((p) => p.prod_id).join(',')
+        navigate(`/menu?ids=${encodeURIComponent(ids)}&search=${encodeURIComponent(t)}`)
+        return
+      }
+    }
+    navigate(`/menu?search=${encodeURIComponent(t)}`)
   }
 
   function removeRecent(term) {
@@ -111,6 +129,8 @@ export default function SearchSuggestions({ className = '' }) {
     setQuery('')
     navigate(`/menu?search=${encodeURIComponent(p.prod_name)}`)
   }
+
+  const phraseSuggestions = useMemo(() => suggestPhrases(query), [query])
 
   const showDefault = !query.trim()
 
@@ -194,8 +214,23 @@ export default function SearchSuggestions({ className = '' }) {
                 </div>
               )}
             </div>
-          ) : results.length > 0 ? (
+          ) : (results.length > 0 || phraseSuggestions.length > 0) ? (
             <div className="p-2">
+              {phraseSuggestions.length > 0 && (
+                <div className="mb-2">
+                  <div className="px-2 py-1 text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-slate-500">
+                    Suggested searches
+                  </div>
+                  {phraseSuggestions.map((phrase) => (
+                    <button key={phrase} onClick={() => submit(phrase)} className="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition text-left">
+                      <BsSearch className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500 shrink-0" />
+                      <span className="text-sm text-gray-800 dark:text-gray-100">{phrase}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {results.length > 0 && (
+                <>
               <div className="px-2 py-1 text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-slate-500">
                 Products
               </div>
@@ -216,6 +251,8 @@ export default function SearchSuggestions({ className = '' }) {
               <button onClick={() => submit()} className="w-full mt-1 px-3 py-2 rounded-lg text-center text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
                 View all results for &ldquo;{query}&rdquo;
               </button>
+                </>
+              )}
             </div>
           ) : (
             <div className="p-6 text-center text-sm text-gray-400 dark:text-slate-500">
