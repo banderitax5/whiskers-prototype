@@ -15,7 +15,9 @@ export const SECTION_LABELS = [
 export const MAX_SECTIONS = 12
 export const MAX_LABEL_LENGTH = 80
 
-// raw jsonb -> renderable sections (drops anything malformed or contentless)
+// raw jsonb -> sections. Labelled sections are kept even when blank so the
+// admin form shows them as entered; the product page hides blank ones with
+// visibleInfoSections(). Rows with no label are malformed and dropped.
 export function parseDetails(raw) {
   if (!Array.isArray(raw)) return []
   const sections = []
@@ -23,9 +25,14 @@ export function parseDetails(raw) {
     if (!row || typeof row !== 'object') continue
     const label = typeof row.label === 'string' ? row.label.trim() : ''
     const content = typeof row.content === 'string' ? row.content.trim() : ''
-    if (label && content) sections.push({ label, content })
+    if (label) sections.push({ label, content })
   }
   return sections
+}
+
+// what the shopper sees: only sections that have content to show
+export function visibleInfoSections(raw) {
+  return parseDetails(raw).filter((s) => s.content)
 }
 
 // stored jsonb -> the admin form's editable section list. Products with no
@@ -35,8 +42,32 @@ export function sectionsForEdit(details) {
   return stored.length ? stored : SECTION_LABELS.map((label) => ({ label, content: '' }))
 }
 
-// the admin form's section list -> storable array (or null). Contentless
-// rows are dropped; more than MAX_SECTIONS keeps the first 12 (the server
+// Applies an AI draft to the form's current sections without losing any of them.
+// Draft sections match existing ones by label (case-insensitive) and replace
+// only that section's text. A section the draft leaves out keeps what the admin
+// already wrote. Draft labels that match nothing are added at the end, within
+// MAX_SECTIONS.
+export function mergeDraftSections(current, draftSections) {
+  const base = Array.isArray(current) ? current.map((s) => ({ ...s })) : []
+  if (!Array.isArray(draftSections) || draftSections.length === 0) return base
+
+  for (const draft of draftSections) {
+    const label = String(draft?.label || '').trim()
+    const content = String(draft?.content || '')
+    if (!label || !content.trim()) continue
+    const match = base.find((s) => String(s.label || '').trim().toLowerCase() === label.toLowerCase())
+    if (match) {
+      match.content = content
+    } else if (base.length < MAX_SECTIONS) {
+      base.push({ label, content })
+    }
+  }
+  return base
+}
+
+// the admin form's section list -> storable array (or null). Labelled sections
+// are kept even when blank, so the list reappears as entered; rows with no
+// label are dropped. More than MAX_SECTIONS keeps the first 12 (the server
 // enforces the same cap).
 export function sectionsToDetails(sections) {
   if (!Array.isArray(sections)) return null
@@ -45,7 +76,7 @@ export function sectionsToDetails(sections) {
     if (!section || typeof section !== 'object') continue
     const label = typeof section.label === 'string' ? section.label.trim() : ''
     const content = typeof section.content === 'string' ? section.content.trim() : ''
-    if (label && content) out.push({ label, content })
+    if (label) out.push({ label, content })
     if (out.length >= MAX_SECTIONS) break
   }
   return out.length ? out : null

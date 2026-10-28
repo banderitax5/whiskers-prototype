@@ -1,5 +1,41 @@
 import { describe, it, expect } from 'vitest'
-import { parseDetails, sectionsForEdit, sectionsToDetails, formatContent, SECTION_LABELS } from './productInfo.js'
+import { parseDetails, visibleInfoSections, sectionsForEdit, sectionsToDetails, formatContent, mergeDraftSections, SECTION_LABELS } from './productInfo.js'
+
+describe('mergeDraftSections', () => {
+  const current = SECTION_LABELS.map((label) => ({ label, content: label === 'Ingredients' ? 'Wheat, rice.' : '' }))
+
+  it('keeps every section the draft does not cover, including ones the admin wrote', () => {
+    const merged = mergeDraftSections(current, [{ label: 'Product Info', content: 'Brand: Amazon.' }])
+    expect(merged.map((s) => s.label)).toEqual(SECTION_LABELS)
+    expect(merged.find((s) => s.label === 'Ingredients').content).toBe('Wheat, rice.')
+    expect(merged.find((s) => s.label === 'Product Info').content).toBe('Brand: Amazon.')
+  })
+
+  it('matches labels case-insensitively and does not duplicate them', () => {
+    const merged = mergeDraftSections(current, [{ label: 'feeding guide', content: 'Twice daily.' }])
+    expect(merged).toHaveLength(SECTION_LABELS.length)
+    expect(merged.find((s) => s.label === 'Feeding Guide').content).toBe('Twice daily.')
+  })
+
+  it('ignores draft sections with empty content and adds new labels at the end', () => {
+    const merged = mergeDraftSections(current, [
+      { label: 'Storage Condition', content: '   ' },
+      { label: 'Warnings', content: 'Keep dry.' },
+    ])
+    expect(merged.find((s) => s.label === 'Storage Condition').content).toBe('')
+    expect(merged.at(-1)).toEqual({ label: 'Warnings', content: 'Keep dry.' })
+  })
+
+  it('respects the 12-section cap', () => {
+    const full = Array.from({ length: 12 }, (_, i) => ({ label: `S${i}`, content: 'x' }))
+    expect(mergeDraftSections(full, [{ label: 'Extra', content: 'y' }])).toHaveLength(12)
+  })
+
+  it('returns the current sections unchanged when the draft has none', () => {
+    expect(mergeDraftSections(current, [])).toEqual(current)
+    expect(mergeDraftSections(current, undefined)).toEqual(current)
+  })
+})
 
 describe('parseDetails', () => {
   it('returns [] for anything that is not an array', () => {
@@ -9,7 +45,7 @@ describe('parseDetails', () => {
     expect(parseDetails({ label: 'x', content: 'y' })).toEqual([])
   })
 
-  it('keeps only rows with a non-empty label and content', () => {
+  it('keeps labelled rows even when blank; drops rows with no label', () => {
     expect(parseDetails([
       { label: ' Ingredients ', content: '  Wheat.  ' },
       { label: 'Empty', content: '' },
@@ -17,7 +53,20 @@ describe('parseDetails', () => {
       { label: 'NoContent', content: '   ' },
       'garbage',
       null,
-    ])).toEqual([{ label: 'Ingredients', content: 'Wheat.' }])
+    ])).toEqual([
+      { label: 'Ingredients', content: 'Wheat.' },
+      { label: 'Empty', content: '' },
+      { label: 'NoContent', content: '' },
+    ])
+  })
+})
+
+describe('visibleInfoSections', () => {
+  it('hides blank sections from the product page', () => {
+    expect(visibleInfoSections([
+      { label: 'Product Info', content: 'Tuna.' },
+      { label: 'Ingredients', content: '' },
+    ])).toEqual([{ label: 'Product Info', content: 'Tuna.' }])
   })
 })
 
@@ -38,7 +87,7 @@ describe('sectionsForEdit / sectionsToDetails', () => {
     expect(sectionsForEdit([])).toEqual(SECTION_LABELS.map((label) => ({ label, content: '' })))
   })
 
-  it('round-trips through sectionsToDetails, dropping contentless rows', () => {
+  it('round-trips through sectionsToDetails, keeping blank labelled sections', () => {
     const sections = [
       { label: ' Ingredients ', content: '  Chicken  ' },
       { label: 'Empty', content: '   ' },
@@ -47,12 +96,13 @@ describe('sectionsForEdit / sectionsToDetails', () => {
     ]
     expect(sectionsToDetails(sections)).toEqual([
       { label: 'Ingredients', content: 'Chicken' },
+      { label: 'Empty', content: '' },
       { label: 'Size Chart', content: 'S / M / L' },
     ])
   })
 
-  it('returns null when nothing has content', () => {
-    expect(sectionsToDetails(SECTION_LABELS.map((l) => ({ label: l, content: '  ' })))).toBeNull()
+  it('keeps the five default sections even when all are blank', () => {
+    expect(sectionsToDetails(SECTION_LABELS.map((l) => ({ label: l, content: '  ' })))).toHaveLength(5)
     expect(sectionsToDetails(undefined)).toBeNull()
   })
 

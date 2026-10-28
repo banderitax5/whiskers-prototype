@@ -39,6 +39,7 @@ import { sendOrderStatusEmail, sendSupportReplyEmail, maskEmail } from '../utils
 import { recordContentHistory, diffChanges, historyLabel } from '../utils/contentHistory.js'
 import { defaultRowsFor, RESTORE_SCOPES } from '../utils/siteContentDefaults.js'
 import { sweepGatewayExpiry } from '../utils/gatewayPayment.js'
+import { draftProductCopy, isDraftConfigured } from '../utils/groqDraft.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -938,6 +939,39 @@ router.patch('/products/:id', async (req, res) => {
   }
 })
 
+// POST /api/admin/products/:id/draft-copy - "Write with AI" suggestion.
+// Returns { description, details } for the admin to review in the form. It
+// never writes to the database; the admin still has to press Save.
+// Admin-only: product copy is content, and drafts cost a paid API call.
+router.post('/products/:id/draft-copy', requireAdmin, async (req, res) => {
+  if (!requireUuidParam(req, res)) return
+  if (!isDraftConfigured()) {
+    return res.status(503).json({ error: 'AI drafting is not configured on this server.', code: 'AI_NOT_CONFIGURED' })
+  }
+  try {
+    const { data: product, error } = await supabaseAdmin
+      .from('product')
+      .select('prod_id, prod_name, brand, category, price')
+      .eq('prod_id', req.params.id)
+      .maybeSingle()
+    if (error) throw error
+    if (!product) return res.status(404).json({ error: 'Product not found' })
+
+    // label facts are typed by the admin from the printed label or supplier sheet
+    const labelFacts = typeof req.body?.label_facts === 'string'
+      ? req.body.label_facts.slice(0, 4000)
+      : ''
+    const draft = await draftProductCopy(product, labelFacts)
+    if (!draft) {
+      return res.status(502).json({ error: 'The AI could not write a draft right now. Try again in a moment, or write it by hand.', code: 'AI_UNAVAILABLE' })
+    }
+    res.json({ draft })
+  } catch (err) {
+    logger.error({ err }, 'Admin product draft-copy error')
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
 // GET /api/admin/products/:id/price-history - selling-price trail, newest
 // first. staff can read it (it only contains prices, which staff see anyway);
 // never contains cost.
@@ -1395,6 +1429,33 @@ router.delete('/payments/:id', requireAdmin, async (req, res) => {
 
 // ── Customer Support ──────────────────────────────────────────────────────────
 
+// lowercase emails of every admin and staff account; the only people who can be assigned a case
+async function staffEmailList() {
+  const { data: staff, error } = await supabaseAdmin
+    .from('profiles')
+    .select('id')
+    .in('role', ['admin', 'staff'])
+  if (error) throw error
+  const ids = (staff || []).map((p) => p.id)
+  const emails = await Promise.all(ids.map((id) => authUserEmail(id)))
+  return [...new Set(emails.filter(Boolean).map((e) => e.toLowerCase()))].sort()
+}
+
+async function staffEmailSet() {
+  return new Set(await staffEmailList())
+}
+
+// GET /api/admin/staff-emails - emails of admin and staff accounts, for assignee suggestions
+router.get('/staff-emails', async (req, res) => {
+  try {
+    const items = await staffEmailList()
+    res.json({ items })
+  } catch (err) {
+    logger.error({ err }, 'Admin staff emails error')
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
 // GET /api/admin/supports - all support cases with the sender's name
 router.get('/supports', async (req, res) => {
   try {
@@ -1413,13 +1474,22 @@ router.get('/supports', async (req, res) => {
       : { data: [] }
     const profileMap = new Map((profiles || []).map((p) => [p.id, p]))
 
-    const items = (data || []).map((s) => {
+    // emails live on the auth account, not profiles; looked up for this page only
+    const emails = await Promise.all((data || []).map((s) => authUserEmail(s.id)))
+    const items = (data || []).map((s, i) => {
       const profile = profileMap.get(s.id)
       return {
         support_id: s.support_id,
         message: s.message,
         response: s.response,
         date_submitted: s.date_submitted,
+        responded_at: s.responded_at ?? null,
+        responded_by: s.responded_by ?? null,
+        status: s.status ?? 'open',
+        priority: s.priority ?? 'normal',
+        tags: Array.isArray(s.tags) ? s.tags : [],
+        assignee_email: s.assignee_email ?? null,
+        email: emails[i],
         firstName: decryptText(profile?.first_name),
         lastName: decryptText(profile?.last_name),
       }
@@ -1431,10 +1501,76 @@ router.get('/supports', async (req, res) => {
   }
 })
 
+const SUPPORT_STATUSES = ['open', 'resolved']
+const SUPPORT_PRIORITIES = ['low', 'normal', 'high']
+
 // PATCH /api/admin/supports/:id
+// body: { status?, priority?, tags?, assignee_email? } — case details, no email sent
 // body: { response } — replies to a support case and emails the customer
 router.patch('/supports/:id', async (req, res) => {
   if (!requireUuidParam(req, res)) return
+
+  const hasDetails = ['status', 'priority', 'tags', 'assignee_email'].some((k) => req.body?.[k] !== undefined)
+  if (hasDetails && req.body?.response === undefined) {
+    const updates = {}
+    if (req.body.status !== undefined) {
+      if (!SUPPORT_STATUSES.includes(req.body.status)) return res.status(400).json({ error: 'Invalid status' })
+      updates.status = req.body.status
+    }
+    if (req.body.priority !== undefined) {
+      if (!SUPPORT_PRIORITIES.includes(req.body.priority)) return res.status(400).json({ error: 'Invalid priority' })
+      updates.priority = req.body.priority
+    }
+    if (req.body.tags !== undefined) {
+      if (!Array.isArray(req.body.tags) || req.body.tags.length > 20 || req.body.tags.some((t) => typeof t !== 'string' || t.length > 30)) {
+        return res.status(400).json({ error: 'Invalid tags' })
+      }
+      updates.tags = [...new Set(req.body.tags.map((t) => t.trim()).filter(Boolean))]
+    }
+    if (req.body.assignee_email !== undefined) {
+      const email = req.body.assignee_email === null ? null : String(req.body.assignee_email).trim().toLowerCase()
+      if (email !== null && (email.length > 254 || !email.includes('@'))) return res.status(400).json({ error: 'Invalid assignee email' })
+      updates.assignee_email = email || null
+    }
+    try {
+      // an assignee must be an admin or staff account
+      if (updates.assignee_email) {
+        const staff = await staffEmailSet()
+        if (!staff.has(updates.assignee_email)) {
+          return res.status(400).json({ error: 'Assignee must be an admin or staff account' })
+        }
+      }
+      if (updates.status === 'resolved') {
+        // a case can only be closed after we have replied to the customer
+        const { data: existing, error: readErr } = await supabaseAdmin
+          .from('supports')
+          .select('response')
+          .eq('support_id', req.params.id)
+          .maybeSingle()
+        if (readErr) throw readErr
+        if (!existing) return res.status(404).json({ error: 'Support case not found' })
+        if (!existing.response?.trim()) {
+          return res.status(400).json({ error: 'Reply to the customer before marking this case resolved' })
+        }
+      }
+      const { data, error } = await supabaseAdmin
+        .from('supports')
+        .update(updates)
+        .eq('support_id', req.params.id)
+        .select('support_id, status, priority, tags, assignee_email')
+        .single()
+      if (error) {
+        if (isNoRowError(error)) return res.status(404).json({ error: 'Support case not found' })
+        throw error
+      }
+      res.json({ item: data })
+    } catch (err) {
+      logger.error({ err }, 'Admin support details update error')
+      res.status(500).json({ error: 'Server error' })
+    }
+    return
+  }
+
   const response = String(req.body?.response ?? '').trim()
   if (!response || response.length > 2000) {
     return res.status(400).json({ error: 'response must be between 1 and 2000 characters' })
@@ -1454,9 +1590,13 @@ router.patch('/supports/:id', async (req, res) => {
 
     const { data, error } = await supabaseAdmin
       .from('supports')
-      .update({ response })
+      .update({
+        response,
+        responded_at: new Date().toISOString(),
+        responded_by: req.userEmail || null,
+      })
       .eq('support_id', req.params.id)
-      .select('support_id')
+      .select('support_id, responded_at, responded_by')
       .single()
     if (error) {
       if (isNoRowError(error)) {
@@ -2589,6 +2729,39 @@ router.post('/categories', requireAdmin, async (req, res) => {
   } catch (err) {
     logger.error({ err }, 'Category batch save error')
     res.status(500).json({ error: 'Failed to save categories' })
+  }
+})
+
+// POST /api/admin/categories/delete { name, confirm } - delete a category from
+// the shop. Its active products are hidden (is_active=false), not deleted, and
+// its settings row is removed. `confirm` must equal the name, so a stray click
+// cannot delete a category. Restoring is done by re-activating the products.
+router.post('/categories/delete', requireAdmin, async (req, res) => {
+  try {
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : ''
+    const confirm = typeof req.body?.confirm === 'string' ? req.body.confirm.trim() : ''
+    if (!name) return res.status(400).json({ error: 'Category name is required' })
+    if (confirm !== name) return res.status(400).json({ error: 'The typed name does not match the category' })
+
+    const { data: hiding, error: hideErr } = await supabaseAdmin
+      .from('product')
+      .update({ is_active: false })
+      .eq('category', name)
+      .eq('is_active', true)
+      .select('prod_id')
+    if (hideErr) throw hideErr
+
+    const { error: delErr } = await supabaseAdmin.from('site_categories').delete().eq('name', name)
+    if (delErr) throw delErr
+
+    invalidateContentCache()
+    const hiddenCount = (hiding || []).length
+    res.json({ success: true, name, hidden: hiddenCount })
+    logAudit({ adminEmail: req.userEmail, action: 'category_delete', target: `category:${name}`, details: `category deleted, ${hiddenCount} product${hiddenCount === 1 ? '' : 's'} hidden` })
+    recordContentHistory('categories', 'site_categories', 'delete', { name: `Menu category: ${name}`, changes: { [`${name} · row`]: { from: 'Live', to: 'Deleted' } } }, req.userEmail)
+  } catch (err) {
+    logger.error({ err }, 'Category delete error')
+    res.status(500).json({ error: 'Failed to delete category' })
   }
 })
 

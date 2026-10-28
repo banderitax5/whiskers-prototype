@@ -32,8 +32,8 @@ export function sanitizeDetails(value) {
     const label = typeof row.label === 'string' ? row.label.trim() : ''
     const content = typeof row.content === 'string' ? row.content.trim() : ''
 
-    // a row with no content has nothing to show - drop it rather than store it
-    if (!content) continue
+    // blank sections are kept so the admin's section list persists as entered;
+    // the product page already hides sections with no content
     if (!label) return { error: 'Every section needs a label' }
     if (label.length > MAX_LABEL_LENGTH) {
       return { error: `Section labels are limited to ${MAX_LABEL_LENGTH} characters` }

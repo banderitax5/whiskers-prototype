@@ -83,7 +83,7 @@ describe('AdminProductManagement self-service upgrades', () => {
     const buttons = [...c.querySelectorAll('button')]
     expect(buttons.some((b) => b.textContent.includes('Export CSV'))).toBe(true)
     expect(buttons.some((b) => b.textContent.includes('Import CSV'))).toBe(true)
-    expect(buttons.some((b) => b.getAttribute('title')?.startsWith('Duplicate product'))).toBe(true)
+    expect(buttons.some((b) => b.getAttribute('aria-label') === 'More actions')).toBe(true)
   })
 
   it('offers a category dropdown with existing options instead of free text', async () => {
@@ -134,11 +134,16 @@ describe('AdminProductManagement self-service upgrades', () => {
     const c = await render()
     await flush()
     await act(async () => {
-      // rows sort by name asc, so Cat Toy is first; target Dog Toy's Copy button
-      const copyBtns = [...c.querySelectorAll('button')].filter((b) => b.getAttribute('title')?.startsWith('Duplicate product'))
-      const dogBtn = copyBtns.find((b) => b.closest('tr')?.textContent.includes('Dog Toy'))
-      expect(dogBtn).toBeTruthy()
-      dogBtn.click()
+      // rows sort by name asc, so Cat Toy is first; open Dog Toy's three-dot menu
+      const menuBtns = [...c.querySelectorAll('button')].filter((b) => b.getAttribute('aria-label') === 'More actions')
+      const dogMenu = menuBtns.find((b) => b.closest('tr')?.textContent.includes('Dog Toy'))
+      expect(dogMenu).toBeTruthy()
+      dogMenu.click()
+    })
+    await act(async () => {
+      const dup = [...c.querySelectorAll('[role="menuitem"]')].find((b) => b.textContent.includes('Duplicate'))
+      expect(dup).toBeTruthy()
+      dup.click()
     })
     await flush()
     expect(apiPostAuth).toHaveBeenCalledTimes(1)

@@ -11,7 +11,7 @@ import ProductInfoAccordion from '../components/ProductInfoAccordion.jsx'
 import ProductReviews from '../components/ProductReviews.jsx'
 import { normalizeProduct, formatPrice, getStockStatus, toCartPayload, useLowStockThreshold } from '../lib/productDisplay.js'
 import { saleFor, useActivePromos } from '../lib/promoDisplay.js'
-import { parseDetails } from '../lib/productInfo.js'
+import { visibleInfoSections } from '../lib/productInfo.js'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -135,7 +135,7 @@ function ProductDetail() {
   const p = status === 'ready' ? normalizeProduct(item) : null
   // deep-dive sections (ingredients, feeding guide, ...) - empty for products
   // that carry none, in which case the accordion is not rendered at all
-  const infoSections = status === 'ready' ? parseDetails(item?.details) : []
+  const infoSections = status === 'ready' ? visibleInfoSections(item?.details) : []
 
   // per-product SEO meta; restores site defaults on unmount / product change
   useEffect(() => {

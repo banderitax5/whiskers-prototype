@@ -2,15 +2,18 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import supabase from '../lib/supabase';
 import { apiGet, apiGetAuth, apiPostAuth, apiPatchAuth, apiDeleteAuth, apiUploadAuth, apiFetchAuth } from '../lib/api';
 import { AdminPage, AdminTable, EmptyState, StatCard, btnPrimary, StatusPill, ConfirmDialog, AdminSelect } from './adminTheme';
-import { sectionsForEdit, sectionsToDetails, MAX_SECTIONS } from '../lib/productInfo';
+import { sectionsForEdit, sectionsToDetails, mergeDraftSections, MAX_SECTIONS } from '../lib/productInfo';
 import { parseCsv, csvToProducts, batchRows, importTemplateCsv } from '../lib/productCsv';
 import { formatPesos } from '../lib/cartLogic';
-import { formatMargin } from '../lib/adminCosting';
+import { formatMargin, marginInfo } from '../lib/adminCosting';
+
+// status sort order: what needs attention first (Out), then live, then the rest
+const STATUS_RANK = { Out: 0, Active: 1, Hidden: 2, Archived: 3 };
 import { useRole } from '../context/RoleContext';
 import { canSeeCosts, canManageProductLifecycle, canEditPrice } from '../lib/permissions';
 import { fetchSiteContent, contentSettings } from '../lib/siteContent.js';
 import { useSelection, RowCheckBox, SelectionBar, SelectAllRow, LongPressBox, bulkApply, bulkSummary, barBtnPlain, barBtnAccent, barBtnDanger } from './adminBulk';
-import { BsBoxSeam, BsPlusLg, BsDashLg, BsPencilSquare, BsTrash, BsUpload, BsSearch, BsExclamationTriangle, BsArrowClockwise, BsArchive, BsArrowCounterclockwise, BsClockHistory, BsFiles, BsDownload, BsQuestionCircle } from 'react-icons/bs';
+import { BsBoxSeam, BsPlusLg, BsDashLg, BsPencilSquare, BsTrash, BsUpload, BsSearch, BsExclamationTriangle, BsArrowClockwise, BsArchive, BsArrowCounterclockwise, BsClockHistory, BsFiles, BsDownload, BsThreeDotsVertical } from 'react-icons/bs';
 import toast from '../lib/toast.js';
 
 // form-field label style shared by the desktop and mobile product forms -
@@ -61,6 +64,61 @@ function invalidCostValue(value) {
   return !Number.isFinite(n) || n < 0;
 }
 
+// Three-dot menu for the less-used row actions. Closes on outside click or Escape.
+function RowActionsMenu({ items }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="p-1.5 rounded bg-gray-100 dark:bg-[#162d4a] hover:bg-gray-200 dark:hover:bg-[#1e3a5f] text-gray-700 dark:text-slate-300"
+        title="More actions"
+        aria-label="More actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        <BsThreeDotsVertical />
+      </button>
+      {open && (
+        <div role="menu" style={{ maxHeight: 240, overflowY: 'auto' }} className="absolute right-0 top-full mt-1 z-30 min-w-[11rem] py-1 rounded-lg shadow-lg border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#0f2137]">
+          {items.map((it) => (
+            <button
+              key={it.label}
+              type="button"
+              role="menuitem"
+              disabled={it.disabled}
+              onClick={() => { setOpen(false); it.onClick(); }}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-bold disabled:opacity-40 ${
+                it.danger
+                  ? 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40'
+                  : 'text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-[#162d4a]'
+              }`}
+            >
+              <span className="w-4 h-4 flex items-center justify-center shrink-0">{it.icon}</span>
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const AdminProductManagement = () => {
   const role = useRole();
   const showCosts = canSeeCosts(role);
@@ -89,6 +147,10 @@ const AdminProductManagement = () => {
   const [mobileForm, setMobileForm] = useState({ prod_name: '', category: '', brand: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: sectionsForEdit(null), cost_price: '', supplier: '' });
   const [mobileUploading, setMobileUploading] = useState(false);
   const [mobileImageError, setMobileImageError] = useState('');
+  const [aiBusy, setAiBusy] = useState(false);
+  // label facts the admin types from the printed label or supplier sheet; sent
+  // only with the Write with AI request, never saved to the product
+  const [labelFacts, setLabelFacts] = useState('');
   const [mobileDragging, setMobileDragging] = useState(false);
   const [mobileUrlInput, setMobileUrlInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -110,7 +172,6 @@ const AdminProductManagement = () => {
   const [importPreview, setImportPreview] = useState(null);
   const [importResult, setImportResult] = useState(null);
   const [importing, setImporting] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
   // bulk actions over the selection
   const sel = useSelection();
   const [bulkDialog, setBulkDialog] = useState(null); // 'category' | 'price' | 'archive'
@@ -168,8 +229,10 @@ const AdminProductManagement = () => {
     } catch { /* non-fatal: product-derived categories still populate the list */ }
   }
 
-  async function fetchProducts() {
-    setLoading(true);
+  // Full reload. The skeleton shows only on the very first load; later reloads
+  // (refresh button, bulk actions, CSV import) keep the table on screen.
+  async function fetchProducts({ silent = false } = {}) {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const token = await getToken(); if (!token) return;
@@ -186,8 +249,29 @@ const AdminProductManagement = () => {
     finally { setLoading(false); }
   }
 
+  // Optimistic helpers: change one row on screen at once, and return a function
+  // that puts the old row back if the server refuses the change.
+  function patchLocalProduct(prodId, patch) {
+    let before = null;
+    setProducts((prev) => prev.map((p) => {
+      if (p.prod_id !== prodId) return p;
+      before = p;
+      return { ...p, ...patch };
+    }));
+    return () => {
+      if (!before) return;
+      setProducts((prev) => prev.map((p) => (p.prod_id === prodId ? before : p)));
+    };
+  }
+
+  function replaceLocalProduct(prodId, row) {
+    if (!row) return;
+    setProducts((prev) => prev.map((p) => (p.prod_id === prodId ? { ...p, ...row } : p)));
+  }
+
   function startEdit(item) {
     setImageError('');
+    setLabelFacts('');
     setEditing(item.prod_id);
     setEditingOriginal(item);
     setFormData({
@@ -206,12 +290,48 @@ const AdminProductManagement = () => {
     setShowForm(true);
   }
 
+  // "Write with AI": asks the server for a draft and fills the description and
+  // detail sections as an editable draft. Nothing is saved here; the admin
+  // still presses Save. The server returns the draft only (no database writes).
+  async function writeWithAi(productId, setForm, labelFacts = '') {
+    if (!productId || aiBusy) return;
+    setAiBusy(true);
+    try {
+      const token = await getToken(); if (!token) return;
+      const { draft } = await apiPostAuth(`/admin/products/${productId}/draft-copy`, { label_facts: labelFacts }, token);
+      setForm((f) => ({
+        ...f,
+        description: draft.description || f.description,
+        details: mergeDraftSections(f.details, draft.details),
+      }));
+      toast.success('Draft ready. Review it, then press Save.');
+    } catch (err) {
+      toast.error(err.message || 'The AI could not write a draft. Try again or write it by hand.');
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
   function resetForm() {
     setImageError('');
+    setLabelFacts('');
     setEditing(null);
     setEditingOriginal(null);
     setFormData({ prod_name: '', category: '', brand: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: sectionsForEdit(null), cost_price: '', supplier: '' });
   }
+
+  function closeForm() {
+    resetForm();
+    setShowForm(false);
+  }
+
+  useEffect(() => {
+    if (!showForm) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape' && !submitting) closeForm(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showForm, submitting]);
 
   const handleFileUpload = async (file) => {
     if (!file) return;
@@ -294,49 +414,81 @@ const AdminProductManagement = () => {
         ...costPatchFields(formData, editingOriginal, showCosts),
       };
       if (editing) {
-        await apiPatchAuth(`/admin/products/${editing}`, payload, token);
-        toast.success('Product updated');
+        // show the change right away; roll back if the server refuses it
+        const rollback = patchLocalProduct(editing, {
+          prod_name: payload.prod_name,
+          category: payload.category,
+          brand: payload.brand,
+          ...(canPrice ? { price } : {}),
+          stock_quantity: stock,
+          is_active: payload.is_active,
+          image_url: payload.image_url,
+          description: payload.description,
+          details: payload.details,
+          ...(showCosts && payload.cost_price !== undefined ? { cost_price: payload.cost_price } : {}),
+          ...(showCosts && payload.supplier !== undefined ? { supplier: payload.supplier } : {}),
+        });
+        try {
+          const res = await apiPatchAuth(`/admin/products/${editing}`, payload, token);
+          replaceLocalProduct(editing, res?.item);
+          toast.success('Product updated');
+        } catch (err) {
+          rollback();
+          throw err;
+        }
       } else {
-        await apiPostAuth('/admin/products', payload, token);
+        // a new product needs the server's id, so it is added once saved
+        const res = await apiPostAuth('/admin/products', payload, token);
+        if (res?.item) setProducts((prev) => [res.item, ...prev]);
         toast.success('Product created');
       }
-      resetForm(); setShowForm(false); await fetchProducts(); fetchCategoryList();
+      closeForm(); fetchCategoryList();
     } catch (error) { toast.error(error.message); }
     finally { setSubmitting(false); }
   };
 
   async function adjustStock(item, delta) {
     const next = Math.max(0, Number(item.stock_quantity || 0) + delta);
+    const rollback = patchLocalProduct(item.prod_id, { stock_quantity: next });
     try {
       const token = await getToken(); if (!token) return;
       await apiPatchAuth(`/admin/products/${item.prod_id}`, { stock_quantity: next }, token);
-      setProducts((prev) => prev.map((p) => p.prod_id === item.prod_id ? { ...p, stock_quantity: next } : p));
       toast.success(`Stock ${delta > 0 ? 'increased' : 'decreased'} to ${next}`);
-    } catch (err) { toast.error(err.message); }
+    } catch (err) {
+      rollback();
+      toast.error(err.message);
+    }
   }
 
   async function confirmDelete() {
     if (!deleteTarget) return;
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    // remove the row now; put it back if the server refuses
+    const prevList = products;
+    setProducts((prev) => prev.filter((p) => p.prod_id !== target.prod_id));
     try {
       const token = await getToken(); if (!token) return;
-      await apiDeleteAuth(`/admin/products/${deleteTarget.prod_id}`, token);
-      setProducts((prev) => prev.filter((p) => p.prod_id !== deleteTarget.prod_id));
+      await apiDeleteAuth(`/admin/products/${target.prod_id}`, token);
       toast.success('Product deleted');
     } catch (err) {
       // 409 HAS_ORDER_HISTORY: the server message explains archiving instead
+      setProducts(prevList);
       toast.error(err.message);
     }
-    finally { setDeleteTarget(null); }
   }
 
   async function toggleArchive(item) {
     const archiving = !item.archived_at;
+    const nextArchivedAt = archiving ? new Date().toISOString() : null;
+    const rollback = patchLocalProduct(item.prod_id, { archived_at: nextArchivedAt });
     try {
       const token = await getToken(); if (!token) return;
-      await apiPatchAuth(`/admin/products/${item.prod_id}`, { archived: archiving }, token);
+      const res = await apiPatchAuth(`/admin/products/${item.prod_id}`, { archived: archiving }, token);
+      replaceLocalProduct(item.prod_id, res?.item);
       toast.success(archiving ? 'Product archived' : 'Product restored');
-      await fetchProducts();
     } catch (err) {
+      rollback();
       toast.error(err.message);
     }
   }
@@ -387,7 +539,8 @@ const AdminProductManagement = () => {
       }
       if (!created) throw new Error('Could not find a free name for the copy');
       toast.success('Copied as Hidden - review it, then set Active.');
-      await fetchProducts(); fetchCategoryList();
+      setProducts((prev) => [created, ...prev]);
+      fetchCategoryList();
       startEdit(created);
     } catch (err) {
       toast.error(err.message || 'Could not copy product');
@@ -447,7 +600,8 @@ const AdminProductManagement = () => {
         offset += batch.length;
       }
       setImportResult({ created, updated, errors });
-      await fetchProducts(); fetchCategoryList();
+      // big action: a full reload is the simplest way to show every changed row
+      await fetchProducts({ silent: true }); fetchCategoryList();
     } catch (err) {
       toast.error(err.message || 'Import failed');
     } finally { setImporting(false); }
@@ -465,7 +619,7 @@ const AdminProductManagement = () => {
       else toast.success(bulkSummary(successVerb, res, 'product'));
       sel.clear();
       setBulkDialog(null);
-      await fetchProducts();
+      await fetchProducts({ silent: true });
     } catch (err) {
       toast.error(err.message);
     } finally { setBulkBusy(false); }
@@ -482,6 +636,7 @@ const AdminProductManagement = () => {
 
   function openMobileEdit(item) {
     setMobileImageError('');
+    setLabelFacts('');
     setMobileEditItem(item);
     setMobileForm({
       prod_name: item.prod_name || '',
@@ -557,7 +712,8 @@ const AdminProductManagement = () => {
     setMobileSubmitting(true);
     try {
       const token = await getToken(); if (!token) return;
-      await apiPatchAuth(`/admin/products/${mobileEditItem.prod_id}`, {
+      const id = mobileEditItem.prod_id;
+      const body = {
         prod_name: mobileForm.prod_name.trim(),
         category: mobileForm.category.trim(),
         brand: mobileForm.brand?.trim() || null,
@@ -568,10 +724,29 @@ const AdminProductManagement = () => {
         description: mobileForm.description || null,
         details: sectionsToDetails(mobileForm.details),
         ...costPatchFields(mobileForm, mobileEditItem, showCosts),
-      }, token);
+      };
+      // show the change right away; roll back if the server refuses it
+      const rollback = patchLocalProduct(id, {
+        prod_name: body.prod_name,
+        category: body.category,
+        brand: body.brand,
+        ...(canPrice ? { price } : {}),
+        stock_quantity: stock,
+        is_active: body.is_active,
+        image_url: body.image_url,
+        description: body.description,
+        details: body.details,
+      });
+      try {
+        const res = await apiPatchAuth(`/admin/products/${id}`, body, token);
+        replaceLocalProduct(id, res?.item);
+      } catch (err) {
+        rollback();
+        throw err;
+      }
       toast.success('Product updated');
       setMobileEditItem(null);
-      await fetchProducts(); fetchCategoryList();
+      fetchCategoryList();
     } catch (error) { toast.error(error.message); }
     finally { setMobileSubmitting(false); }
   }
@@ -629,6 +804,21 @@ const AdminProductManagement = () => {
         case 'category':
           va = (a.category || '').toLowerCase();
           vb = (b.category || '').toLowerCase();
+          break;
+        case 'margin': {
+          // rows with no margin (no cost or no price) always sort last
+          const ma = marginInfo(a.price, a.cost_price).percent;
+          const mb = marginInfo(b.price, b.cost_price).percent;
+          if (ma === null && mb === null) return 0;
+          if (ma === null) return 1;
+          if (mb === null) return -1;
+          va = ma;
+          vb = mb;
+          break;
+        }
+        case 'status':
+          va = STATUS_RANK[productBadge(a).label];
+          vb = STATUS_RANK[productBadge(b).label];
           break;
         default:
           va = a[sortKey] ?? '';
@@ -703,12 +893,12 @@ const AdminProductManagement = () => {
       { key: 'cost_price', label: 'Cost', sortable: true, render: (item) => (
         <span className="text-gray-700 dark:text-slate-300">{item.cost_price != null ? `PHP ${formatPesos(Number(item.cost_price))}` : '—'}</span>
       ) },
-      { key: 'margin', label: 'Margin', render: (item) => (
+      { key: 'margin', label: 'Margin', sortable: true, render: (item) => (
         <span className={`font-black ${marginTone(item.price, item.cost_price)}`}>{formatMargin(item.price, item.cost_price)}</span>
       ) },
     ] : []),
     { key: 'stock_quantity', label: 'Stock', sortable: true, render: (item) => <span className="text-gray-700 dark:text-slate-300">{item.stock_quantity}</span> },
-    { key: 'status', label: 'Status', render: (item) => {
+    { key: 'status', label: 'Status', sortable: true, render: (item) => {
       const s = productBadge(item);
       return <StatusPill kind={s.kind}>{s.label}</StatusPill>;
     } },
@@ -717,31 +907,24 @@ const AdminProductManagement = () => {
         <button onClick={() => startEdit(item)} className="p-1.5 rounded bg-[#facc15] hover:bg-[#fde047] text-black" title="Edit"><BsPencilSquare /></button>
         <button onClick={() => adjustStock(item, -1)} className="p-1.5 rounded bg-gray-100 dark:bg-[#162d4a] hover:bg-gray-200 dark:hover:bg-[#1e3a5f] text-gray-700 dark:text-slate-300" title="Decrease stock"><BsDashLg /></button>
         <button onClick={() => adjustStock(item, +1)} className="p-1.5 rounded bg-gray-100 dark:bg-[#162d4a] hover:bg-gray-200 dark:hover:bg-[#1e3a5f] text-gray-700 dark:text-slate-300" title="Increase stock"><BsPlusLg /></button>
-        <button onClick={() => loadHistory(item)} className="p-1.5 rounded bg-gray-100 dark:bg-[#162d4a] hover:bg-gray-200 dark:hover:bg-[#1e3a5f] text-gray-700 dark:text-slate-300" title="Price history"><BsClockHistory /></button>
-        {canLifecycle && (
-          <button
-            onClick={() => duplicateProduct(item)}
-            disabled={duplicatingId === item.prod_id}
-            className="p-1.5 rounded bg-gray-100 dark:bg-[#162d4a] hover:bg-gray-200 dark:hover:bg-[#1e3a5f] text-gray-700 dark:text-slate-300 disabled:opacity-40"
-            title="Duplicate product (copies everything, saved as Hidden)"
-          >
-            {duplicatingId === item.prod_id ? <span className="inline-block w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <BsFiles />}
-          </button>
-        )}
-        {canLifecycle && (
-          item.archived_at
-            ? <button onClick={() => toggleArchive(item)} className="p-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white" title="Restore from archive"><BsArrowCounterclockwise /></button>
-            : <button onClick={() => toggleArchive(item)} className="p-1.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white" title="Archive (hide from store, keep order history)"><BsArchive /></button>
-        )}
-        {canLifecycle && (
-          <button onClick={() => setDeleteTarget(item)} className="p-1.5 rounded bg-red-600 hover:bg-red-500 text-white" title="Delete"><BsTrash /></button>
-        )}
+        <RowActionsMenu
+          items={[
+            { label: 'Price history', icon: <BsClockHistory />, onClick: () => loadHistory(item) },
+            ...(canLifecycle ? [
+              { label: duplicatingId === item.prod_id ? 'Duplicating...' : 'Duplicate', icon: <BsFiles />, disabled: duplicatingId === item.prod_id, onClick: () => duplicateProduct(item) },
+              item.archived_at
+                ? { label: 'Restore from archive', icon: <BsArrowCounterclockwise />, onClick: () => toggleArchive(item) }
+                : { label: 'Archive', icon: <BsArchive />, onClick: () => toggleArchive(item) },
+              { label: 'Delete', icon: <BsTrash />, danger: true, onClick: () => setDeleteTarget(item) },
+            ] : []),
+          ]}
+        />
       </div>
     ) },
   ];
 
   return (
-    <AdminPage title="Product Management" subtitle="Curate the items shoppers can buy.">
+    <AdminPage title="Product Management" subtitle="Curate the items shoppers can buy." help={PRODUCT_HELP}>
 
       <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-4 mb-6">
         <StatCard label="Total Products" value={totalProducts} loading={loading} />
@@ -749,16 +932,22 @@ const AdminProductManagement = () => {
         <StatCard label="Out of Stock" value={outOfStockCount} loading={loading} />
       </div>
 
-      {(showForm || canLifecycle) && (
+      {canLifecycle && (
         <div className="flex justify-end mb-4">
-          <button onClick={() => { setShowForm((s) => !s); if (showForm) resetForm(); }} className={btnPrimary}>
-            {showForm ? 'Cancel' : '+ New Product'}
+          <button onClick={() => { resetForm(); setShowForm(true); }} className={btnPrimary}>
+            + New Product
           </button>
         </div>
       )}
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="mb-6 p-5 rounded-xl border border-gray-200 dark:border-[#1e3a5f] bg-white dark:bg-[#0f2137] space-y-4">
+        <dialog className="modal modal-open" aria-label={editing ? 'Edit Product' : 'New Product'}>
+        <div className="modal-box max-w-3xl my-4 max-h-[calc(100vh-2rem)] overflow-y-auto bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] p-0 gap-0">
+          <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#1e3a5f] sticky top-0 bg-white dark:bg-[#0f2137] z-10">
+            <h3 className="font-bold text-gray-900 dark:text-slate-100 text-sm">{editing ? 'Edit Product' : 'New Product'}</h3>
+            <button type="button" onClick={closeForm} className="text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 text-lg leading-none" aria-label="Close">&times;</button>
+          </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             <div>
               <label htmlFor="product-name-desktop" className={FIELD_LABEL}>Product name <span className="text-red-500">*</span></label>
@@ -847,7 +1036,29 @@ const AdminProductManagement = () => {
             </div>
           </div>
           <div>
-            <label htmlFor="product-description-desktop" className={FIELD_LABEL}>Description (optional)</label>
+            <label htmlFor="label-facts-desktop" className={FIELD_LABEL}>Label facts (for Write with AI)</label>
+            <textarea
+              id="label-facts-desktop"
+              value={labelFacts}
+              onChange={(e) => setLabelFacts(e.target.value)}
+              placeholder={'Type what the printed label or supplier sheet says, one fact per line.\nIngredients: ...\nGuaranteed analysis: crude protein 25% min, crude fat 12% min, ...\nFeeding guide: ... g per day for a 10 kg dog'}
+              title="Only these facts are used for the AI draft. Copy them from the label or supplier sheet, not from another shop."
+              rows={4}
+              maxLength={4000}
+              className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 text-sm focus:outline-none focus:border-[#0b2e59] resize-y"
+            />
+            <p className="mt-1 text-[11px] text-gray-500 dark:text-slate-400">Used only for the draft. Nothing here is saved to the product.</p>
+          </div>
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor="product-description-desktop" className={FIELD_LABEL}>Description (optional)</label>
+              <WriteWithAiButton
+                disabled={!editing || aiBusy}
+                busy={aiBusy}
+                onClick={() => writeWithAi(editing, setFormData, labelFacts)}
+                title={!editing ? 'Save the product first, then ask the AI to write its copy.' : 'Writes a draft you can edit. Nothing is saved until you press Save.'}
+              />
+            </div>
             <textarea
               id="product-description-desktop"
               value={formData.description}
@@ -893,6 +1104,9 @@ const AdminProductManagement = () => {
             {submitting ? 'Saving...' : editing ? 'Update Product' : (uploading ? 'Processing...' : 'Save Product')}
           </button>
         </form>
+        </div>
+          <form method="dialog" className="modal-backdrop"><button type="button" onClick={closeForm}>close</button></form>
+        </dialog>
       )}
 
       {error && !loading ? (
@@ -969,6 +1183,14 @@ const AdminProductManagement = () => {
           <button onClick={() => { setPriceMin(''); setPriceMax(''); }} className="px-3 py-2 rounded-lg text-xs font-black uppercase tracking-widest bg-gray-100 dark:bg-[#162d4a] hover:bg-gray-200 dark:hover:bg-[#1e3a5f] text-gray-600 dark:text-slate-300 border border-gray-200 dark:border-[#1e3a5f]">Clear</button>
         )}
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => fetchProducts({ silent: true })}
+            disabled={loading}
+            className="px-3 py-2 rounded-lg text-xs font-black uppercase tracking-widest bg-white dark:bg-[#162d4a] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] text-gray-600 dark:text-slate-300 border border-gray-200 dark:border-[#1e3a5f] disabled:opacity-50 inline-flex items-center gap-1.5"
+            title="Reload the list from the server (use before editing if others may have changed things)"
+          >
+            <BsArrowClockwise className="inline" /> Refresh
+          </button>
           {canLifecycle && (
             <button
               onClick={() => { setImportOpen(true); setImportPreview(null); setImportResult(null); }}
@@ -985,14 +1207,6 @@ const AdminProductManagement = () => {
             title="Download every product as a spreadsheet (a backup you can re-import)"
           >
             <BsDownload className="inline" /> {exporting ? 'Exporting...' : 'Export CSV'}
-          </button>
-          <button
-            onClick={() => setHelpOpen(true)}
-            className="p-2 rounded-lg bg-white dark:bg-[#162d4a] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-[#1e3a5f]"
-            title="How to manage products"
-            aria-label="How to manage products"
-          >
-            <BsQuestionCircle />
           </button>
         </div>
       </div>
@@ -1221,7 +1435,29 @@ const AdminProductManagement = () => {
                 </div>
               </div>
               <div>
-                <label htmlFor="product-description-mobile" className={FIELD_LABEL}>Description (optional)</label>
+                <label htmlFor="label-facts-mobile" className={FIELD_LABEL}>Label facts (for Write with AI)</label>
+                <textarea
+                  id="label-facts-mobile"
+                  value={labelFacts}
+                  onChange={(e) => setLabelFacts(e.target.value)}
+                  placeholder={'Type what the printed label or supplier sheet says, one fact per line.'}
+                  title="Only these facts are used for the AI draft. Copy them from the label or supplier sheet, not from another shop."
+                  rows={4}
+                  maxLength={4000}
+                  className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59] resize-y"
+                />
+                <p className="mt-1 text-[11px] text-gray-500 dark:text-slate-400">Used only for the draft. Nothing here is saved to the product.</p>
+              </div>
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <label htmlFor="product-description-mobile" className={FIELD_LABEL}>Description (optional)</label>
+                  <WriteWithAiButton
+                    disabled={!mobileEditItem || aiBusy}
+                    busy={aiBusy}
+                    onClick={() => writeWithAi(mobileEditItem?.prod_id, setMobileForm, labelFacts)}
+                    title={!mobileEditItem ? 'Save the product first, then ask the AI to write its copy.' : 'Writes a draft you can edit. Nothing is saved until you press Save.'}
+                  />
+                </div>
                 <textarea
                   id="product-description-mobile"
                   value={mobileForm.description}
@@ -1577,49 +1813,6 @@ const AdminProductManagement = () => {
         onCancel={() => setBulkDialog(null)}
       />
 
-      {/* Help */}
-      {helpOpen && (
-        <dialog className="modal modal-open" aria-label="How to manage products">
-          <div className="modal-box max-w-lg my-4 max-h-[calc(100vh-2rem)] bg-white dark:bg-[#0f2137] border border-gray-200 dark:border-[#1e3a5f] p-0 gap-0">
-            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#1e3a5f]">
-              <h3 className="font-bold text-gray-900 dark:text-slate-100 text-sm">How to manage products</h3>
-              <button onClick={() => setHelpOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 text-lg leading-none" aria-label="Close">&times;</button>
-            </div>
-            <div className="p-4 space-y-3 text-sm text-gray-700 dark:text-slate-300 max-h-[65vh] overflow-y-auto">
-              <HelpSection title="Adding a product">
-                Press <strong>+ New Product</strong>. Name and category are required. The image can be dragged in or fetched from a URL.
-                A product saved as <strong>Hidden</strong> stays out of the store until you switch it to <strong>Active</strong>.
-              </HelpSection>
-              <HelpSection title="Categories">
-                Pick an existing category from the dropdown, or choose <strong>+ New category...</strong> to type a new one.
-                Typing a brand-new category by hand is what used to create duplicates like &quot;TEST&quot;.
-                To rename, hide or reorder the shopper-facing list, use <strong>Navigation -&gt; Categories</strong>.
-              </HelpSection>
-              <HelpSection title="Price, stock and status">
-                Price 0 means the product shows as unavailable - the form warns you. Stock 0 shows an &quot;OUT&quot; badge.
-                <strong> Hidden</strong> = not in the store, <strong>Archive</strong> = retired (restorable), <strong>Delete</strong> = gone forever
-                (only allowed for products that were never ordered).
-              </HelpSection>
-              <HelpSection title="Product information sections">
-                Under the description, sections like Ingredients or Feeding Guide appear on the product page.
-                You can rename sections, remove them, and add your own (up to 12).
-                Start a line with &quot;- &quot; for bullets; separate table cells with &quot; | &quot; (first row becomes the header).
-              </HelpSection>
-              <HelpSection title="Spreadsheet import / export">
-                <strong>Export CSV</strong> downloads every product (including IDs - keep it as a backup).
-                Edit it in Excel or Google Sheets, then <strong>Import CSV</strong> to upload:
-                rows with an ID update that product; rows without an ID create new ones. You always see a preview before anything is saved.
-              </HelpSection>
-              <HelpSection title="Bulk actions and duplicate">
-                Tick the checkbox on rows (or use Select all), then the orange bar appears:
-                change category, price or visibility for many products at once, or archive them together.
-                The <strong>Copy</strong> button clones a product (saved as Hidden) - handy for 1kg / 5kg / 10kg variants.
-              </HelpSection>
-            </div>
-          </div>
-          <form method="dialog" className="modal-backdrop"><button onClick={() => setHelpOpen(false)}>close</button></form>
-        </dialog>
-      )}
     </AdminPage>
   );
 };
@@ -1679,6 +1872,23 @@ function CategoryField({ id, value, options, onChange, className }) {
 
 // the Product information group: ordered {label, content} sections the owner
 // can rename, remove and extend (the backend accepts any labels, max 12)
+// Small ghost button beside the Description label. Admin-only in the parent
+// (only the admin form renders it). `title` explains why it is off when disabled.
+function WriteWithAiButton({ disabled, busy, onClick, title }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-busy={busy || undefined}
+      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border border-[#0b2e59] text-[#0b2e59] dark:text-yellow-300 dark:border-yellow-300/60 hover:bg-[#0b2e59]/5 disabled:opacity-40 disabled:cursor-not-allowed transition"
+    >
+      {busy ? 'Writing...' : 'Write with AI'}
+    </button>
+  )
+}
+
 function DetailsEditor({ idPrefix, sections, onChange }) {
   const update = (i, patch) => onChange(sections.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
   const remove = (i) => onChange(sections.filter((_, idx) => idx !== i));
@@ -1740,11 +1950,44 @@ function DetailsEditor({ idPrefix, sections, onChange }) {
   );
 }
 
-function HelpSection({ title, children }) {
-  return (
-    <div>
-      <h4 className="font-black text-[10px] uppercase tracking-widest text-[#0b2e59] dark:text-yellow-200 mb-1">{title}</h4>
-      <p className="leading-relaxed">{children}</p>
-    </div>
-  );
-}
+// help guide for the "?" button in the page header
+const PRODUCT_HELP = [
+  {
+    title: 'Adding a product',
+    body: (<>Press <strong>+ New Product</strong>. Name and category are required. The image can be dragged in or fetched from a URL.
+      A product saved as <strong>Hidden</strong> stays out of the store until you switch it to <strong>Active</strong>.
+      Press <strong>Save</strong> when you are done. Nothing goes live until you save.</>),
+  },
+  {
+    title: 'Categories',
+    body: (<>Pick an existing category from the dropdown, or choose <strong>+ New category...</strong> to type a new one.
+      Typing a brand-new category by hand is what used to create duplicates like &quot;TEST&quot;.
+      To rename, hide or reorder the shopper-facing list, use <strong>Navigation -&gt; Categories</strong>.</>),
+  },
+  {
+    title: 'Price, stock and status',
+    body: (<>Price 0 means the product shows as unavailable - the form warns you. Stock 0 shows an &quot;OUT&quot; badge.
+      <strong> Hidden</strong> = not in the store, <strong>Archive</strong> = retired (restorable), <strong>Delete</strong> = gone forever
+      (only allowed for products that were never ordered).</>),
+  },
+  {
+    title: 'Product information sections',
+    body: (<>Under the description, sections like Ingredients or Feeding Guide appear on the product page.
+      The form starts with five. You can rename sections, remove them, and add your own (up to 12).
+      Blank sections are saved and stay in the form, but the shopper only sees sections that have text.
+      Start a line with &quot;- &quot; for bullets; separate table cells with &quot; | &quot; (first row becomes the header).
+      <strong> Write with AI</strong> fills the description and sections as a draft. Review it, then press Save.</>),
+  },
+  {
+    title: 'Spreadsheet import / export',
+    body: (<><strong>Export CSV</strong> downloads every product (including IDs - keep it as a backup).
+      Edit it in Excel or Google Sheets, then <strong>Import CSV</strong> to upload:
+      rows with an ID update that product; rows without an ID create new ones. You always see a preview before anything is saved.</>),
+  },
+  {
+    title: 'Bulk actions and duplicate',
+    body: (<>Tick the checkbox on rows (or use Select all), then the dark blue bar appears:
+      change category, price or visibility for many products at once, or archive them together.
+      The <strong>Copy</strong> button clones a product (saved as Hidden) - handy for 1kg / 5kg / 10kg variants.</>),
+  },
+];

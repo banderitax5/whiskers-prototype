@@ -30,18 +30,22 @@ test('a valid array is trimmed and keeps its order', () => {
   ])
 })
 
-test('rows without content are dropped, not stored', () => {
+test('blank sections are kept so the list persists as entered', () => {
   const { value } = sanitizeDetails([
     { label: 'Feeding Guide', content: '' },
     { label: 'Ingredients', content: '   ' },
     { label: 'Product Info', content: 'Kept.' },
   ])
-  assert.deepEqual(value, [{ label: 'Product Info', content: 'Kept.' }])
+  assert.deepEqual(value, [
+    { label: 'Feeding Guide', content: '' },
+    { label: 'Ingredients', content: '' },
+    { label: 'Product Info', content: 'Kept.' },
+  ])
 })
 
-test('an entirely empty list normalizes to null', () => {
+test('an empty list normalizes to null; a blank labelled section is kept', () => {
   assert.deepEqual(sanitizeDetails([]), { value: null })
-  assert.deepEqual(sanitizeDetails([{ label: 'X', content: '' }]), { value: null })
+  assert.deepEqual(sanitizeDetails([{ label: 'X', content: '' }]), { value: [{ label: 'X', content: '' }] })
 })
 
 test('content without a label is rejected', () => {
