@@ -508,4 +508,12 @@ describe('describeEntry with structured changes (Phase B)', () => {
     )
     expect(malformed.sentence).toBe("You changed an order's status to Shipped.")
   })
+
+  it('describes a category delete without crashing', () => {
+    const out = describeEntry(
+      { action: 'category_delete', target: 'category:Treats', details: 'category deleted, 2 products hidden' },
+      { who }
+    )
+    expect(out.sentence).toBe('You deleted the Treats category.')
+  })
 })

@@ -678,7 +678,7 @@ export const REGISTRY = {
   },
   category_delete: {
     category: 'Products',
-    describe: ({ who, target }) => `${who} deleted the ${target?.replace(/^category:/, '') || ''} category`,
+    describe: ({ who, target }) => `${who} deleted the ${String(target.raw || '').replace(/^category:/, '')} category`,
   },
   content_restore_defaults: {
     category: 'Website content',
