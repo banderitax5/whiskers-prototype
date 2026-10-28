@@ -2,6 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── no zoom-in when typing on mobile ─────────────────────────
+   iPhone Safari (and some Android browsers) zoom the whole page when a text
+   field has text smaller than 16px. The app is designed as an app-style layout,
+   so every typing field is kept at 16px on phones. Desktop sizes are unchanged. */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
 @layer utilities {
   .scrollbar-hide {
     -ms-overflow-style: none;
