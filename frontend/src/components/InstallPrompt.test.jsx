@@ -63,12 +63,22 @@ describe('InstallPrompt', () => {
     expect(card.textContent).not.toContain('Install')
   })
 
-  it('shows a desktop card with a browser-menu hint when no install is offered', async () => {
+  it('shows Mac Safari the File > Add to Dock hint, not an address bar icon', async () => {
+    setUA('Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15')
+    mountPrompt()
+    await passCookieAndDelay()
+    const card = document.querySelector('[role="dialog"]')
+    expect(card.textContent).toContain('Add to Dock')
+    expect(card.textContent).not.toContain('address bar')
+  })
+
+  it('shows desktop Chrome-style browsers (incl. Brave) a generic browser-menu hint', async () => {
     mountPrompt()
     await passCookieAndDelay()
     const card = document.querySelector('[role="dialog"]')
     expect(card).not.toBeNull()
-    expect(card.textContent).toContain('address bar')
+    expect(card.textContent).not.toContain('address bar')
+    expect(card.textContent).toContain('browser menu')
     const buttons = [...card.querySelectorAll('button')].map((b) => b.textContent)
     expect(buttons).not.toContain('Install')
   })

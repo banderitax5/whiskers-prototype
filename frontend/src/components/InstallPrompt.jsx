@@ -26,6 +26,13 @@ function isIosSafari() {
   return iOS && safari
 }
 
+// Mac Safari (not iPhone/iPad). Chrome and Brave also contain "Safari" in their
+// user agent, so they are excluded here.
+function isMacSafari() {
+  const ua = window.navigator.userAgent
+  return /Macintosh/.test(ua) && /Safari/.test(ua) && !/Chrome|Chromium|CriOS|Edg|OPR|Brave/.test(ua)
+}
+
 function recentlyDismissed() {
   const at = Number(localStorage.getItem(DISMISS_KEY))
   if (!at) return false
@@ -55,7 +62,7 @@ export default function InstallPrompt() {
     // iOS never fires beforeinstallprompt, so it gets the Share hint directly.
     // Other browsers get the card with a menu hint; the Install button replaces
     // it only if the browser actually offers an install.
-    setMode(isIosSafari() ? 'ios' : 'desktop')
+    setMode(isIosSafari() ? 'ios' : isMacSafari() ? 'mac' : 'desktop')
 
     // wait until the cookie banner has been answered so the two do not overlap,
     // then wait a few seconds so the card is not the first thing a shopper sees
@@ -113,9 +120,14 @@ export default function InstallPrompt() {
               Tap the Share button, then &ldquo;Add to Home Screen&rdquo;.
             </p>
           )}
+          {mode === 'mac' && (
+            <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400">
+              In the menu bar, choose File, then &ldquo;Add to Dock&rdquo;.
+            </p>
+          )}
           {mode === 'desktop' && (
             <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400">
-              Click the install icon in the address bar, or open the browser menu and choose Install.
+              Open the browser menu and look for Install or Add app.
             </p>
           )}
         </div>
