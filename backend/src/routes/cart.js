@@ -53,6 +53,8 @@ function snapshotFromProduct(product, quantity) {
 
 // grabs all items in the logged in user's cart
 router.get('/', async (req, res) => {
+  // never let the browser reuse an old copy of the cart (it caused a stale 304)
+  res.set('Cache-Control', 'no-store')
   try {
     const { data, error } = await req.db
       .from('cart_items')
@@ -82,25 +84,47 @@ router.post('/', async (req, res) => {
     const { product, stock } = loaded
     const qty = normalizeQuantity(req.body?.quantity, stock)
 
-    // atomic upsert: merge on conflict (user_id, product_id)
+    // if the product is already in the cart, add the new quantity to the
+    // existing line (capped at stock) instead of replacing it
+    const { data: existing, error: findErr } = await supabaseAdmin
+      .from('cart_items')
+      .select('id, quantity')
+      .eq('user_id', req.userId)
+      .eq('product_id', productId)
+      .maybeSingle()
+    if (findErr) throw findErr
+
+    if (existing) {
+      const merged = Math.min(Number(existing.quantity || 0) + qty, stock)
+      const { data: updated, error: updErr } = await supabaseAdmin
+        .from('cart_items')
+        .update(snapshotFromProduct(product, merged))
+        .eq('id', existing.id)
+        .eq('user_id', req.userId)
+        .select()
+        .single()
+      if (updErr) throw updErr
+      return res.status(200).json({ item: updated })
+    }
+
+    // not in the cart yet: insert a new line. A unique-index conflict here
+    // means a parallel add just created it, so retry once as a merge.
     const snapshot = { user_id: req.userId, ...snapshotFromProduct(product, qty) }
     const { data, error } = await supabaseAdmin
       .from('cart_items')
-      .upsert(snapshot, {
-        onConflict: 'user_id,product_id',
-        ignoreDuplicates: false,
-      })
+      .insert(snapshot)
       .select()
       .single()
 
     if (error) {
-      // if upsert somehow fails (e.g., stock check needed), fall back to merge
       if (error.code === '23505') {
-        const { data: row } = await req.db
+        const { data: row, error: rowErr } = await supabaseAdmin
           .from('cart_items')
           .select('id, quantity')
+          .eq('user_id', req.userId)
           .eq('product_id', productId)
           .maybeSingle()
+        if (rowErr) throw rowErr
         if (row) {
           const merged = Math.min(Number(row.quantity || 0) + qty, stock)
           const { data: updated, error: updErr } = await supabaseAdmin
@@ -111,7 +135,7 @@ router.post('/', async (req, res) => {
             .select()
             .single()
           if (updErr) throw updErr
-          return res.json({ item: updated })
+          return res.status(200).json({ item: updated })
         }
       }
       throw error

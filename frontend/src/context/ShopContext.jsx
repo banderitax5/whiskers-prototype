@@ -97,6 +97,7 @@ export function ShopProvider({ children }) {
     try {
       const res = await fetch(`${API_BASE}/cart`, {
         headers: { Authorization: `Bearer ${t}` },
+        cache: 'no-store',
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const { items } = await res.json()
