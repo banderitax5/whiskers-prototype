@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react'
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useShop } from '../context/ShopContext.jsx'
 import ProductQuickViewDialog from '../components/ProductQuickViewDialog.jsx'
@@ -55,6 +55,29 @@ function Menu() {
   const [pageSize, setPageSize] = useState(8)
   const [currentPage, setCurrentPage] = useState(1)
   const [showFilters, setShowFilters] = useState(false)
+  // true while the toolbar is pinned under the navbar (phones); adds its backdrop
+  const [toolbarStuck, setToolbarStuck] = useState(false)
+  const toolbarObserverRef = useRef(null)
+  // callback ref: the toolbar only exists after the product list loads, so the
+  // observer must attach whenever the element mounts, not just on first render
+  const setToolbarMarker = useCallback((el) => {
+    toolbarObserverRef.current?.disconnect()
+    toolbarObserverRef.current = null
+    if (!el || typeof IntersectionObserver === 'undefined') return
+    // The marker sits just above the toolbar. Once it has scrolled behind the
+    // navbar the toolbar is pinned, so the trigger line is the navbar's own
+    // height - measured instead of hardcoded, because the header is 60px on
+    // phones and 72px from sm up (taller logo + padding).
+    const navbar = document.querySelector('header')
+    const navHeight = navbar ? Math.round(navbar.getBoundingClientRect().height) : 60
+    const observer = new IntersectionObserver(
+      ([entry]) => setToolbarStuck(!entry.isIntersecting),
+      { rootMargin: `-${navHeight + 1}px 0px 0px 0px`, threshold: 0 }
+    )
+    observer.observe(el)
+    toolbarObserverRef.current = observer
+  }, [])
+  useEffect(() => () => toolbarObserverRef.current?.disconnect(), [])
   // opt-in sentence search from the empty state
   const [sentenceBusy, setSentenceBusy] = useState(false)
   const [sentenceNoMatchFor, setSentenceNoMatchFor] = useState(null)
@@ -354,8 +377,23 @@ function Menu() {
       <div className="flex flex-col lg:flex-row gap-6">
         {/* main content */}
         <div className="flex-1 min-w-0">
-          {/* toolbar */}
-          <div className="sticky top-[3.5rem] z-30 px-1 py-2 bg-gray-50/95 dark:bg-[#0f1f38]/95 backdrop-blur flex flex-nowrap items-center gap-2 mb-4 lg:flex-wrap lg:static lg:mx-0 lg:px-0 lg:py-0 lg:bg-transparent lg:backdrop-blur-none">
+          {/* marker for the toolbar's stuck state (zero height, takes no space) */}
+          <div ref={setToolbarMarker} aria-hidden="true" />
+          {/* toolbar - fully transparent until it pins under the navbar */}
+          <div className="sticky top-[3.75rem] sm:top-[4.5rem] z-30 px-1 py-2 flex flex-nowrap items-center gap-2 mb-4 lg:flex-wrap lg:static lg:mx-0 lg:px-0 lg:py-0">
+            {/* Soft backdrop, shown only while the toolbar is pinned: the page
+                background at 80% with a blur behind it, so product cards slide
+                under it instead of being sliced by a solid slab. The second
+                layer fades that tint out over the gap below the controls, which
+                removes the hard bottom edge. Desktop is static -> never shown. */}
+            <div
+              aria-hidden="true"
+              className={`pointer-events-none absolute -inset-x-3 sm:-inset-x-4 -top-1 bottom-0 -z-10 bg-gray-50/80 dark:bg-gray-900/80 backdrop-blur-md transition-opacity duration-200 lg:hidden ${toolbarStuck ? 'opacity-100' : 'opacity-0'}`}
+            />
+            <div
+              aria-hidden="true"
+              className={`pointer-events-none absolute -inset-x-3 sm:-inset-x-4 top-full h-4 -z-10 bg-gradient-to-b from-gray-50/80 to-transparent dark:from-gray-900/80 transition-opacity duration-200 lg:hidden ${toolbarStuck ? 'opacity-100' : 'opacity-0'}`}
+            />
             <p className="hidden lg:block text-sm text-gray-500 dark:text-gray-400 mr-auto">
               {filteredProducts.length} product{filteredProducts.length !== 1 ? 's' : ''}
             </p>
