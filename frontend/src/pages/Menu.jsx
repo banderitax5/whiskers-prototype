@@ -402,6 +402,7 @@ function Menu() {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
+              aria-label="Sort products"
               className="h-9 min-w-0 flex-1 lg:flex-none whitespace-nowrap rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-xs font-medium text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-[#0b2e59]/30"
             >
               {SORT_OPTIONS.map((o) => (
@@ -409,11 +410,14 @@ function Menu() {
               ))}
             </select>
 
-            {/* per page */}
+            {/* per page - phones get this inside the Filters sheet instead:
+                three text controls plus two buttons do not fit across 360px,
+                and squeezing them clipped the sort dropdown to its arrow */}
             <select
               value={pageSize}
               onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1) }}
-              className="h-9 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-xs font-medium text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-[#0b2e59]/30"
+              aria-label="Products per page"
+              className="hidden lg:block h-9 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-xs font-medium text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-[#0b2e59]/30"
             >
               {PAGE_SIZES.map((s) => (
                 <option key={s} value={s}>{s} per page</option>
@@ -749,6 +753,22 @@ function Menu() {
                   <option value="300">Up to PHP 300</option>
                   <option value="600">Up to PHP 600</option>
                   <option value="1000">Up to PHP 1,000</option>
+                </select>
+              </div>
+
+              {/* products per page - phones only; the toolbar shows it from lg up
+                  so the sort dropdown keeps its full label at 360px */}
+              <div className="lg:hidden">
+                <label htmlFor="filter-page-size" className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">Products per page</label>
+                <select
+                  id="filter-page-size"
+                  value={pageSize}
+                  onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1) }}
+                  className="h-10 w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 px-3 text-sm text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-[#0b2e59]/20 focus:border-[#0b2e59]/40 transition"
+                >
+                  {PAGE_SIZES.map((s) => (
+                    <option key={s} value={s}>{s} per page</option>
+                  ))}
                 </select>
               </div>
             </div>
