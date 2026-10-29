@@ -8,6 +8,7 @@ import { formatPesos } from '../lib/cartLogic'
 import { fetchSiteContent, applyCategoryOverrides } from '../lib/siteContent'
 import { trackSearch } from '../lib/appEvents'
 import { looksLikeSentence, parseSearch, smartSearchProducts } from '../lib/smartSearch'
+import { priceCeilingFor, sliderValueFor, maxPriceFromSlider, matchesMaxPrice, PRICE_STEP } from '../lib/priceFilter'
 
 const PAGE_SIZES = [8, 16, 24, 36]
 const SORT_OPTIONS = [
@@ -78,6 +79,77 @@ function Menu() {
     toolbarObserverRef.current = observer
   }, [])
   useEffect(() => () => toolbarObserverRef.current?.disconnect(), [])
+
+  // ── mobile filter sheet ──────────────────────────────────────────────────
+  // Three ways out: tap the backdrop, press Escape, or drag the grabber down.
+  // While it is open the page behind must not scroll, and keyboard focus moves
+  // into the sheet (and back to the Filters button when it closes).
+  const [sheetOffset, setSheetOffset] = useState(0)
+  const sheetRef = useRef(null)
+  const sheetDragRef = useRef({ active: false, startY: 0, dy: 0 })
+  const filtersButtonRef = useRef(null)
+
+  useEffect(() => {
+    if (!showFilters) return undefined
+    const previousOverflow = document.body.style.overflow
+    const filtersButton = filtersButtonRef.current
+    document.body.style.overflow = 'hidden'
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') { setShowFilters(false); return }
+      if (e.key !== 'Tab') return
+      // aria-modal is only honest if Tab cannot wander into the page behind
+      const panel = sheetRef.current
+      if (!panel) return
+      const focusables = panel.querySelectorAll(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+      if (!focusables.length) return
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      const active = document.activeElement
+      if (!e.shiftKey && (active === last || active === panel)) {
+        e.preventDefault()
+        first.focus()
+      } else if (e.shiftKey && (active === first || active === panel)) {
+        e.preventDefault()
+        last.focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    const focusTimer = setTimeout(() => sheetRef.current?.focus(), 0)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', onKeyDown)
+      clearTimeout(focusTimer)
+      setSheetOffset(0)
+      filtersButton?.focus?.()
+    }
+  }, [showFilters])
+
+  function handleSheetPointerDown(e) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    sheetDragRef.current = { active: true, startY: e.clientY, dy: 0 }
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+  }
+
+  function handleSheetPointerMove(e) {
+    if (!sheetDragRef.current.active) return
+    const dy = e.clientY - sheetDragRef.current.startY
+    sheetDragRef.current.dy = dy
+    setSheetOffset(dy > 0 ? dy : 0)
+  }
+
+  function handleSheetPointerEnd(e) {
+    if (!sheetDragRef.current.active) return
+    const { dy } = sheetDragRef.current
+    sheetDragRef.current.active = false
+    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+    // 90px is roughly a third of a thumb swipe; shorter drags snap back
+    if (dy > 90) setShowFilters(false)
+    else setSheetOffset(0)
+  }
   // opt-in sentence search from the empty state
   const [sentenceBusy, setSentenceBusy] = useState(false)
   const [sentenceNoMatchFor, setSentenceNoMatchFor] = useState(null)
@@ -132,8 +204,10 @@ function Menu() {
     }
     if (cur.search === nextNorm.search && cur.category === nextNorm.category &&
         cur.brand === nextNorm.brand && cur.maxPrice === nextNorm.maxPrice) return
+    // maxPrice is deliberately excluded: it is a slider, so pushing a history
+    // entry per drag tick would bury the Back button. Category/brand still push.
     const discreteChanged = cur.category !== nextNorm.category ||
-      cur.brand !== nextNorm.brand || cur.maxPrice !== nextNorm.maxPrice
+      cur.brand !== nextNorm.brand
     setSearchParams(next, { replace: !discreteChanged })
   }, [filters.search, filters.categories, filters.brands, filters.maxPrice]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -177,6 +251,11 @@ function Menu() {
     (name) => categoryOptions.find((c) => c.name === name)?.label || name,
     [categoryOptions],
   )
+
+  // Top of the price slider, derived from the whole catalog (not the filtered
+  // set) so the track does not shrink while the shopper drags.
+  const priceCeiling = useMemo(() => priceCeilingFor(products), [products])
+  const priceValue = sliderValueFor(filters.maxPrice, priceCeiling)
 
   function updateFilter(key, value) {
     setFilters((prev) => ({ ...prev, [key]: value }))
@@ -237,12 +316,7 @@ function Menu() {
       const matchSearch = smartIds || !search || product.prod_name.toLowerCase().includes(search) || (product.brand || '').toLowerCase().includes(search)
       const matchCategory = filters.categories.length === 0 || filters.categories.some((cat) => product.category?.toLowerCase().includes(cat.toLowerCase()))
       const matchBrand = filters.brands.length === 0 || filters.brands.some((b) => product.brand?.toLowerCase() === b.toLowerCase())
-      const matchPrice =
-        filters.maxPrice === 'all' ||
-        (product.price > 0 &&
-          ((filters.maxPrice === '300' && product.price <= 300) ||
-            (filters.maxPrice === '600' && product.price <= 600) ||
-            (filters.maxPrice === '1000' && product.price <= 1000)))
+      const matchPrice = matchesMaxPrice(product.price, filters.maxPrice)
       return matchSearch && matchCategory && matchBrand && matchPrice
     })
 
@@ -447,6 +521,9 @@ function Menu() {
             {/* filter toggle (mobile) */}
             <button
               type="button"
+              ref={filtersButtonRef}
+              aria-expanded={showFilters}
+              aria-controls="filters-panel"
               onClick={() => setShowFilters(!showFilters)}
               className="lg:hidden h-9 px-3 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-xs font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5"
             >
@@ -481,8 +558,8 @@ function Menu() {
               ))}
               {filters.maxPrice !== 'all' && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-medium px-2.5 py-1">
-                  Under PHP {filters.maxPrice}
-                  <button type="button" onClick={() => updateFilter('maxPrice', 'all')} className="hover:text-blue-900 dark:hover:text-blue-100">&times;</button>
+                  Up to PHP {formatPesos(Number(filters.maxPrice))}
+                  <button type="button" onClick={() => updateFilter('maxPrice', 'all')} aria-label="Remove price filter" className="hover:text-blue-900 dark:hover:text-blue-100">&times;</button>
                 </span>
               )}
               <button type="button" onClick={resetFilters} className="text-xs font-medium text-gray-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-400 px-1">Clear all</button>
@@ -654,20 +731,52 @@ function Menu() {
           )}
         </div>
 
-        {/* filter sidebar - sticky on large screens */}
+        {/* filter sidebar - sticky on large screens, bottom sheet on phones */}
         <aside className={`w-full lg:w-72 flex-shrink-0 ${showFilters ? 'fixed inset-0 z-[10010] flex items-end bg-black/40 lg:static lg:z-auto lg:block lg:bg-transparent' : 'hidden lg:block'}`} onClick={(e) => { if (e.target === e.currentTarget) setShowFilters(false) }}>
-          <div className={`lg:sticky lg:top-24 rounded-xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm overflow-hidden ${showFilters ? 'w-full max-h-[85vh] overflow-y-auto rounded-b-none rounded-t-2xl lg:max-h-none lg:overflow-hidden lg:rounded-xl' : ''}`}>
+          <div
+            ref={sheetRef}
+            id="filters-panel"
+            tabIndex={-1}
+            role={showFilters ? 'dialog' : undefined}
+            aria-modal={showFilters ? 'true' : undefined}
+            aria-label={showFilters ? 'Filters' : undefined}
+            style={sheetOffset ? { transform: `translateY(${sheetOffset}px)`, transition: 'none' } : { transition: 'transform 200ms ease-out' }}
+            className={`lg:sticky lg:top-24 rounded-xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm overflow-hidden overscroll-contain focus:outline-none ${showFilters ? 'w-full max-h-[85vh] overflow-y-auto rounded-b-none rounded-t-2xl lg:max-h-none lg:overflow-hidden lg:rounded-xl' : ''}`}
+          >
+            {/* grabber - drag down to dismiss. touch-none is deliberate here and
+                only here: the handle must claim the vertical gesture, otherwise
+                the sheet scrolls instead of following the finger. */}
+            <div
+              data-sheet-handle="true" className="lg:hidden flex justify-center pt-3 pb-2 touch-none cursor-grab active:cursor-grabbing"
+              onPointerDown={handleSheetPointerDown}
+              onPointerMove={handleSheetPointerMove}
+              onPointerUp={handleSheetPointerEnd}
+              onPointerCancel={handleSheetPointerEnd}
+            >
+              <span className="h-1.5 w-10 rounded-full bg-gray-300 dark:bg-gray-600" aria-hidden="true" />
+            </div>
+
             {/* header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-700">
               <div className="flex items-center gap-2">
                 <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
                 <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Filters</h2>
               </div>
-              {activeFilterCount > 0 && (
-                <button type="button" onClick={resetFilters} className="text-xs font-medium text-red-500 hover:text-red-600 dark:text-red-400">
-                  Clear all
+              <div className="flex items-center gap-3">
+                {activeFilterCount > 0 && (
+                  <button type="button" onClick={resetFilters} className="text-xs font-medium text-red-500 hover:text-red-600 dark:text-red-400">
+                    Clear all
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowFilters(false)}
+                  aria-label="Close filters"
+                  className="lg:hidden h-8 w-8 -mr-1 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-200 dark:hover:bg-gray-700 transition"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
-              )}
+              </div>
             </div>
 
             <div className="p-4 space-y-4">
@@ -741,19 +850,32 @@ function Menu() {
                 </div>
               </div>
 
-              {/* price */}
+              {/* price - a max-only slider on purpose: prices run 1-6,000 with a
+                  median of 200, so a floor thumb would sit at the far left for
+                  almost every search, and "show me the expensive end" is already
+                  served by sorting Price: High to Low. */}
               <div>
-                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">Max Price</label>
-                <select
-                  value={filters.maxPrice}
-                  onChange={(e) => updateFilter('maxPrice', e.target.value)}
-                  className="h-10 w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 px-3 text-sm text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-[#0b2e59]/20 focus:border-[#0b2e59]/40 transition"
-                >
-                  <option value="all">Any Price</option>
-                  <option value="300">Up to PHP 300</option>
-                  <option value="600">Up to PHP 600</option>
-                  <option value="1000">Up to PHP 1,000</option>
-                </select>
+                <div className="flex items-baseline justify-between mb-1.5">
+                  <label htmlFor="filter-max-price" className="block text-xs font-medium text-gray-500 dark:text-gray-400">Max price</label>
+                  <span className="text-xs font-semibold text-[#0b2e59] dark:text-blue-300">
+                    {filters.maxPrice === 'all' ? 'Any price' : `Up to PHP ${formatPesos(Number(filters.maxPrice))}`}
+                  </span>
+                </div>
+                <input
+                  id="filter-max-price"
+                  type="range"
+                  min={0}
+                  max={priceCeiling}
+                  step={PRICE_STEP}
+                  value={priceValue}
+                  onChange={(e) => updateFilter('maxPrice', maxPriceFromSlider(e.target.value, priceCeiling))}
+                  aria-valuetext={filters.maxPrice === 'all' ? 'Any price' : `Up to ${formatPesos(Number(filters.maxPrice))} pesos`}
+                  className="h-6 w-full cursor-pointer accent-[#0b2e59] dark:accent-yellow-400"
+                />
+                <div className="flex justify-between text-[10px] text-gray-400 dark:text-gray-500">
+                  <span>PHP 0</span>
+                  <span>PHP {formatPesos(priceCeiling)}</span>
+                </div>
               </div>
 
               {/* products per page - phones only; the toolbar shows it from lg up

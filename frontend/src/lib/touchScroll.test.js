@@ -13,8 +13,14 @@ import path from 'node:path'
 // already locks to an axis on its own once the gesture is clear, so sideways
 // swipes still move a carousel and up/down swipes still scroll the page.
 // Admin surfaces may use touch-none (the drag handles need it).
+//
+// One shopper-side exception exists and is audited below: a modal bottom
+// sheet's grabber. It is a control, not a scroll surface - it has to claim the
+// vertical gesture, otherwise "drag down to dismiss" scrolls the sheet instead.
+// Any line using a restricted value must carry data-sheet-handle.
 const SRC = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
 const RESTRICTED = /touch-(pan-x|pan-y|pan-left|pan-right|pan-up|pan-down|none)\b/
+const SHEET_HANDLE = /data-sheet-handle/
 
 function shopperFacingFiles() {
   const files = []
@@ -42,9 +48,24 @@ function stripComments(text) {
 describe('shopper-facing scroll surfaces', () => {
   test('never restrict touch-action', () => {
     const offenders = shopperFacingFiles().filter((file) =>
-      RESTRICTED.test(stripComments(readFileSync(file, 'utf8')))
+      stripComments(readFileSync(file, 'utf8'))
+        .split('\n')
+        .some((line) => RESTRICTED.test(line) && !SHEET_HANDLE.test(line))
     )
     expect(offenders.map((f) => path.relative(SRC, f))).toEqual([])
+  })
+
+  test('the only touch-action exception is the sheet grabber', () => {
+    // Keeps the exception honest: exactly one restricted line, and it is the
+    // marked drag handle rather than an ordinary surface that slipped through.
+    const marked = shopperFacingFiles().flatMap((file) =>
+      stripComments(readFileSync(file, 'utf8'))
+        .split('\n')
+        .filter((line) => RESTRICTED.test(line))
+        .map((line) => `${path.relative(SRC, file)}: ${line.trim()}`)
+    )
+    expect(marked).toHaveLength(1)
+    expect(marked[0]).toContain('data-sheet-handle')
   })
 
   test('the home product row stays a horizontal scroller', () => {
