@@ -228,7 +228,6 @@ const AdminSupports = () => {
 
   // derived lists -------------------------------------------------------------
   const waiting = cases.filter(isWaiting).length
-  const replied = cases.length - waiting
   const overdue = cases.filter((c) => isWaiting(c) && hoursWaiting(c) > WAIT_THRESHOLD_HOURS).length
 
   const avgResponseHours = useMemo(() => {

@@ -7,6 +7,7 @@ import { trackEvent } from '../lib/appEvents.js'
 import { philippinesData } from '../data/philippinesData.js'
 import { paymentMethodLabel } from '../lib/orderDoc.js'
 import { phoneError, addressLineError, postalError } from '../lib/addressValidation.js'
+import toast from '../lib/toast.js'
 import supabase from '../lib/supabase'
 import {
   cartTotals,
@@ -72,7 +73,7 @@ async function verifyPricesAndStock(items) {
 function Checkout() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { cartItems, cartStatus, clearCart, pushNotification, session, openLogin } = useShop()
+  const { cartItems, cartStatus, clearCart, pushNotification, session, authReady, openLogin } = useShop()
 
   // ids travel through router state; sessionStorage keeps the selection alive
   // when the user comes back via the back button (U9)
@@ -378,8 +379,43 @@ function Checkout() {
     }
   }
 
+  // Guests may fill a cart freely; only placing the order needs an account.
+  // Landing here signed out opens the sign-in modal immediately AND keeps a
+  // toast on screen at the same time, so the reason for the interruption is
+  // readable instead of being a modal that appears out of nowhere.
+  const promptedRef = useRef(false)
+  const promptToastRef = useRef(null)
+  useEffect(() => {
+    if (!authReady || session || promptedRef.current) return
+    promptedRef.current = true
+    openLogin()
+    promptToastRef.current = pushNotification('Sign in to place your order — your cart is saved.', 'info')
+  }, [authReady, session, openLogin, pushNotification])
+
+  // once the shopper is in, the "please sign in" note has done its job
+  useEffect(() => {
+    if (!session || promptToastRef.current == null) return
+    toast.dismiss(promptToastRef.current)
+    promptToastRef.current = null
+  }, [session])
+
   const inputClass = "h-11 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 text-sm dark:text-gray-100"
   const labelClass = "block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1"
+
+  // until Supabase reports the session we cannot tell a guest from a shopper
+  // who is merely still loading, and prompting the wrong one would be rude
+  if (!authReady) {
+    return (
+      <div className="lg:mx-auto lg:max-w-7xl py-5 sm:py-6">
+        <h1 className="mb-4 text-2xl font-bold text-[#0b2e59] dark:text-white">Checkout</h1>
+        <div role="status" aria-label="Loading checkout" className="rounded-lg border border-gray-200 bg-white p-8 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <div className="mx-auto h-4 w-40 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+          <div className="mx-auto mt-3 h-4 w-64 animate-pulse rounded bg-gray-100 dark:bg-gray-700/60" />
+          <div className="mx-auto mt-6 h-11 w-32 animate-pulse rounded-lg bg-gray-200 dark:bg-gray-700" />
+        </div>
+      </div>
+    )
+  }
 
   // signed-out visitors see a sign-in prompt instead of the form (C1)
   if (!session) {

@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import toast from '../lib/toast.js'
 import supabase from '../lib/supabase'
 import { trackEvent } from '../lib/appEvents.js'
+import { readGuestCart, writeGuestCart, clearGuestCart, addCartLine } from '../lib/guestCart.js'
 
 // global shop context that handles the cart for the whole app
 // talks to the backend API to persist cart items in the database
@@ -70,6 +71,10 @@ export function ShopProvider({ children }) {
   const [cartItems, setCartItems] = useState([])
   const [cartStatus, setCartStatus] = useState('loading') // loading | ready | error
   const [session, setSession] = useState(null)
+  // true once Supabase has told us whether there is a session. Without it a
+  // signed-in visitor looks like a guest for the first render, which would
+  // flash the sign-in card on /checkout.
+  const [authReady, setAuthReady] = useState(false)
   const [lastAddedAt, setLastAddedAt] = useState(0)
 
   // tracks whether we already loaded the cart for the current session
@@ -77,6 +82,10 @@ export function ShopProvider({ children }) {
 
   // this ref holds a function that opens the login modal
   const openLoginRef = useRef(null)
+
+  // one guest-cart merge at a time: two auth events firing together must not
+  // post the same lines twice (the server adds quantities on a duplicate)
+  const mergeInFlightRef = useRef(null)
 
   // latest cart snapshot so delayed deletes can spot re-added items
   const cartItemsRef = useRef(cartItems)
@@ -86,9 +95,12 @@ export function ShopProvider({ children }) {
   // a failed fetch only surfaces as 'error' when we have nothing to show;
   // during a post-mutation resync stale items stay visible and the caller
   // has already toasted the failure
+  // without a token the visitor is a guest, so the cart is the localStorage
+  // copy instead of a server one
   const loadCart = useCallback(async (token) => {
     const t = token || await getValidToken()
     if (!t) {
+      setCartItems(readGuestCart())
       setCartStatus('ready')
       return false
     }
@@ -112,6 +124,64 @@ export function ShopProvider({ children }) {
 
   // additive: lets Cart/Checkout re-fetch on demand (retry buttons)
   const reloadCart = useCallback(() => loadCart(), [loadCart])
+
+  // Moves whatever a guest put in their cart into the account they just signed
+  // into. Storage is cleared BEFORE the requests go out: a reload halfway
+  // through would otherwise post the same lines again, and the server adds
+  // quantities on a duplicate line - silently doubling the order. A line the
+  // server rejects (sold out, archived, unpriced) is dropped, and the shopper
+  // is told instead of being left to wonder where it went.
+  const mergeGuestCart = useCallback((token) => {
+    if (mergeInFlightRef.current) return mergeInFlightRef.current
+    const guest = readGuestCart()
+    if (guest.length === 0) return Promise.resolve({ moved: 0, gone: 0, failed: 0 })
+    clearGuestCart()
+
+    const run = (async () => {
+      let moved = 0
+      const gone = []
+      const failed = []
+      // sequential: a cart is a handful of lines and the endpoint is rate
+      // limited per IP, so there is nothing to gain from firing them at once
+      for (const line of guest) {
+        try {
+          const res = await fetch(`${API_BASE}/cart`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ productId: line.id, quantity: line.quantity }),
+          })
+          if (res.ok) moved += 1
+          else if (res.status >= 400 && res.status < 500) gone.push(line.name)
+          else failed.push(line.name)
+        } catch {
+          failed.push(line.name)
+        }
+      }
+
+      if (moved > 0) {
+        toast.success(`We moved ${moved} item${moved === 1 ? '' : 's'} from your guest cart into your cart.`)
+      }
+      if (gone.length > 0) {
+        toast.info(
+          gone.length === 1
+            ? `${gone[0]} is no longer available, so it was not added.`
+            : `${gone.length} items are no longer available, so they were not added.`
+        )
+      }
+      if (failed.length > 0) {
+        toast.error(
+          `Couldn't move ${failed.length === 1 ? '1 item' : `${failed.length} items`} to your cart - please add ${failed.length === 1 ? 'it' : 'them'} again.`
+        )
+      }
+      return { moved, gone: gone.length, failed: failed.length }
+    })()
+
+    mergeInFlightRef.current = run.finally(() => { mergeInFlightRef.current = null })
+    return mergeInFlightRef.current
+  }, [])
 
   // fires a DELETE for specific cart rows, toasts on failure and resyncs
   const deleteCartRows = useCallback(async (productIds, label = 'items') => {
@@ -150,26 +220,54 @@ export function ShopProvider({ children }) {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s)
+      setAuthReady(true)
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s)
+      setAuthReady(true)
       if (!s) {
+        // the guest-mode effect below owns the cart from here: it loads the
+        // localStorage copy (empty after a merge). Clearing the state here
+        // would wipe a guest cart on every page load, because Supabase fires
+        // INITIAL_SESSION with a null session for signed-out visitors.
         cartLoadedRef.current = false
-        setCartItems([])
-        setCartStatus('ready')
         return
       }
       if (event === 'SIGNED_IN') {
         cartLoadedRef.current = false
       }
       if (!cartLoadedRef.current) {
-        loadCart(s.access_token).then((ok) => {
-          if (ok) cartLoadedRef.current = true
-        })
+        // guest lines are posted first, so the cart we load next already
+        // contains them and the shopper never sees their cart empty out
+        mergeGuestCart(s.access_token)
+          .then(() => loadCart(s.access_token))
+          .then((ok) => {
+            if (ok) cartLoadedRef.current = true
+          })
       }
     })
     return () => subscription.unsubscribe()
-  }, [loadCart])
+  }, [loadCart, mergeGuestCart])
+
+  // Guest mode: the cart lives in localStorage. This reads it once when the
+  // visitor is signed out, then mirrors every later change back. The
+  // `guestLoadedRef` latch keeps signing out from writing the account cart
+  // into the guest slot - on sign-out the first pass only reads.
+  const guestLoadedRef = useRef(false)
+  useEffect(() => {
+    if (!authReady) return
+    if (session) {
+      guestLoadedRef.current = false
+      return
+    }
+    if (!guestLoadedRef.current) {
+      guestLoadedRef.current = true
+      setCartItems(readGuestCart())
+      setCartStatus('ready')
+      return
+    }
+    writeGuestCart(cartItems)
+  }, [authReady, session, cartItems])
 
   // called by the Navbar to hand us a function that opens the login modal
   // this way ShopContext can trigger the login popup without importing Navbar
@@ -184,48 +282,33 @@ export function ShopProvider({ children }) {
 
   // shows a toast notification on screen
   // type can be 'success', 'error', or 'info'
+  // returns the toast id so callers can dismiss it when it goes stale
   function pushNotification(message, type = 'success') {
-    if (type === 'error') toast.error(message)
-    else if (type === 'info') toast.info(message)
-    else toast.success(message)
+    if (type === 'error') return toast.error(message)
+    if (type === 'info') return toast.info(message)
+    return toast.success(message)
   }
 
   // adds a product to the cart
-  // if the user is not logged in, it opens the login modal and bails out
+  // signed-out visitors get a real cart too: the line is kept in localStorage
+  // and merged into their account when they sign in, so browsing first and
+  // deciding to buy later never loses the item
   // uses optimistic updates so the UI feels instant, then syncs with the backend
   const addToCart = useCallback(async (product, quantity = 1, opts = { notify: true }) => {
     const token = await getValidToken()
-    if (!token) {
-      if (openLoginRef.current) openLoginRef.current()
-      pushNotification('Please sign in to add items to cart', 'info')
-      return
-    }
 
     // quantities are whole units; decimals are floored, never sent through
     const qty = Math.max(1, Math.floor(Number(quantity) || 1))
 
     // update the local cart right away so the user sees it instantly
-    setCartItems((prev) => {
-      const existing = prev.find((item) => item.id === product.id)
-      if (existing) {
-        return prev.map((item) =>
-          item.id === product.id ? { ...item, quantity: item.quantity + qty } : item
-        )
-      }
-      return [...prev, {
-        id: product.id,
-        name: product.name,
-        price: Number(product.price) || 0,
-        image: product.image || '',
-        collection: product.collection || '',
-        brand: product.brand || '',
-        quantity: qty,
-      }]
-    })
+    setCartItems((prev) => addCartLine(prev, product, qty))
     setLastAddedAt(Date.now())
     // keep the toast handle so a failed sync can dismiss the success message
     const successToastId = opts.notify ? toast.success(`${product.name} added to cart`) : null
     trackEvent('add_to_cart', { product_id: product.id, name: product.name, price: product.price })
+
+    // guests stop here - the localStorage mirror persists the line for sign-in
+    if (!token) return
 
     const rollBack = async () => {
       if (successToastId) toast.dismiss(successToastId)
@@ -363,6 +446,7 @@ export function ShopProvider({ children }) {
     cartStatus,
     reloadCart,
     session,
+    authReady,
     lastAddedAt,
     addToCart,
     updateQuantity,

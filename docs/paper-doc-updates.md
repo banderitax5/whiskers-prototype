@@ -297,7 +297,7 @@ list from §3.
 | 9 | Secure payment processing | PayMongo seam (simulated gateway; live webhook pending public domain) + COD | §1.9 reword |
 | 10 | 8-entity ERD | ~26 tables, 1 roles table, pets on-device | §2.6 redraw |
 | 11 | Chatbot (objective F, "if applicable") | FAQ content pages only | §3 soften |
-| 12 | Guest checkout | Account required to check out | §3 limitation |
+| 12 | Guest checkout | Guests browse and fill a cart (kept on-device, merged on sign-in); an account is required to place the order | §3 limitation |
 | 13 | SPA SEO / per-product meta | Client-side only; UUID URLs | §3 limitation (Q4) |
 | 14 | Email notifications | Added via Brevo (owner-requested; receipts, status, support replies, password reset) | Abstract/DFD add (§2.2) |
 | 15 | Promotion codes | Built (Phase 4) — beyond original scope | §3 scope add |
