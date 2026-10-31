@@ -200,7 +200,7 @@ function Checkout() {
     redirectedRef.current = true
     pushNotification(
       blockedItems.length > 0
-        ? 'Some selected items are no longer available — please review your cart.'
+        ? 'Some selected items are no longer available. Please review your cart.'
         : 'Select at least one item in your cart to check out.',
       'info'
     )
@@ -308,7 +308,7 @@ function Checkout() {
       const problems = await verifyPricesAndStock(checkoutItems)
       if (problems.length > 0) {
         setVerifyProblems(problems)
-        pushNotification('Some items changed — please review your cart.', 'error')
+        pushNotification('Some items changed. Please review your cart.', 'error')
         return
       }
       setVerifyProblems([])
@@ -389,7 +389,7 @@ function Checkout() {
     if (!authReady || session || promptedRef.current) return
     promptedRef.current = true
     openLogin()
-    promptToastRef.current = pushNotification('Sign in to place your order — your cart is saved.', 'info')
+    promptToastRef.current = pushNotification('Sign in to place your order. Your cart is saved.', 'info')
   }, [authReady, session, openLogin, pushNotification])
 
   // once the shopper is in, the "please sign in" note has done its job

@@ -33,18 +33,18 @@ const IMAGE_TYPES_LABEL = 'JPG, PNG, WebP or GIF';
 function imageFileProblem(file) {
   if (!file) return null;
   if (file.type && !IMAGE_TYPES.includes(file.type)) {
-    return `"${file.name}" isn't a supported image — please use ${IMAGE_TYPES_LABEL}.`;
+    return `"${file.name}" isn't a supported image. Please use ${IMAGE_TYPES_LABEL}.`;
   }
   if (typeof file.size === 'number' && file.size > MAX_IMAGE_MB * 1024 * 1024) {
     const mb = (file.size / (1024 * 1024)).toFixed(1);
-    return `That image is ${mb} MB — the limit is ${MAX_IMAGE_MB} MB. Please pick a smaller file.`;
+    return `That image is ${mb} MB, but the limit is ${MAX_IMAGE_MB} MB. Please pick a smaller file.`;
   }
   return null;
 }
 
 function friendlyImageError(message) {
   const msg = String(message || '');
-  if (/5\s*MB/i.test(msg)) return `That image is over the ${MAX_IMAGE_MB} MB limit — please pick a smaller file.`;
+  if (/5\s*MB/i.test(msg)) return `That image is over the ${MAX_IMAGE_MB} MB limit. Please pick a smaller file.`;
   return msg || 'Image upload failed';
 }
 
