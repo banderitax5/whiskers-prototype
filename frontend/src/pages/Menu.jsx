@@ -472,12 +472,13 @@ function Menu() {
               {filteredProducts.length} product{filteredProducts.length !== 1 ? 's' : ''}
             </p>
 
-            {/* sort */}
+            {/* sort - phones get this inside the Filters sheet too, so the
+                pinned bar keeps only the view and Filters buttons */}
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
               aria-label="Sort products"
-              className="h-9 min-w-0 flex-1 lg:flex-none whitespace-nowrap rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-xs font-medium text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-[#0b2e59]/30"
+              className="hidden lg:block h-9 whitespace-nowrap rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-xs font-medium text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-[#0b2e59]/30"
             >
               {SORT_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
@@ -741,7 +742,7 @@ function Menu() {
             aria-modal={showFilters ? 'true' : undefined}
             aria-label={showFilters ? 'Filters' : undefined}
             style={sheetOffset ? { transform: `translateY(${sheetOffset}px)`, transition: 'none' } : { transition: 'transform 200ms ease-out' }}
-            className={`lg:sticky lg:top-24 rounded-xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm overflow-hidden overscroll-contain focus:outline-none ${showFilters ? 'w-full max-h-[85vh] overflow-y-auto rounded-b-none rounded-t-2xl lg:max-h-none lg:overflow-hidden lg:rounded-xl' : ''}`}
+            className={`lg:sticky lg:top-24 rounded-xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm overflow-hidden overscroll-contain focus:outline-none ${showFilters ? 'w-full max-h-[70vh] supports-[height:100dvh]:max-h-[70dvh] overflow-y-auto rounded-b-none rounded-t-2xl lg:max-h-none lg:overflow-hidden lg:rounded-xl' : ''}`}
           >
             {/* grabber - drag down to dismiss. touch-none is deliberate here and
                 only here: the handle must claim the vertical gesture, otherwise
@@ -890,6 +891,22 @@ function Menu() {
                 >
                   {PAGE_SIZES.map((s) => (
                     <option key={s} value={s}>{s} per page</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* sort - phones only, same reason as products per page above:
+                  the pinned toolbar has no room for a second dropdown */}
+              <div className="lg:hidden">
+                <label htmlFor="filter-sort" className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">Sort by</label>
+                <select
+                  id="filter-sort"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="h-10 w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 px-3 text-sm text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-[#0b2e59]/20 focus:border-[#0b2e59]/40 transition"
+                >
+                  {SORT_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
                 </select>
               </div>
