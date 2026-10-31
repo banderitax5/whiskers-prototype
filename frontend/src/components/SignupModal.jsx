@@ -3,6 +3,7 @@ import { BsEye, BsEyeSlash } from 'react-icons/bs'
 import supabase from '../lib/supabase'
 import { trackEvent } from '../lib/appEvents.js'
 import { passwordError } from '../lib/passwordRules'
+import { errorFromResponse, friendlyMessage } from '../lib/errors'
 import PasswordRequirements from './PasswordRequirements.jsx'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
@@ -144,7 +145,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'Sign up failed')
+        throw errorFromResponse(res, data, 'We could not create your account. Please try again.')
       }
       const data = await res.json().catch(() => ({}))
 
@@ -166,7 +167,7 @@ function SignupModal({ isOpen, onClose, onSwitchToLogin, onSignupSuccess }) {
       trackEvent('signup')
       onClose()
     } catch (err) {
-      setError(err.message || 'Sign up failed')
+      setError(friendlyMessage(err, 'We could not create your account. Please try again.'))
     } finally {
       setLoading(false)
     }

@@ -18,7 +18,7 @@ const isUuid = (v) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f
 function scheduleValue(value, field) {
   if (value === undefined || value === null || value === '') return { ok: true, value: null }
   const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return { ok: false, error: `${field} must be a valid date` }
+  if (Number.isNaN(d.getTime())) return { ok: false, error: `Enter a valid ${field === 'Ends at' ? 'end' : 'start'} date.` }
   return { ok: true, value: d.toISOString() }
 }
 
@@ -26,7 +26,7 @@ function scheduleValue(value, field) {
 export function sanitizeRowConfig(config = {}) {
   const rule = String(config.rule || 'manual').trim()
   if (!RULE_KINDS.includes(rule)) {
-    return { ok: false, error: `Rule must be one of: ${RULE_KINDS.join(', ')}` }
+    return { ok: false, error: 'Choose what this row should show.' }
   }
   if (rule === 'manual') {
     const ids = config.product_ids

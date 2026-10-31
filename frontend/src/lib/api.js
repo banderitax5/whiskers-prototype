@@ -1,4 +1,5 @@
 import { ensureStepUp, peekStepUpToken } from './stepUp'
+import { NETWORK_MESSAGE, errorFromResponse } from './errors'
 
 // base URL for backend API calls - defaults to /api which gets proxied
 // to the backend by vite's dev server proxy config
@@ -15,7 +16,18 @@ async function send(path, { method = 'GET', body, token, stepUpToken, isForm = f
     headers['Content-Type'] = 'application/json'
     payload = JSON.stringify(body)
   }
-  const res = await fetch(`${apiBase}${path}`, { method, headers, body: payload })
+  let res
+  try {
+    res = await fetch(`${apiBase}${path}`, { method, headers, body: payload })
+  } catch (err) {
+    // offline, DNS failure, server down: the browser's own wording ("Failed
+    // to fetch") is noise, so every caller gets one readable message
+    const offline = new Error(NETWORK_MESSAGE)
+    offline.status = 0
+    offline.code = 'NETWORK'
+    offline.cause = err
+    throw offline
+  }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
     return { res, data }
@@ -25,10 +37,7 @@ async function send(path, { method = 'GET', body, token, stepUpToken, isForm = f
 }
 
 function toError(res, data) {
-  const err = new Error(data.error || `HTTP ${res.status}`)
-  err.status = res.status
-  err.code = data.code
-  return err
+  return errorFromResponse(res, data)
 }
 
 async function request(path, opts = {}) {
@@ -87,7 +96,16 @@ export function apiUploadAuth(path, body, token) {
 export async function apiFetchAuth(path, token) {
   const headers = {}
   if (token) headers.Authorization = `Bearer ${token}`
-  const res = await fetch(`${apiBase}${path}`, { headers })
+  let res
+  try {
+    res = await fetch(`${apiBase}${path}`, { headers })
+  } catch (err) {
+    const offline = new Error(NETWORK_MESSAGE)
+    offline.status = 0
+    offline.code = 'NETWORK'
+    offline.cause = err
+    throw offline
+  }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
     throw toError(res, data)

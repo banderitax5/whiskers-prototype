@@ -7,6 +7,7 @@ import { trackEvent } from '../lib/appEvents.js'
 import { philippinesData } from '../data/philippinesData.js'
 import { paymentMethodLabel } from '../lib/orderDoc.js'
 import { phoneError, addressLineError, postalError } from '../lib/addressValidation.js'
+import { errorFromResponse, friendlyMessage } from '../lib/errors'
 import toast from '../lib/toast.js'
 import supabase from '../lib/supabase'
 import {
@@ -347,7 +348,7 @@ function Checkout() {
           setPromoError(data.error)
           throw new Error(data.error)
         }
-        throw new Error(data.error || 'Failed to place order')
+        throw errorFromResponse(res, data, 'We could not place your order. Please try again.')
       }
 
       const { order_id, checkout_url: checkoutUrl, receipt_email_sent: receiptEmailed } = await res.json()
@@ -373,7 +374,7 @@ function Checkout() {
       trackEvent('checkout_complete', { order_id, total: totals.totalCents / 100, items: checkoutItems.length })
       navigate(`/orders/${order_id}`, { state: { receiptEmailed: Boolean(receiptEmailed) } })
     } catch (err) {
-      pushNotification(err.message, 'error')
+      pushNotification(friendlyMessage(err, 'We could not place your order. Please try again.'), 'error')
     } finally {
       setSubmitting(false)
     }

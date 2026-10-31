@@ -22,7 +22,7 @@ describe('sanitizeRowConfig', () => {
 
   test('newest needs nothing; unknown rules fall back safely', () => {
     assert.deepEqual(sanitizeRowConfig({ rule: 'newest' }).value, { rule: 'newest' })
-    assert.match(sanitizeRowConfig({ rule: 'best_sellers_30d' }).error, /Rule must be/)
+    assert.match(sanitizeRowConfig({ rule: 'best_sellers_30d' }).error, /Choose what this row should show/)
   })
 })
 
@@ -37,7 +37,7 @@ describe('sanitizeSection create', () => {
   test('rejects unknown type, missing title and unknown rule', () => {
     assert.match(sanitizeSection({ ...base, type: 'hero' }).error, /Type must be/)
     assert.match(sanitizeSection({ ...base, title: '  ' }).error, /Title is required/)
-    assert.match(sanitizeSection({ ...base, config: { rule: 'nope' } }).error, /Rule must be/)
+    assert.match(sanitizeSection({ ...base, config: { rule: 'nope' } }).error, /Choose what this row should show/)
   })
 
   test('every section type the admin offers is valid', () => {

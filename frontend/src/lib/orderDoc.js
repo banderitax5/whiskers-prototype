@@ -1,5 +1,7 @@
 // shared helpers for the order confirmation page and the printable receipt
 
+import { errorFromResponse } from './errors'
+
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
 export function peso(amount) {
@@ -134,9 +136,7 @@ export async function fetchOrderById(orderId, token) {
   })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    const err = new Error(data.error || `HTTP ${res.status}`)
-    err.status = res.status
-    throw err
+    throw errorFromResponse(res, data, 'We could not load that order. Please try again.')
   }
   const data = await res.json().catch(() => ({}))
   return data.item

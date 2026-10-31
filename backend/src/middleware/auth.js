@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { supabaseAuth } from '../config/supabase.js'
 import { verifyStepUpToken } from '../utils/stepUp.js'
 import { aalFromToken, hasVerifiedFactor } from '../utils/mfa.js'
+import { AUTH_REQUIRED, SESSION_EXPIRED, ADMIN_ONLY, STAFF_ONLY } from '../utils/messages.js'
 
 // Verifies the Bearer token, attaches userId, userEmail, userRole, and req.db to req
 // req.db is a Supabase client scoped to the authenticated user — RLS policies are enforced
@@ -9,11 +10,11 @@ async function authenticate(req, res, next, { enforceAal = true } = {}) {
   const authHeader = req.headers.authorization
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
   if (!token) {
-    return res.status(401).json({ error: 'Authentication required' })
+    return res.status(401).json({ error: AUTH_REQUIRED })
   }
   const { data: { user }, error } = await supabaseAuth.auth.getUser(token)
   if (error || !user) {
-    return res.status(401).json({ error: 'Invalid or expired token' })
+    return res.status(401).json({ error: SESSION_EXPIRED })
   }
   req.userId = user.id
   req.userEmail = user.email
@@ -62,7 +63,7 @@ export function authAllowAal1(req, res, next) {
 
 export function requireAdmin(req, res, next) {
   if (req.userRole !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' })
+    return res.status(403).json({ error: ADMIN_ONLY })
   }
   next()
 }
@@ -70,7 +71,7 @@ export function requireAdmin(req, res, next) {
 // the back office also serves a staff role (orders, products, support, payments view);
 export function requireStaff(req, res, next) {
   if (req.userRole !== 'admin' && req.userRole !== 'staff') {
-    return res.status(403).json({ error: 'Staff or admin access required' })
+    return res.status(403).json({ error: STAFF_ONLY })
   }
   next()
 }

@@ -6,6 +6,7 @@ import { sectionsForEdit, sectionsToDetails, mergeDraftSections, MAX_SECTIONS } 
 import { parseCsv, csvToProducts, batchRows, importTemplateCsv } from '../lib/productCsv';
 import { formatPesos } from '../lib/cartLogic';
 import { formatMargin, marginInfo } from '../lib/adminCosting';
+import { friendlyMessage } from '../lib/errors';
 
 // status sort order: what needs attention first (Out), then live, then the rest
 const STATUS_RANK = { Out: 0, Active: 1, Hidden: 2, Archived: 3 };
@@ -42,10 +43,10 @@ function imageFileProblem(file) {
   return null;
 }
 
-function friendlyImageError(message) {
-  const msg = String(message || '');
+function friendlyImageError(err) {
+  const msg = String(err?.message || err || '');
   if (/5\s*MB/i.test(msg)) return `That image is over the ${MAX_IMAGE_MB} MB limit. Please pick a smaller file.`;
-  return msg || 'Image upload failed';
+  return friendlyMessage(err, 'The image could not be uploaded. Please try again.');
 }
 
 function costPatchFields(form, original, showCosts) {
@@ -346,7 +347,7 @@ const AdminProductManagement = () => {
       const { url } = await apiUploadAuth('/admin/images/upload', fd, token);
       setFormData((f) => ({ ...f, image_url: url }));
       toast.success('Image uploaded');
-    } catch (error) { const friendly = friendlyImageError(error.message); setImageError(friendly); toast.error(friendly); }
+    } catch (error) { const friendly = friendlyImageError(error); setImageError(friendly); toast.error(friendly); }
     finally { setUploading(false); }
   };
 
@@ -367,7 +368,7 @@ const AdminProductManagement = () => {
       setFormData((f) => ({ ...f, image_url: url }));
       setUrlInput('');
       toast.success('Image fetched and uploaded');
-    } catch (error) { const friendly = friendlyImageError(error.message); setImageError(friendly); toast.error(friendly); }
+    } catch (error) { const friendly = friendlyImageError(error); setImageError(friendly); toast.error(friendly); }
     finally { setUploading(false); }
   };
 
@@ -443,7 +444,7 @@ const AdminProductManagement = () => {
         toast.success('Product created');
       }
       closeForm(); fetchCategoryList();
-    } catch (error) { toast.error(error.message); }
+    } catch (error) { toast.error(friendlyMessage(error, 'We could not save this product. Please try again.')); }
     finally { setSubmitting(false); }
   };
 
@@ -666,7 +667,7 @@ const AdminProductManagement = () => {
       const { url } = await apiUploadAuth('/admin/images/upload', fd, token);
       setMobileForm((f) => ({ ...f, image_url: url }));
       toast.success('Image uploaded');
-    } catch (error) { const friendly = friendlyImageError(error.message); setMobileImageError(friendly); toast.error(friendly); }
+    } catch (error) { const friendly = friendlyImageError(error); setMobileImageError(friendly); toast.error(friendly); }
     finally { setMobileUploading(false); }
   }
 
@@ -680,7 +681,7 @@ const AdminProductManagement = () => {
       setMobileForm((f) => ({ ...f, image_url: url }));
       setMobileUrlInput('');
       toast.success('Image fetched');
-    } catch (error) { const friendly = friendlyImageError(error.message); setMobileImageError(friendly); toast.error(friendly); }
+    } catch (error) { const friendly = friendlyImageError(error); setMobileImageError(friendly); toast.error(friendly); }
     finally { setMobileUploading(false); }
   }
 
@@ -747,7 +748,7 @@ const AdminProductManagement = () => {
       toast.success('Product updated');
       setMobileEditItem(null);
       fetchCategoryList();
-    } catch (error) { toast.error(error.message); }
+    } catch (error) { toast.error(friendlyMessage(error, 'We could not save this product. Please try again.')); }
     finally { setMobileSubmitting(false); }
   }
 

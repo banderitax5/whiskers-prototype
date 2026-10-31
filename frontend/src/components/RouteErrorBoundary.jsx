@@ -5,9 +5,9 @@ import { Link, isRouteErrorResponse, useRouteError } from 'react-router-dom'
 function RouteErrorBoundary() {
   const error = useRouteError()
   const status = isRouteErrorResponse(error) ? error.status : null
-  const message = isRouteErrorResponse(error)
-    ? error.statusText || 'This page could not be loaded.'
-    : 'An unexpected error occurred while loading this page.'
+  const message = status === 404
+    ? 'We could not find that page. It may have moved, or the link may be wrong.'
+    : 'This page could not be loaded. Please try again, or head back to the shop.'
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4 text-center dark:bg-gray-900">

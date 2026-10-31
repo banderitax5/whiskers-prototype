@@ -960,7 +960,7 @@ if ($probeId) {
       Step 'staff PATCH cost denied 403' $false 'got 2xx'
     } catch {
       $spBody = Get-ErrBody $_
-      Step 'staff PATCH cost denied 403' (($_.Exception.Response.StatusCode.value__ -eq 403) -and ($spBody -like '*Admin access required*')) $spBody
+      Step 'staff PATCH cost denied 403' (($_.Exception.Response.StatusCode.value__ -eq 403) -and ($spBody -like '*Only an admin can do that*')) $spBody
     }
   }
 

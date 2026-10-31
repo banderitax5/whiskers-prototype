@@ -1,6 +1,8 @@
 // Step-up (password re-verification) state for sensitive admin actions.
 // The token is kept in memory only and expires server-side after a few minutes.
 
+import { errorFromResponse } from './errors'
+
 let cached = null // { token, expiresAt }
 let pending = null // { promise, resolve, reject }
 const listeners = new Set()
@@ -65,9 +67,7 @@ export async function verifyStepUp(accessToken, password) {
   })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    const err = new Error(data.error || 'Verification failed. Try again.')
-    err.status = res.status
-    throw err
+    throw errorFromResponse(res, data, 'We could not verify your password. Please try again.')
   }
   const data = await res.json().catch(() => ({}))
   resolveStepUp(data.stepUpToken, data.expiresAt)

@@ -35,7 +35,7 @@ function imageUrl(value, { required }) {
 function scheduleValue(value, field) {
   if (value === undefined || value === null || value === '') return { ok: true, value: null }
   const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return { ok: false, error: `${field} must be a valid date` }
+  if (Number.isNaN(d.getTime())) return { ok: false, error: `Enter a valid ${field === 'Ends at' ? 'end' : 'start'} date.` }
   return { ok: true, value: d.toISOString() }
 }
 

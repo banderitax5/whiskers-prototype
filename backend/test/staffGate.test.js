@@ -1,8 +1,8 @@
-﻿import { test } from 'node:test'
+import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 // importing the auth middleware also loads the Supabase config,
-// which reads env at import time — provide harmless stand-ins when
+// which reads env at import time � provide harmless stand-ins when
 // running outside a configured dev shell
 process.env.SUPABASE_URL ||= 'http://localhost:54321'
 process.env.SUPABASE_SERVICE_KEY ||= 'test-service-key'
@@ -41,7 +41,7 @@ test('requireStaff rejects a plain user with 403', () => {
   requireStaff({ userRole: 'user' }, res, () => { nextCalled = true })
   assert.equal(nextCalled, false)
   assert.equal(res.statusCode, 403)
-  assert.match(res.body.error, /staff or admin/i)
+  assert.match(res.body.error, /staff or an admin/i)
 })
 
 test('requireAdmin still rejects staff (admin-only routes stay admin-only)', () => {

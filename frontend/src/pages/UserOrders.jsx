@@ -2,6 +2,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useShop } from '../context/ShopContext.jsx'
 import { formatPesos } from '../lib/cartLogic'
+import { friendlyMessage } from '../lib/errors'
 import { awaitingGatewayPayment, orderCode } from '../lib/orderDoc'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
@@ -139,7 +140,7 @@ function UserOrders() {
         for (const order of list) seeded[order.order_id] = seedDraft(order)
         setDrafts(seeded)
       } catch (err) {
-        if (!cancelled) setError(err.message)
+        if (!cancelled) setError(friendlyMessage(err, 'We could not load your orders. Please try again.'))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -198,7 +199,7 @@ function UserOrders() {
       }))
       pushNotification('Reviews saved', 'success')
     } catch (err) {
-      pushNotification(err.message, 'error')
+      pushNotification(friendlyMessage(err, 'We could not save your reviews. Please try again.'), 'error')
     } finally {
       setSavingOrder(null)
     }

@@ -4,6 +4,7 @@ import { encryptText } from '../utils/encryption.js'
 import { loginLimiter, signupLimiter, stepUpLimiter, mfaLimiter, clientIp } from '../middleware/rateLimiter.js'
 import { authMiddleware, authAllowAal1 } from '../middleware/auth.js'
 import { signStepUpToken, getStepUpTtlSeconds } from '../utils/stepUp.js'
+import { SERVER_ERROR } from '../utils/messages.js'
 import {
   hasVerifiedFactor,
   verifiedFactors,
@@ -96,7 +97,7 @@ router.post('/login', loginLimiter, async (req, res) => {
     res.json({ session: data.session, mfa_required: mfaRequired })
   } catch (err) {
     logger.error({ err }, 'Login error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -219,7 +220,7 @@ router.post('/signup', signupLimiter, async (req, res) => {
     res.status(201).json({ session: data.session })
   } catch (err) {
     logger.error({ err }, 'Signup error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -244,7 +245,7 @@ router.post('/step-up', authMiddleware, stepUpLimiter, async (req, res) => {
     res.json({ stepUpToken: signStepUpToken(req.userId, ttl), expiresAt: new Date(Date.now() + ttl * 1000).toISOString() })
   } catch (err) {
     logger.error({ err }, 'Step-up error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 

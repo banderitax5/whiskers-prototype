@@ -1,6 +1,8 @@
 // pure input sanitizers for admin product writes and list queries.
 // kept out of the route file so they can be unit-tested without Express.
 
+import { NOTHING_TO_SAVE } from './messages.js'
+
 export const MAX_PRICE_PHP = 10_000_000
 const MAX_NAME = 200
 const MAX_CATEGORY = 120
@@ -31,7 +33,7 @@ export function sanitizeProductCreate(body) {
   const prod_name = asTrimmedString(body?.prod_name)
   const category = asTrimmedString(body?.category)
   if (!prod_name || !category || body?.price == null) {
-    return { error: 'prod_name, category, and price are required' }
+    return { error: 'Product name, category and price are required.' }
   }
   if (prod_name.length > MAX_NAME) return { error: `Product name must be ${MAX_NAME} characters or fewer` }
   if (category.length > MAX_CATEGORY) return { error: `Category must be ${MAX_CATEGORY} characters or fewer` }
@@ -95,7 +97,7 @@ export function sanitizeProductPatch(body) {
     if (body?.[key] !== undefined) updates[key] = body[key]
   }
   if (Object.keys(updates).length === 0) {
-    return { error: 'No updatable fields provided' }
+    return { error: NOTHING_TO_SAVE }
   }
 
   if ('prod_name' in updates) {

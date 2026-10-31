@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import supabase from '../lib/supabase'
 import { normalizeOtp, otpError } from '../lib/mfa.js'
+import { errorFromResponse, friendlyMessage } from '../lib/errors'
 import LostAuthenticatorHelp from './LostAuthenticatorHelp.jsx'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
@@ -57,7 +58,7 @@ function MfaVerifyGate({ onVerified }) {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'Verification failed')
+        throw errorFromResponse(res, data, 'We could not verify that code. Please try again.')
       }
       const data = await res.json().catch(() => ({}))
       if (!data.session?.access_token) throw new Error('Verification did not return a session. Please sign in again.')
@@ -70,7 +71,7 @@ function MfaVerifyGate({ onVerified }) {
 
       onVerified?.()
     } catch (err) {
-      setError(err.message || 'Invalid code. Try again.')
+      setError(friendlyMessage(err, 'We could not verify that code. Please try again.'))
     } finally {
       setBusy(false)
     }

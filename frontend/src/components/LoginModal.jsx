@@ -3,6 +3,7 @@ import { BsEye, BsEyeSlash } from 'react-icons/bs'
 import supabase from '../lib/supabase'
 import { trackEvent } from '../lib/appEvents.js'
 import { normalizeOtp, otpError } from '../lib/mfa.js'
+import { errorFromResponse, friendlyMessage } from '../lib/errors'
 import LostAuthenticatorHelp from './LostAuthenticatorHelp.jsx'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
@@ -117,7 +118,7 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
     })
     setForgotLoading(false)
     if (sendErr) {
-      setForgotError(sendErr.message || 'Could not send the reset email. Try again in a moment.')
+      setForgotError(friendlyMessage(sendErr, 'We could not send the reset email. Please try again in a moment.'))
       return
     }
     setForgotSent(true)
@@ -138,7 +139,7 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'Login failed')
+        throw errorFromResponse(res, data, 'We could not sign you in. Please try again.')
       }
       const data = await res.json().catch(() => ({}))
 
@@ -162,7 +163,7 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
       trackEvent('login')
       onClose()
     } catch (err) {
-      setError(err.message || 'Login failed')
+      setError(friendlyMessage(err, 'We could not sign you in. Please try again.'))
     } finally {
       setLoading(false)
     }
@@ -194,7 +195,7 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'Verification failed')
+        throw errorFromResponse(res, data, 'We could not verify that code. Please try again.')
       }
       const data = await res.json().catch(() => ({}))
 
@@ -211,7 +212,7 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
       trackEvent('login')
       onClose()
     } catch (err) {
-      setMfaError(err.message || 'Invalid code. Try again.')
+      setMfaError(friendlyMessage(err, 'We could not verify that code. Please try again.'))
     } finally {
       setMfaLoading(false)
     }

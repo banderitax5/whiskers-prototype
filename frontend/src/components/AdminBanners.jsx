@@ -405,7 +405,7 @@ function BannerCard({ banner, index, total, onMove, onEdit, onArchive, busy, sel
     >
       <div className="relative sm:w-48 shrink-0 aspect-video sm:aspect-auto bg-gray-100 dark:bg-[#0f2036]">
         {imgFailed ? (
-          <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-red-500 dark:text-red-400">Failed to load</div>
+          <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-red-500 dark:text-red-400">Image unavailable</div>
         ) : (
           <img src={banner.desktop_image_url} alt={banner.alt} loading="lazy" onError={() => setImgFailed(true)} className="w-full h-full object-cover" />
         )}

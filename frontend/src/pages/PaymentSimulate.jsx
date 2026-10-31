@@ -4,6 +4,7 @@ import { useShop } from '../context/ShopContext.jsx'
 import { fetchOrderById, paymentMethodLabel, isOnlinePayment, orderCode, peso, summarize } from '../lib/orderDoc.js'
 import { trackEvent } from '../lib/appEvents.js'
 import { BsCheckLg, BsShieldLock, BsArrowLeft, BsExclamationTriangle } from 'react-icons/bs'
+import { errorFromResponse, friendlyMessage } from '../lib/errors'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -70,7 +71,7 @@ function PaymentSimulate() {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err.status === 404 ? 'Order not found.' : err.message || 'Could not load this order.')
+          setError(err.status === 404 ? 'We could not find that order. It may have been removed.' : friendlyMessage(err, 'We could not load this order. Please try again.'))
           setState('error')
         }
       }
@@ -111,7 +112,7 @@ function PaymentSimulate() {
           pushNotification(data.error || 'This order is no longer payable.', 'error')
           return
         }
-        throw new Error(data.error || 'Could not reach the payment service')
+        throw errorFromResponse(res, data, 'We could not reach the payment service. Please try again.')
       }
       const data = await res.json().catch(() => ({}))
       if (result === 'fail') {
@@ -136,7 +137,7 @@ function PaymentSimulate() {
         state: { paymentSucceeded: true, receiptEmailed: Boolean(data.receipt_email_sent) },
       })
     } catch (err) {
-      pushNotification(err.message, 'error')
+      pushNotification(friendlyMessage(err, 'We could not reach the payment service. Please try again.'), 'error')
     } finally {
       setBusy(null)
     }

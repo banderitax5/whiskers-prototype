@@ -6,6 +6,7 @@ import supabase, { hadRecoveryMarker, RECOVERY_PENDING_KEY } from '../lib/supaba
 import { notifyAuth } from '../lib/authNotice'
 import { passwordError } from '../lib/passwordRules'
 import { normalizeOtp, otpError } from '../lib/mfa.js'
+import { errorFromResponse, friendlyMessage } from '../lib/errors'
 import PasswordRequirements from '../components/PasswordRequirements.jsx'
 import LostAuthenticatorHelp from '../components/LostAuthenticatorHelp.jsx'
 
@@ -128,7 +129,7 @@ function ResetPassword() {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'Verification failed')
+        throw errorFromResponse(res, data, 'We could not verify that code. Please try again.')
       }
       const data = await res.json().catch(() => ({}))
       if (!data.session?.access_token) {
@@ -142,7 +143,7 @@ function ResetPassword() {
       setMfaVerified(true)
       setMfaCode('')
     } catch (err) {
-      setMfaError(err.message || 'Invalid code. Try again.')
+      setMfaError(friendlyMessage(err, 'We could not verify that code. Please try again.'))
     } finally {
       setMfaBusy(false)
     }
@@ -173,7 +174,7 @@ function ResetPassword() {
         setError('For your security, confirm the code from your authenticator app, then update the password.')
         return
       }
-      setError(updateErr.message || 'Could not update the password. Request a new link and try again.')
+      setError(friendlyMessage(updateErr, 'We could not update the password. Request a new link and try again.'))
       return
     }
     notifyAuth({
@@ -194,7 +195,7 @@ function ResetPassword() {
     })
     if (sendErr) {
       setResendState('idle')
-      toast.error(sendErr.message || 'Could not send the email. Try again in a moment.')
+      toast.error(friendlyMessage(sendErr, 'We could not send the email. Please try again in a moment.'))
       return
     }
     setResendState('sent')

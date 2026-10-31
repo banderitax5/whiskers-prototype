@@ -23,7 +23,7 @@ export default class ErrorBoundary extends Component {
               Something went wrong
             </h1>
             <p className="text-gray-600 dark:text-gray-400">
-              An unexpected error occurred. Please try refreshing the page.
+              This page hit an unexpected problem. Reloading usually fixes it. If it keeps happening, tell us through the Support page.
             </p>
             <button
               onClick={() => window.location.reload()}

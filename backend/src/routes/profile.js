@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { encryptText, decryptText } from '../utils/encryption.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { supabaseAdmin } from '../config/supabase.js'
+import { SERVER_ERROR } from '../utils/messages.js'
 import {
   normalizeMobilePhone,
   sanitizeAddressLine,
@@ -71,7 +72,7 @@ router.get('/public', authMiddleware, async (req, res) => {
     })
   } catch (err) {
     logger.error({ err }, 'Profile public GET error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -104,7 +105,7 @@ router.get('/', authMiddleware, async (req, res) => {
     res.json(formatProfile(u, req.mfaEnabled))
   } catch (err) {
     logger.error({ err }, 'Profile GET error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -158,7 +159,7 @@ router.put('/', authMiddleware, async (req, res) => {
     res.json(formatProfile(u, req.mfaEnabled))
   } catch (err) {
     logger.error({ err }, 'Profile PUT error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 

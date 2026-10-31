@@ -38,6 +38,21 @@ import { effectiveUnitPrice, lineMargin } from '../utils/orderCosting.js'
 import { sendOrderStatusEmail, sendSupportReplyEmail, maskEmail } from '../utils/mailer.js'
 import { recordContentHistory, diffChanges, historyLabel } from '../utils/contentHistory.js'
 import { defaultRowsFor, RESTORE_SCOPES } from '../utils/siteContentDefaults.js'
+import {
+  SERVER_ERROR,
+  MIGRATION_REQUIRED,
+  ADMIN_ONLY,
+  INVALID_ID,
+  INVALID_LIST,
+  NOTHING_TO_SAVE,
+  IMAGE_UNREADABLE,
+  IMAGE_TOO_LARGE,
+  IMAGE_SAVE_FAILED,
+  URL_NOT_ALLOWED,
+  URL_REDIRECT,
+  URL_FETCH_FAILED,
+  URL_NOT_IMAGE,
+} from '../utils/messages.js'
 import { sweepGatewayExpiry } from '../utils/gatewayPayment.js'
 import { draftProductCopy, isDraftConfigured } from '../utils/groqDraft.js'
 import logger from '../utils/logger.js'
@@ -65,7 +80,7 @@ function parsePagination(query) {
 // so malformed ids never reach PostgREST (which answers with a 500)
 function requireUuidParam(req, res) {
   if (!isUuid(req.params.id)) {
-    res.status(400).json({ error: 'Invalid id' })
+    res.status(400).json({ error: INVALID_ID })
     return false
   }
   return true
@@ -222,7 +237,7 @@ router.get('/stats', requireAdmin, async (req, res) => {
     })
   } catch (err) {
     logger.error({ err }, 'Admin stats error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -284,7 +299,7 @@ router.get('/analytics', requireAdmin, async (req, res) => {
     })
   } catch (err) {
     logger.error({ err }, 'Admin analytics error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -436,7 +451,7 @@ router.get('/sales-analytics', requireAdmin, async (req, res) => {
     })
   } catch (err) {
     logger.error({ err }, 'Sales analytics error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -492,7 +507,7 @@ router.get('/customers', requireAdmin, async (req, res) => {
     res.json({ items: customers, page, pageSize, total: count ?? 0 })
   } catch (err) {
     logger.error({ err }, 'Admin customers error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -506,7 +521,7 @@ router.patch('/customers/:id/role', requireAdmin, async (req, res) => {
   const ALLOWED_ROLES = ['user', 'staff', 'admin']
 
   if (!role || !ALLOWED_ROLES.includes(role)) {
-    return res.status(400).json({ error: `role must be one of: ${ALLOWED_ROLES.join(', ')}` })
+    return res.status(400).json({ error: `Choose a role: ${ALLOWED_ROLES.join(', ')}.` })
   }
 
   // prevent admin from demoting themselves
@@ -545,7 +560,7 @@ router.patch('/customers/:id/role', requireAdmin, async (req, res) => {
     })
   } catch (err) {
     logger.error({ err }, 'Admin role update error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -572,7 +587,7 @@ router.delete('/customers/:id', requireAdmin, async (req, res) => {
     logAudit({ adminEmail: req.userEmail, action: 'user_delete', target: `user:${req.params.id}`, details: 'account removed (step-up verified)' })
   } catch (err) {
     logger.error({ err }, 'Admin customer delete error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -641,7 +656,7 @@ router.get('/products', async (req, res) => {
     res.json({ items, page, pageSize, total: result?.count ?? 0 })
   } catch (err) {
     logger.error({ err }, 'Admin products list error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -694,7 +709,7 @@ router.get('/products/export', async (req, res) => {
     res.send(toCsv(headers, csvRows))
   } catch (err) {
     logger.error({ err }, 'Admin product export error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -706,7 +721,7 @@ router.get('/products/export', async (req, res) => {
 // Cap of 200 rows per request keeps one batch well inside the body limit.
 router.post('/products/import', requireAdmin, async (req, res) => {
   const rows = Array.isArray(req.body?.rows) ? req.body.rows : null
-  if (!rows) return res.status(400).json({ error: 'rows must be an array' })
+  if (!rows) return res.status(400).json({ error: 'That import file could not be read. Download the template, fill it in, and try again.' })
   if (rows.length === 0 || rows.length > 200) {
     return res.status(400).json({ error: 'Import accepts between 1 and 200 rows per batch' })
   }
@@ -796,7 +811,7 @@ router.post('/products/import', requireAdmin, async (req, res) => {
     logAudit({ adminEmail: req.userEmail, action: 'import', target: 'products', details: `created=${created} updated=${updated} errors=${errors.length}` })
   } catch (err) {
     logger.error({ err }, 'Admin product import error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -842,7 +857,7 @@ router.post('/products', requireAdmin, async (req, res) => {
     recordPriceHistory(data.prod_id, null, value.price, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Admin product create error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -862,7 +877,7 @@ router.patch('/products/:id', async (req, res) => {
       return res.status(403).json({ error: 'Only an admin can change the selling price' })
     }
     if (touchesCosting || touchesArchive) {
-      return res.status(403).json({ error: 'Admin access required' })
+      return res.status(403).json({ error: ADMIN_ONLY })
     }
   }
   const { archived, ...rest } = body
@@ -877,7 +892,7 @@ router.patch('/products/:id', async (req, res) => {
     updates.details = sanitizedDetails.value
   }
   if (touchesArchive) {
-    if (typeof archived !== 'boolean') return res.status(400).json({ error: 'archived must be true or false' })
+    if (typeof archived !== 'boolean') return res.status(400).json({ error: 'Choose whether this product should be archived.' })
     updates.archived_at = archived ? new Date().toISOString() : null
     // archiving also hides the product from the public store; restoring keeps
     // it hidden until an admin explicitly sets it Active again (no accidental
@@ -885,7 +900,7 @@ router.patch('/products/:id', async (req, res) => {
     if (archived) updates.is_active = false
   }
   if (Object.keys(updates).length === 0) {
-    return res.status(400).json({ error: 'No updatable fields provided' })
+    return res.status(400).json({ error: NOTHING_TO_SAVE })
   }
 
   try {
@@ -935,7 +950,7 @@ router.patch('/products/:id', async (req, res) => {
     }
   } catch (err) {
     logger.error({ err }, 'Admin product update error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -968,7 +983,7 @@ router.post('/products/:id/draft-copy', requireAdmin, async (req, res) => {
     res.json({ draft })
   } catch (err) {
     logger.error({ err }, 'Admin product draft-copy error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -993,7 +1008,7 @@ router.get('/products/:id/price-history', async (req, res) => {
     res.json({ items: data || [] })
   } catch (err) {
     logger.error({ err }, 'Product price history error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -1057,7 +1072,7 @@ router.delete('/products/:id', requireAdmin, async (req, res) => {
     })
   } catch (err) {
     logger.error({ err }, 'Admin product delete error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -1077,7 +1092,7 @@ router.get('/products/:id', async (req, res) => {
     res.json({ item: req.userRole === 'admin' ? data : stripCostFields(data) })
   } catch (err) {
     logger.error({ err }, 'Admin product detail error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -1143,7 +1158,7 @@ router.get('/payments', async (req, res) => {
     res.json({ items, page, pageSize, total: payRes.count ?? 0 })
   } catch (err) {
     logger.error({ err }, 'Admin payments error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -1155,7 +1170,7 @@ router.get('/orders', async (req, res) => {
     const { page, pageSize, from, to } = parsePagination(req.query)
 
     if (req.query.status && !ORDER_STATUSES.includes(String(req.query.status))) {
-      return res.status(400).json({ error: `status must be one of: ${ORDER_STATUSES.join(', ')}` })
+      return res.status(400).json({ error: `Choose a valid order status: ${ORDER_STATUSES.join(', ')}.` })
     }
 
     let query = supabaseAdmin
@@ -1275,7 +1290,7 @@ router.get('/orders', async (req, res) => {
     res.json({ items, page, pageSize, total: count ?? 0 })
   } catch (err) {
     logger.error({ err }, 'Admin orders list error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -1290,7 +1305,7 @@ router.patch('/orders/:id', async (req, res) => {
     return res.status(400).json({ error: 'status is required' })
   }
   if (!ORDER_STATUSES.includes(status)) {
-    return res.status(400).json({ error: `status must be one of: ${ORDER_STATUSES.join(', ')}` })
+    return res.status(400).json({ error: `Choose a valid order status: ${ORDER_STATUSES.join(', ')}.` })
   }
   try {
     // read the row first: the notification needs the buyer's user id and the
@@ -1351,7 +1366,7 @@ router.patch('/orders/:id', async (req, res) => {
     }
   } catch (err) {
     logger.error({ err }, 'Admin order update error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -1396,7 +1411,7 @@ router.delete('/orders/:id', requireAdmin, async (req, res) => {
     })
   } catch (err) {
     logger.error({ err }, 'Admin order delete error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -1423,7 +1438,7 @@ router.delete('/payments/:id', requireAdmin, async (req, res) => {
     })
   } catch (err) {
     logger.error({ err }, 'Admin payment delete error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -1452,7 +1467,7 @@ router.get('/staff-emails', async (req, res) => {
     res.json({ items })
   } catch (err) {
     logger.error({ err }, 'Admin staff emails error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -1497,7 +1512,7 @@ router.get('/supports', async (req, res) => {
     res.json({ items, page, pageSize, total: count ?? 0 })
   } catch (err) {
     logger.error({ err }, 'Admin supports list error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -1514,22 +1529,22 @@ router.patch('/supports/:id', async (req, res) => {
   if (hasDetails && req.body?.response === undefined) {
     const updates = {}
     if (req.body.status !== undefined) {
-      if (!SUPPORT_STATUSES.includes(req.body.status)) return res.status(400).json({ error: 'Invalid status' })
+      if (!SUPPORT_STATUSES.includes(req.body.status)) return res.status(400).json({ error: 'Choose a valid support status.' })
       updates.status = req.body.status
     }
     if (req.body.priority !== undefined) {
-      if (!SUPPORT_PRIORITIES.includes(req.body.priority)) return res.status(400).json({ error: 'Invalid priority' })
+      if (!SUPPORT_PRIORITIES.includes(req.body.priority)) return res.status(400).json({ error: 'Choose a valid priority.' })
       updates.priority = req.body.priority
     }
     if (req.body.tags !== undefined) {
       if (!Array.isArray(req.body.tags) || req.body.tags.length > 20 || req.body.tags.some((t) => typeof t !== 'string' || t.length > 30)) {
-        return res.status(400).json({ error: 'Invalid tags' })
+        return res.status(400).json({ error: 'Tags must be a list of short labels.' })
       }
       updates.tags = [...new Set(req.body.tags.map((t) => t.trim()).filter(Boolean))]
     }
     if (req.body.assignee_email !== undefined) {
       const email = req.body.assignee_email === null ? null : String(req.body.assignee_email).trim().toLowerCase()
-      if (email !== null && (email.length > 254 || !email.includes('@'))) return res.status(400).json({ error: 'Invalid assignee email' })
+      if (email !== null && (email.length > 254 || !email.includes('@'))) return res.status(400).json({ error: 'Enter a valid email address for the assignee.' })
       updates.assignee_email = email || null
     }
     try {
@@ -1537,7 +1552,7 @@ router.patch('/supports/:id', async (req, res) => {
       if (updates.assignee_email) {
         const staff = await staffEmailSet()
         if (!staff.has(updates.assignee_email)) {
-          return res.status(400).json({ error: 'Assignee must be an admin or staff account' })
+          return res.status(400).json({ error: 'Pick an admin or staff account as the assignee.' })
         }
       }
       if (updates.status === 'resolved') {
@@ -1566,7 +1581,7 @@ router.patch('/supports/:id', async (req, res) => {
       res.json({ item: data })
     } catch (err) {
       logger.error({ err }, 'Admin support details update error')
-      res.status(500).json({ error: 'Server error' })
+      res.status(500).json({ error: SERVER_ERROR })
     }
     return
   }
@@ -1630,7 +1645,7 @@ router.patch('/supports/:id', async (req, res) => {
     )
   } catch (err) {
     logger.error({ err }, 'Admin support reply error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -1651,7 +1666,7 @@ router.get('/audit-logs', requireAdmin, async (req, res) => {
     res.json({ items: await withActorNames(data || []) })
   } catch (err) {
     logger.error({ err }, 'Admin audit logs error')
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: SERVER_ERROR })
   }
 })
 
@@ -1781,13 +1796,13 @@ function runUpload(req, res, next) {
   upload.single('image')(req, res, (err) => {
     if (!err) return next()
     if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(413).json({ error: 'Image exceeds the 5MB limit' })
+      return res.status(413).json({ error: IMAGE_TOO_LARGE })
     }
     if (err instanceof multer.MulterError) {
       return res.status(400).json({ error: 'Upload rejected: ' + err.message })
     }
     logger.error({ err }, 'Unexpected upload middleware error')
-    return res.status(400).json({ error: 'Upload rejected' })
+    return res.status(400).json({ error: IMAGE_UNREADABLE })
   })
 }
 
@@ -1799,37 +1814,37 @@ router.post('/images/upload', runUpload, async (req, res) => {
     let fileBuffer
 
     if (req.file) {
-      if (!tempPath) return res.status(400).json({ error: 'Invalid upload' })
+      if (!tempPath) return res.status(400).json({ error: IMAGE_UNREADABLE })
       fileBuffer = await sharp(tempPath)
         .resize({ width: 1200, withoutEnlargement: true })
         .jpeg({ quality: 80 })
         .toBuffer()
     } else if (req.body?.imageUrl) {
       if (!(await isSafeUrl(req.body.imageUrl))) {
-        return res.status(400).json({ error: 'URL is not allowed (private/internal addresses are blocked)' })
+        return res.status(400).json({ error: URL_NOT_ALLOWED })
       }
       // manual so a redirect can never bounce us onto an internal address
       const resp = await fetch(req.body.imageUrl, { redirect: 'manual', signal: AbortSignal.timeout(10_000) })
       if (resp.status >= 300 && resp.status < 400) {
-        return res.status(400).json({ error: 'Redirects are not allowed' })
+        return res.status(400).json({ error: URL_REDIRECT })
       }
-      if (!resp.ok) return res.status(400).json({ error: 'Failed to fetch image from URL' })
+      if (!resp.ok) return res.status(400).json({ error: URL_FETCH_FAILED })
 
       const remoteType = resp.headers.get('content-type') || ''
-      if (!remoteType.startsWith('image/')) return res.status(400).json({ error: 'URL does not point to an image' })
+      if (!remoteType.startsWith('image/')) return res.status(400).json({ error: URL_NOT_IMAGE })
 
       const declared = Number(resp.headers.get('content-length') || 0)
-      if (declared > 5 * 1024 * 1024) return res.status(400).json({ error: 'Image exceeds the 5MB limit' })
+      if (declared > 5 * 1024 * 1024) return res.status(400).json({ error: IMAGE_TOO_LARGE })
       const arrayBuf = await resp.arrayBuffer()
       if (arrayBuf.byteLength > 5 * 1024 * 1024) {
-        return res.status(400).json({ error: 'Image exceeds the 5MB limit' })
+        return res.status(400).json({ error: IMAGE_TOO_LARGE })
       }
       fileBuffer = await sharp(Buffer.from(arrayBuf))
         .resize({ width: 1200, withoutEnlargement: true })
         .jpeg({ quality: 80 })
         .toBuffer()
     } else {
-      return res.status(400).json({ error: 'Provide an image file or imageUrl' })
+      return res.status(400).json({ error: 'Choose an image file or paste an image link.' })
     }
 
     const ext = 'jpg'
@@ -1846,7 +1861,7 @@ router.post('/images/upload', runUpload, async (req, res) => {
       })
       if (createErr) {
         logger.error({ err: createErr }, 'Bucket create error')
-        return res.status(500).json({ error: 'Failed to create storage bucket' })
+        return res.status(500).json({ error: 'Image storage is not set up yet. Please contact the site owner.' })
       }
     }
 
@@ -1855,7 +1870,7 @@ router.post('/images/upload', runUpload, async (req, res) => {
       .upload(fileName, fileBuffer, { contentType: 'image/jpeg' })
     if (uploadError) {
       logger.error({ err: uploadError }, 'Storage upload error')
-      return res.status(500).json({ error: 'Storage upload failed' })
+      return res.status(500).json({ error: IMAGE_SAVE_FAILED })
     }
 
     const { data } = supabaseAdmin.storage.from('product-images').getPublicUrl(fileName)
@@ -1863,7 +1878,7 @@ router.post('/images/upload', runUpload, async (req, res) => {
     logAudit({ adminEmail: req.userEmail, action: 'image_upload', target: fileName, details: req.file ? 'multipart upload' : `from URL: ${String(req.body?.imageUrl).slice(0, 200)}` })
   } catch (err) {
     logger.error({ err }, 'Image upload error')
-    res.status(500).json({ error: 'Failed to upload image' })
+    res.status(500).json({ error: IMAGE_SAVE_FAILED })
   } finally {
     if (tempPath) {
       fs.unlink(tempPath, () => {})
@@ -1877,7 +1892,7 @@ router.delete('/images/:filename', async (req, res) => {
   // else (slashes, dots, path traversal) is rejected before touching storage
   const filename = String(req.params.filename || '')
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*\.[A-Za-z]{1,5}$/.test(filename) || filename.includes('..')) {
-    return res.status(400).json({ error: 'Invalid file name' })
+    return res.status(400).json({ error: 'That file name is not allowed. Rename the file and try again.' })
   }
   try {
     const { error } = await supabaseAdmin.storage
@@ -1888,7 +1903,7 @@ router.delete('/images/:filename', async (req, res) => {
     logAudit({ adminEmail: req.userEmail, action: 'image_delete', target: filename })
   } catch (err) {
     logger.error({ err }, 'Image delete error')
-    res.status(500).json({ error: 'Failed to delete image' })
+    res.status(500).json({ error: 'The old image could not be removed. Please try again.' })
   }
 })
 
@@ -1944,7 +1959,7 @@ router.get('/media', requireAdmin, async (req, res) => {
       .order('created_at', { ascending: false })
       .range(from, from + pageSize - 1)
     if (error) {
-      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: MIGRATION_REQUIRED, code: 'MIGRATION_REQUIRED' })
       throw error
     }
 
@@ -1969,24 +1984,24 @@ router.post('/media', requireAdmin, runUpload, async (req, res) => {
 
     let source
     if (req.file) {
-      if (!tempPath) return res.status(400).json({ error: 'Invalid upload' })
+      if (!tempPath) return res.status(400).json({ error: IMAGE_UNREADABLE })
       source = { buffer: await fs.promises.readFile(tempPath), mimeType: req.file.mimetype }
     } else if (req.body?.imageUrl) {
       if (!(await isSafeUrl(req.body.imageUrl))) {
-        return res.status(400).json({ error: 'URL is not allowed (private/internal addresses are blocked)' })
+        return res.status(400).json({ error: URL_NOT_ALLOWED })
       }
       const resp = await fetch(req.body.imageUrl, { redirect: 'manual', signal: AbortSignal.timeout(10_000) })
       if (resp.status >= 300 && resp.status < 400) {
-        return res.status(400).json({ error: 'Redirects are not allowed' })
+        return res.status(400).json({ error: URL_REDIRECT })
       }
-      if (!resp.ok) return res.status(400).json({ error: 'Failed to fetch image from URL' })
+      if (!resp.ok) return res.status(400).json({ error: URL_FETCH_FAILED })
       const remoteType = resp.headers.get('content-type') || ''
-      if (!remoteType.startsWith('image/')) return res.status(400).json({ error: 'URL does not point to an image' })
+      if (!remoteType.startsWith('image/')) return res.status(400).json({ error: URL_NOT_IMAGE })
       const arrayBuf = await resp.arrayBuffer()
-      if (arrayBuf.byteLength > 5 * 1024 * 1024) return res.status(400).json({ error: 'Image exceeds the 5MB limit' })
+      if (arrayBuf.byteLength > 5 * 1024 * 1024) return res.status(400).json({ error: IMAGE_TOO_LARGE })
       source = { buffer: Buffer.from(arrayBuf), mimeType: remoteType }
     } else {
-      return res.status(400).json({ error: 'Provide an image file or imageUrl' })
+      return res.status(400).json({ error: 'Choose an image file or paste an image link.' })
     }
 
     const { buffer, width, height } = await processMedia(source.buffer)
@@ -1996,7 +2011,7 @@ router.post('/media', requireAdmin, runUpload, async (req, res) => {
       .upload(fileName, buffer, { contentType: 'image/jpeg' })
     if (uploadError) {
       logger.error({ err: uploadError }, 'Media upload error')
-      return res.status(500).json({ error: 'Storage upload failed' })
+      return res.status(500).json({ error: IMAGE_SAVE_FAILED })
     }
     const { data: publicData } = supabaseAdmin.storage.from('product-images').getPublicUrl(fileName)
 
@@ -2012,7 +2027,7 @@ router.post('/media', requireAdmin, runUpload, async (req, res) => {
     }
     const { data, error } = await supabaseAdmin.from('site_media').insert(row).select(MEDIA_COLUMNS).single()
     if (error) {
-      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: MIGRATION_REQUIRED, code: 'MIGRATION_REQUIRED' })
       throw error
     }
     res.status(201).json({ item: data })
@@ -2020,7 +2035,7 @@ router.post('/media', requireAdmin, runUpload, async (req, res) => {
     recordContentHistory('media', data.id, 'create', data, req.userEmail)
   } catch (err) {
     logger.error({ err }, 'Media upload error')
-    res.status(500).json({ error: 'Failed to upload media' })
+    res.status(500).json({ error: IMAGE_SAVE_FAILED })
   } finally {
     if (tempPath) fs.unlink(tempPath, () => {})
   }
@@ -2034,7 +2049,7 @@ router.patch('/media/:id', requireAdmin, async (req, res) => {
     const alt = sanitizeAltText(req.body?.altText)
     if (!alt.ok) return res.status(400).json({ error: alt.error })
     const { data: before } = await supabaseAdmin.from('site_media').select(MEDIA_COLUMNS).eq('id', req.params.id).single()
-    if (!before) return res.status(404).json({ error: 'Media not found' })
+    if (!before) return res.status(404).json({ error: 'That image is no longer in the library. Refresh the page and try again.' })
     const { data, error } = await supabaseAdmin
       .from('site_media')
       .update({ alt_text: alt.value, updated_at: new Date().toISOString() })
@@ -2058,7 +2073,7 @@ router.delete('/media/:id', requireAdmin, async (req, res) => {
   if (!requireUuidParam(req, res)) return
   try {
     const { data: media } = await supabaseAdmin.from('site_media').select(MEDIA_COLUMNS).eq('id', req.params.id).single()
-    if (!media) return res.status(404).json({ error: 'Media not found' })
+    if (!media) return res.status(404).json({ error: 'That image is no longer in the library. Refresh the page and try again.' })
     const refs = await fetchUsageRefs()
     const usedIn = buildUsageIndex([media.url], refs).get(media.url) || []
     if (usedIn.length > 0 && String(req.query.force) !== 'true') {
@@ -2086,7 +2101,7 @@ router.post('/media/:id/restore', requireAdmin, async (req, res) => {
   if (!requireUuidParam(req, res)) return
   try {
     const { data: before } = await supabaseAdmin.from('site_media').select(MEDIA_COLUMNS).eq('id', req.params.id).single()
-    if (!before) return res.status(404).json({ error: 'Media not found' })
+    if (!before) return res.status(404).json({ error: 'That image is no longer in the library. Refresh the page and try again.' })
     const { data, error } = await supabaseAdmin
       .from('site_media')
       .update({ archived_at: null, updated_at: new Date().toISOString() })
@@ -2094,7 +2109,7 @@ router.post('/media/:id/restore', requireAdmin, async (req, res) => {
       .select(MEDIA_COLUMNS)
       .single()
     if (error) throw error
-    if (!data) return res.status(404).json({ error: 'Media not found' })
+    if (!data) return res.status(404).json({ error: 'That image is no longer in the library. Refresh the page and try again.' })
     res.json({ item: data })
     logAudit({ adminEmail: req.userEmail, action: 'media_restore', target: data.storage_path || req.params.id })
     recordContentHistory('media', data.id, 'restore', { name: historyLabel(before, 'alt_text', 'url') || 'Image', changes: { status: { from: before.archived_at ? 'Archived' : 'Live', to: 'Live' } } }, req.userEmail)
@@ -2111,7 +2126,7 @@ router.post('/media/:id/check', requireAdmin, async (req, res) => {
   if (!requireUuidParam(req, res)) return
   try {
     const { data: media } = await supabaseAdmin.from('site_media').select(MEDIA_COLUMNS).eq('id', req.params.id).single()
-    if (!media) return res.status(404).json({ error: 'Media not found' })
+    if (!media) return res.status(404).json({ error: 'That image is no longer in the library. Refresh the page and try again.' })
     let broken = true
     try {
       const resp = await fetch(media.url, { method: 'GET', signal: AbortSignal.timeout(8000) })
@@ -2148,7 +2163,7 @@ router.get('/banners', requireAdmin, async (req, res) => {
     }
     const { data, error, count } = await query.order('placement').order('sort_order')
     if (error) {
-      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: MIGRATION_REQUIRED, code: 'MIGRATION_REQUIRED' })
       throw error
     }
     res.json({ items: data || [], total: count ?? 0 })
@@ -2173,7 +2188,7 @@ router.post('/banners', requireAdmin, async (req, res) => {
     const row = { ...clean.values, sort_order: (last?.[0]?.sort_order ?? -1) + 1, created_by: req.userEmail }
     const { data, error } = await supabaseAdmin.from('site_banners').insert(row).select(BANNER_COLUMNS).single()
     if (error) {
-      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: MIGRATION_REQUIRED, code: 'MIGRATION_REQUIRED' })
       throw error
     }
     invalidateContentCache()
@@ -2266,9 +2281,9 @@ router.post('/banners/reorder', requireAdmin, async (req, res) => {
   try {
     const { placement, ids } = req.body ?? {}
     if (!PLACEMENTS.includes(placement) || !Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ error: 'Provide placement and a non-empty ids list' })
+      return res.status(400).json({ error: 'Choose a placement and at least one banner, then try again.' })
     }
-    if (ids.some((id) => !isUuid(id))) return res.status(400).json({ error: 'ids must be uuids' })
+    if (ids.some((id) => !isUuid(id))) return res.status(400).json({ error: INVALID_LIST })
     const { data: beforeRows } = await supabaseAdmin.from('site_banners').select('id, title, alt, sort_order').in('id', ids)
     for (let i = 0; i < ids.length; i++) {
       const { error } = await supabaseAdmin
@@ -2306,7 +2321,7 @@ router.get('/sections', requireAdmin, async (req, res) => {
     else query = query.is('archived_at', null)
     const { data, error, count } = await query.order('sort_order')
     if (error) {
-      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: MIGRATION_REQUIRED, code: 'MIGRATION_REQUIRED' })
       throw error
     }
     res.json({ items: data || [], total: count ?? 0 })
@@ -2330,7 +2345,7 @@ router.post('/sections', requireAdmin, async (req, res) => {
     const row = { ...clean.values, sort_order: (last?.[0]?.sort_order ?? -1) + 1, created_by: req.userEmail }
     const { data, error } = await supabaseAdmin.from('site_home_sections').insert(row).select(SECTION_COLUMNS).single()
     if (error) {
-      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: MIGRATION_REQUIRED, code: 'MIGRATION_REQUIRED' })
       throw error
     }
     invalidateContentCache()
@@ -2421,8 +2436,8 @@ router.post('/sections/:id/restore', requireAdmin, async (req, res) => {
 router.post('/sections/reorder', requireAdmin, async (req, res) => {
   try {
     const { ids } = req.body ?? {}
-    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'Provide a non-empty ids list' })
-    if (ids.some((id) => !isUuid(id))) return res.status(400).json({ error: 'ids must be uuids' })
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'Select at least one item first.' })
+    if (ids.some((id) => !isUuid(id))) return res.status(400).json({ error: INVALID_LIST })
     const { data: beforeRows } = await supabaseAdmin.from('site_home_sections').select('id, title, sort_order').in('id', ids)
     for (let i = 0; i < ids.length; i++) {
       const { error } = await supabaseAdmin
@@ -2458,7 +2473,7 @@ const NAV_COLUMNS = 'id, section, label, href, image_url, alt_text, sort_order, 
 router.get('/nav-items', requireAdmin, async (req, res) => {
   try {
     if (req.query.section !== undefined && !NAV_SECTIONS.includes(String(req.query.section))) {
-      return res.status(400).json({ error: `Section must be one of: ${NAV_SECTIONS.join(', ')}` })
+      return res.status(400).json({ error: `Choose a valid menu area: ${NAV_SECTIONS.join(', ')}.` })
     }
     let query = supabaseAdmin.from('site_nav_items').select(NAV_COLUMNS, { count: 'exact' })
     if (String(req.query.archived) === 'true') query = query.not('archived_at', 'is', null)
@@ -2466,7 +2481,7 @@ router.get('/nav-items', requireAdmin, async (req, res) => {
     if (req.query.section !== undefined) query = query.eq('section', String(req.query.section))
     const { data, error, count } = await query.order('sort_order')
     if (error) {
-      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: MIGRATION_REQUIRED, code: 'MIGRATION_REQUIRED' })
       throw error
     }
     res.json({ items: data || [], total: count ?? 0 })
@@ -2494,7 +2509,7 @@ router.post('/nav-items', requireAdmin, async (req, res) => {
       .select(NAV_COLUMNS)
       .single()
     if (error) {
-      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: MIGRATION_REQUIRED, code: 'MIGRATION_REQUIRED' })
       throw error
     }
     invalidateContentCache()
@@ -2587,10 +2602,10 @@ router.post('/nav-items/:id/restore', requireAdmin, async (req, res) => {
 router.post('/nav-items/reorder', requireAdmin, async (req, res) => {
   try {
     const { section, ids } = req.body ?? {}
-    if (!NAV_SECTIONS.includes(section)) return res.status(400).json({ error: `Section must be one of: ${NAV_SECTIONS.join(', ')}` })
-    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'Provide a non-empty ids list' })
-    if (ids.length > 500) return res.status(400).json({ error: 'Too many ids' })
-    if (ids.some((id) => !isUuid(id))) return res.status(400).json({ error: 'ids must be uuids' })
+    if (!NAV_SECTIONS.includes(section)) return res.status(400).json({ error: `Choose a valid menu area: ${NAV_SECTIONS.join(', ')}.` })
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'Select at least one item first.' })
+    if (ids.length > 500) return res.status(400).json({ error: 'That is too many items to change at once. Select fewer and try again.' })
+    if (ids.some((id) => !isUuid(id))) return res.status(400).json({ error: INVALID_LIST })
     const { data: beforeRows } = await supabaseAdmin.from('site_nav_items').select('id, label, sort_order').eq('section', section).in('id', ids)
     for (let i = 0; i < ids.length; i++) {
       const { error } = await supabaseAdmin
@@ -2629,7 +2644,7 @@ router.get('/categories', requireAdmin, async (req, res) => {
     ])
     if (catRes.error) throw catRes.error
     if (ovRes.error) {
-      if (isSchemaPendingError(ovRes.error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      if (isSchemaPendingError(ovRes.error)) return res.status(503).json({ error: MIGRATION_REQUIRED, code: 'MIGRATION_REQUIRED' })
       throw ovRes.error
     }
     const baseNames = [...new Set((catRes.data || []).map((r) => r.category).filter(Boolean))].sort()
@@ -2704,7 +2719,7 @@ router.post('/categories', requireAdmin, async (req, res) => {
     const rows = clean.values.map((v) => ({ ...v, updated_at: now }))
     const { error } = await supabaseAdmin.from('site_categories').upsert(rows, { onConflict: 'name' })
     if (error) {
-      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: MIGRATION_REQUIRED, code: 'MIGRATION_REQUIRED' })
       throw error
     }
     invalidateContentCache()
@@ -2740,8 +2755,8 @@ router.post('/categories/delete', requireAdmin, async (req, res) => {
   try {
     const name = typeof req.body?.name === 'string' ? req.body.name.trim() : ''
     const confirm = typeof req.body?.confirm === 'string' ? req.body.confirm.trim() : ''
-    if (!name) return res.status(400).json({ error: 'Category name is required' })
-    if (confirm !== name) return res.status(400).json({ error: 'The typed name does not match the category' })
+    if (!name) return res.status(400).json({ error: 'Enter a category name.' })
+    if (confirm !== name) return res.status(400).json({ error: 'The name you typed does not match. Type it exactly as shown to confirm.' })
 
     const { data: hiding, error: hideErr } = await supabaseAdmin
       .from('product')
@@ -2781,7 +2796,7 @@ router.get('/content-history', requireAdmin, async (req, res) => {
       .order('id', { ascending: false })
       .range((page - 1) * pageSize, page * pageSize - 1)
     if (error) {
-      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: MIGRATION_REQUIRED, code: 'MIGRATION_REQUIRED' })
       throw error
     }
     // actor_name: resolved account name for the history actor email
@@ -2802,7 +2817,7 @@ router.post('/content/restore-defaults', requireAdmin, async (req, res) => {
   const { scope } = req.body ?? {}
   const def = defaultRowsFor(scope)
   if (!def) {
-    return res.status(400).json({ error: `Scope must be one of: ${RESTORE_SCOPES.join(', ')}` })
+    return res.status(400).json({ error: `Choose which part of the site to restore: ${RESTORE_SCOPES.join(', ')}.` })
   }
   try {
     const now = new Date().toISOString()
@@ -2813,7 +2828,7 @@ router.post('/content/restore-defaults', requireAdmin, async (req, res) => {
     if (def.filter) archQuery = archQuery.eq(def.filter.column, def.filter.value)
     const { data: archivedRows, error: archErr } = await archQuery.select('id')
     if (archErr) {
-      if (isSchemaPendingError(archErr)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      if (isSchemaPendingError(archErr)) return res.status(503).json({ error: MIGRATION_REQUIRED, code: 'MIGRATION_REQUIRED' })
       throw archErr
     }
     const { data: inserted, error: insErr } = await supabaseAdmin
@@ -2896,7 +2911,7 @@ router.patch('/settings', requireAdmin, async (req, res) => {
   const clean = sanitizeSettings(req.body ?? {})
   if (!clean.ok) return res.status(400).json({ error: clean.error })
   if (Object.keys(clean.values).length === 0) {
-    return res.status(400).json({ error: 'No valid settings provided' })
+    return res.status(400).json({ error: 'Nothing to save yet. Change at least one setting and try again.' })
   }
   try {
     const { data: current } = await supabaseAdmin.from('site_settings').select('data').eq('id', 1).maybeSingle()
@@ -2910,7 +2925,7 @@ router.patch('/settings', requireAdmin, async (req, res) => {
       .select('*')
       .single()
     if (error) {
-      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: MIGRATION_REQUIRED, code: 'MIGRATION_REQUIRED' })
       throw error
     }
     // both caches: checkout reads settings through its own reader, the
@@ -2952,7 +2967,7 @@ router.get('/faqs', requireAdmin, async (req, res) => {
     else query = query.is('archived_at', null)
     const { data, error, count } = await query.order('sort_order')
     if (error) {
-      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: MIGRATION_REQUIRED, code: 'MIGRATION_REQUIRED' })
       throw error
     }
     res.json({ items: data || [], total: count ?? 0 })
@@ -2983,7 +2998,7 @@ router.post('/faqs', requireAdmin, async (req, res) => {
       .select(FAQ_COLUMNS)
       .single()
     if (error) {
-      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: MIGRATION_REQUIRED, code: 'MIGRATION_REQUIRED' })
       throw error
     }
     invalidateContentCache()
@@ -3073,9 +3088,9 @@ router.post('/faqs/:id/restore', requireAdmin, async (req, res) => {
 router.post('/faqs/reorder', requireAdmin, async (req, res) => {
   try {
     const { ids } = req.body ?? {}
-    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'Provide a non-empty ids list' })
-    if (ids.length > 500) return res.status(400).json({ error: 'Too many ids' })
-    if (ids.some((id) => !isUuid(id))) return res.status(400).json({ error: 'ids must be uuids' })
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'Select at least one item first.' })
+    if (ids.length > 500) return res.status(400).json({ error: 'That is too many items to change at once. Select fewer and try again.' })
+    if (ids.some((id) => !isUuid(id))) return res.status(400).json({ error: INVALID_LIST })
     const { data: beforeRows } = await supabaseAdmin.from('site_faqs').select('id, question, sort_order').in('id', ids)
     for (let i = 0; i < ids.length; i++) {
       const { error } = await supabaseAdmin
@@ -3108,7 +3123,7 @@ router.get('/policies', requireAdmin, async (req, res) => {
     else query = query.is('archived_at', null)
     const { data, error, count } = await query.order('slug')
     if (error) {
-      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: MIGRATION_REQUIRED, code: 'MIGRATION_REQUIRED' })
       throw error
     }
     res.json({ items: data || [], total: count ?? 0 })
@@ -3129,7 +3144,7 @@ router.post('/policies', requireAdmin, async (req, res) => {
       .select(POLICY_COLUMNS)
       .single()
     if (error) {
-      if (isSchemaPendingError(error)) return res.status(503).json({ error: 'MIGRATION_REQUIRED' })
+      if (isSchemaPendingError(error)) return res.status(503).json({ error: MIGRATION_REQUIRED, code: 'MIGRATION_REQUIRED' })
       if (error.code === '23505') return res.status(409).json({ error: 'A policy with that slug already exists' })
       throw error
     }

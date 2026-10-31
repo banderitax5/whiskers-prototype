@@ -4,6 +4,7 @@ import toast from '../lib/toast.js'
 import supabase from '../lib/supabase'
 import { philippinesData } from '../data/philippinesData.js'
 import { phoneError, addressLineError, postalError } from '../lib/addressValidation.js'
+import { errorFromResponse, friendlyMessage } from '../lib/errors'
 import MfaEnrollmentModal from '../components/MfaEnrollmentModal'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
@@ -43,7 +44,7 @@ async function fetchWithAuth(path, options = {}) {
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.error || `HTTP ${res.status}`)
+    throw errorFromResponse(res, data, 'We could not save your profile. Please try again.')
   }
   return res.json().catch(() => ({}))
 }
@@ -63,11 +64,11 @@ function Profile() {
 
   // make auth failures readable for the user
   function readableError(err, fallback) {
-    const msg = err?.message || fallback
-    if (msg === 'Not authenticated' || msg === 'JWT expired' || /token|jwt|session/i.test(msg)) {
-      return 'Your session has expired. Please log in again to save your profile.'
+    const msg = err?.message || ''
+    if (err?.status === 401 || /not authenticated|jwt expired|token|jwt|session/i.test(msg)) {
+      return 'Your session has expired. Please log in again.'
     }
-    return msg
+    return friendlyMessage(err, fallback)
   }
 
   // validation rules — returns error message or ''
@@ -490,7 +491,7 @@ function Profile() {
                 onChange={(e)=>{
                   const value=e.target.value
                   if(!/^[0-9]*$/.test(value)){
-                    setFieldErrors(p=>({...p,postalCode:'Invalid entry. Ex. 1800'}))
+                    setFieldErrors(p=>({...p,postalCode:'Enter a 4-digit postal code (e.g. 1800).'}))
                   } else {
                     setFieldErrors(p=>({...p,postalCode:''}))
                   }
