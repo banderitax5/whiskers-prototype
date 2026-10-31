@@ -655,7 +655,7 @@ function AdminBanners() {
             <button type="button" onClick={() => window.open("/?scPreview=1", "_blank")} className={btnGhost}>Preview storefront</button>
             <button type="button" onClick={() => setHistory(true)} className={btnGhost}>History</button>
             {hasDefaults && (
-              <button type="button" onClick={() => setConfirmRestore(true)} disabled={busy} className={`${btnGhost} border-amber-300 text-amber-700 dark:border-amber-600 dark:text-amber-300 disabled:opacity-50`}>
+              <button type="button" onClick={() => setConfirmRestore(true)} disabled={busy} className={`${btnGhost} border-red-300 text-red-700 dark:border-red-800/70 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-50`}>
                 Restore default slides
               </button>
             )}

@@ -705,7 +705,7 @@ function AdminNavigation() {
             aria-selected={tab === t.key}
             onClick={() => setTab(t.key)}
             className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-widest transition border ${tab === t.key
-              ? "bg-[#0b2e59] text-white border-[#0b2e59] dark:bg-blue-600 dark:border-blue-600"
+              ? "bg-[#0b2e59] text-white border-[#0b2e59] dark:bg-yellow-400 dark:border-yellow-400 dark:text-gray-900"
               : "bg-white dark:bg-[#16283f] text-gray-600 dark:text-slate-300 border-gray-300 dark:border-[#2c4a6f] hover:bg-gray-100 dark:hover:bg-[#1e3a5f]"}`}
           >
             {t.label}
@@ -837,7 +837,7 @@ function AdminNavigation() {
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={() => window.open("/?scPreview=1", "_blank")} className={btnGhost}>Preview storefront</button>
               <button type="button" onClick={() => setHistory(true)} className={btnGhost}>History</button>
-              <button type="button" onClick={() => setConfirmRestore(true)} disabled={busy} className={`${btnGhost} border-amber-300 text-amber-700 dark:border-amber-600 dark:text-amber-300 disabled:opacity-50`}>
+              <button type="button" onClick={() => setConfirmRestore(true)} disabled={busy} className={`${btnGhost} border-red-300 text-red-700 dark:border-red-800/70 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-50`}>
                 Restore default links
               </button>
               <button type="button" onClick={() => loadLinks(tab, archived, { silent: true })} disabled={loading} title="Reload the list from the server" className="px-3 py-2 rounded-lg text-xs font-black uppercase tracking-widest bg-white dark:bg-[#162d4a] hover:bg-gray-100 dark:hover:bg-[#1e3a5f] text-gray-600 dark:text-slate-300 border border-gray-200 dark:border-[#1e3a5f] disabled:opacity-50 whitespace-nowrap">Refresh</button>

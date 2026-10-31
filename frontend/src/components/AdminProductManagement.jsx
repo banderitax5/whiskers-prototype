@@ -932,17 +932,10 @@ const AdminProductManagement = () => {
   return (
     <AdminPage title="Product Management" subtitle="Curate the items shoppers can buy." help={PRODUCT_HELP}>
 
-      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-4 mb-6">
         <StatCard label="Total Products" value={totalProducts} loading={loading} />
         <StatCard label="Low Stock" value={lowStockCount} loading={loading} />
         <StatCard label="Out of Stock" value={outOfStockCount} loading={loading} />
-        <StatCard
-          label="No Image"
-          value={missingImageCount}
-          loading={loading}
-          hint="Shown with a placeholder"
-          valueClass={missingImageCount > 0 ? 'text-amber-600 dark:text-amber-400' : ''}
-        />
       </div>
 
       {canLifecycle && (
@@ -1098,7 +1091,7 @@ const AdminProductManagement = () => {
                   onClick={() => setFormData({ ...formData, is_active: opt.value })}
                   className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition ${
                     formData.is_active === opt.value
-                      ? 'bg-[#0b2e59] text-white'
+                      ? 'bg-[#0b2e59] dark:bg-yellow-400 text-white dark:text-gray-900'
                       : 'bg-white dark:bg-[#162d4a] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#1e3a5f] border border-gray-200 dark:border-[#1e3a5f]'
                   }`}
                 >
@@ -1150,7 +1143,7 @@ const AdminProductManagement = () => {
             onClick={() => { setCategoryFilter(c); setPage(1); }}
             className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition ${
               categoryFilter === c
-                ? 'bg-[#0b2e59] text-white'
+                ? 'bg-[#0b2e59] dark:bg-yellow-400 text-white dark:text-gray-900'
                 : 'bg-white dark:bg-[#162d4a] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#1e3a5f] border border-gray-200 dark:border-[#1e3a5f]'
             }`}
           >
@@ -1162,13 +1155,12 @@ const AdminProductManagement = () => {
             onClick={() => { setMissingImageOnly((v) => !v); setPage(1); }}
             aria-pressed={missingImageOnly}
             title="Show only products with no photo (shoppers see a placeholder tile)"
-            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition ml-auto inline-flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition ml-auto ${
               missingImageOnly
-                ? 'bg-amber-500 text-black'
+                ? 'bg-[#0b2e59] dark:bg-yellow-400 text-white dark:text-gray-900'
                 : 'bg-white dark:bg-[#162d4a] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#1e3a5f] border border-gray-200 dark:border-[#1e3a5f]'
             }`}
           >
-            <BsExclamationTriangle className="w-3 h-3" aria-hidden="true" />
             No Image ({missingImageCount})
           </button>
         )}
@@ -1178,7 +1170,7 @@ const AdminProductManagement = () => {
             aria-pressed={showArchived}
             className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition ${
               showArchived
-                ? 'bg-indigo-600 text-white'
+                ? 'bg-[#0b2e59] dark:bg-yellow-400 text-white dark:text-gray-900'
                 : 'bg-white dark:bg-[#162d4a] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#1e3a5f] border border-gray-200 dark:border-[#1e3a5f]'
             }`}
           >
@@ -1333,7 +1325,7 @@ const AdminProductManagement = () => {
               <button onClick={() => loadHistory(item)} className="px-2 py-1 rounded bg-gray-100 dark:bg-[#162d4a] text-gray-700 dark:text-slate-300 text-[10px] font-bold">History</button>
               {canLifecycle && (
                 <div className="ml-auto flex items-center gap-1.5">
-                  <button onClick={() => toggleArchive(item)} className={`px-2 py-1 rounded text-[10px] font-bold text-white ${item.archived_at ? 'bg-emerald-600' : 'bg-indigo-600'}`}>
+                  <button onClick={() => toggleArchive(item)} className="px-2 py-1 rounded bg-[#0b2e59] hover:bg-[#15407a] text-white text-[10px] font-bold">
                     {item.archived_at ? 'Restore' : 'Archive'}
                   </button>
                   <button onClick={() => setDeleteTarget(item)} className="px-2 py-1 rounded bg-red-600 text-white text-[10px] font-bold">Delete</button>
@@ -1527,7 +1519,7 @@ const AdminProductManagement = () => {
                       onClick={() => setMobileForm({ ...mobileForm, is_active: opt.value })}
                       className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest transition ${
                         mobileForm.is_active === opt.value
-                          ? 'bg-[#0b2e59] text-white'
+                          ? 'bg-[#0b2e59] dark:bg-yellow-400 text-white dark:text-gray-900'
                           : 'bg-white dark:bg-[#162d4a] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#1e3a5f] border border-gray-200 dark:border-[#1e3a5f]'
                       }`}
                     >
