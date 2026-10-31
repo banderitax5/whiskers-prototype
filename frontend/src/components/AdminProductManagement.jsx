@@ -14,7 +14,7 @@ import { useRole } from '../context/RoleContext';
 import { canSeeCosts, canManageProductLifecycle, canEditPrice } from '../lib/permissions';
 import { fetchSiteContent, contentSettings } from '../lib/siteContent.js';
 import { useSelection, RowCheckBox, SelectionBar, SelectAllRow, LongPressBox, bulkApply, bulkSummary, barBtnPlain, barBtnAccent, barBtnDanger } from './adminBulk';
-import { BsBoxSeam, BsPlusLg, BsDashLg, BsPencilSquare, BsTrash, BsUpload, BsSearch, BsExclamationTriangle, BsArrowClockwise, BsArchive, BsArrowCounterclockwise, BsClockHistory, BsFiles, BsDownload, BsThreeDotsVertical } from 'react-icons/bs';
+import { BsBoxSeam, BsPlusLg, BsDashLg, BsPencilSquare, BsTrash, BsUpload, BsSearch, BsExclamationTriangle, BsArrowClockwise, BsArchive, BsArrowCounterclockwise, BsClockHistory, BsFiles, BsDownload, BsThreeDotsVertical, BsCheckLg } from 'react-icons/bs';
 import toast from '../lib/toast.js';
 
 // form-field label style shared by the desktop and mobile product forms -
@@ -141,6 +141,9 @@ const AdminProductManagement = () => {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [showArchived, setShowArchived] = useState(false);
+  // triage view: products shoppers currently see with a placeholder instead of
+  // a photo (the one catalog gap that is small enough to fix by hand)
+  const [missingImageOnly, setMissingImageOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [isDragging, setIsDragging] = useState(false);
   const [urlInput, setUrlInput] = useState('');
@@ -774,6 +777,7 @@ const AdminProductManagement = () => {
   const displayed = useMemo(() => {
     let list = [...viewList];
     if (categoryFilter !== 'All') list = list.filter((p) => p.category === categoryFilter);
+    if (missingImageOnly) list = list.filter((p) => !String(p.image_url || '').trim());
     if (search) {
       const q = search.toLowerCase();
       list = list.filter((p) => {
@@ -830,12 +834,13 @@ const AdminProductManagement = () => {
       return 0;
     });
     return list;
-  }, [viewList, sortKey, sortDir, priceMin, priceMax, search, categoryFilter]);
+  }, [viewList, sortKey, sortDir, priceMin, priceMax, search, categoryFilter, missingImageOnly]);
 
   // operational stats always describe the live catalog, not the archived view
   const totalProducts = catalogList.length;
   const lowStockCount = catalogList.filter((p) => p.stock_quantity > 0 && p.stock_quantity <= lowStockThreshold).length;
   const outOfStockCount = catalogList.filter((p) => p.stock_quantity <= 0).length;
+  const missingImageCount = catalogList.filter((p) => !String(p.image_url || '').trim()).length;
 
   // rows currently on screen - the scope of "select all" and the bulk bar
   const displayedIds = useMemo(() => displayed.map((p) => p.prod_id), [displayed]);
@@ -927,10 +932,17 @@ const AdminProductManagement = () => {
   return (
     <AdminPage title="Product Management" subtitle="Curate the items shoppers can buy." help={PRODUCT_HELP}>
 
-      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 mb-6">
         <StatCard label="Total Products" value={totalProducts} loading={loading} />
         <StatCard label="Low Stock" value={lowStockCount} loading={loading} />
         <StatCard label="Out of Stock" value={outOfStockCount} loading={loading} />
+        <StatCard
+          label="No Image"
+          value={missingImageCount}
+          loading={loading}
+          hint="Shown with a placeholder"
+          valueClass={missingImageCount > 0 ? 'text-amber-600 dark:text-amber-400' : ''}
+        />
       </div>
 
       {canLifecycle && (
@@ -1147,9 +1159,24 @@ const AdminProductManagement = () => {
         ))}
         {!loading && (
           <button
+            onClick={() => { setMissingImageOnly((v) => !v); setPage(1); }}
+            aria-pressed={missingImageOnly}
+            title="Show only products with no photo (shoppers see a placeholder tile)"
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition ml-auto inline-flex items-center gap-1.5 ${
+              missingImageOnly
+                ? 'bg-amber-500 text-black'
+                : 'bg-white dark:bg-[#162d4a] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#1e3a5f] border border-gray-200 dark:border-[#1e3a5f]'
+            }`}
+          >
+            <BsExclamationTriangle className="w-3 h-3" aria-hidden="true" />
+            No Image ({missingImageCount})
+          </button>
+        )}
+        {!loading && (
+          <button
             onClick={() => { setShowArchived((v) => !v); setCategoryFilter('All'); setPage(1); }}
             aria-pressed={showArchived}
-            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition ml-auto ${
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition ${
               showArchived
                 ? 'bg-indigo-600 text-white'
                 : 'bg-white dark:bg-[#162d4a] text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-[#1e3a5f] border border-gray-200 dark:border-[#1e3a5f]'
@@ -1316,7 +1343,22 @@ const AdminProductManagement = () => {
           </LongPressBox>
         )}
         empty={
-          (search || categoryFilter !== 'All' || priceMin !== '' || priceMax !== '') ? (
+          missingImageOnly && displayed.length === 0 ? (
+            <EmptyState
+              icon={<BsCheckLg />}
+              title="Every product has a photo"
+              message={showArchived ? 'Nothing in the archived list is missing an image.' : 'Nothing in the catalog is missing an image.'}
+              action={
+                <button
+                  type="button"
+                  onClick={() => { setMissingImageOnly(false); setPage(1); }}
+                  className="px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest bg-[#0b2e59] dark:bg-yellow-500 text-white dark:text-gray-900 hover:bg-[#15407a] dark:hover:bg-yellow-400 transition"
+                >
+                  Show all products
+                </button>
+              }
+            />
+          ) : (search || categoryFilter !== 'All' || priceMin !== '' || priceMax !== '' || missingImageOnly) ? (
             <EmptyState
               icon={<BsSearch />}
               title="No products match your filters"
@@ -1324,7 +1366,7 @@ const AdminProductManagement = () => {
               action={
                 <button
                   type="button"
-                  onClick={() => { setSearch(''); setCategoryFilter('All'); setPriceMin(''); setPriceMax(''); setPage(1); }}
+                  onClick={() => { setSearch(''); setCategoryFilter('All'); setPriceMin(''); setPriceMax(''); setMissingImageOnly(false); setPage(1); }}
                   className="px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest bg-[#0b2e59] dark:bg-yellow-500 text-white dark:text-gray-900 hover:bg-[#15407a] dark:hover:bg-yellow-400 transition"
                 >
                   Clear filters

@@ -242,4 +242,33 @@ describe('AdminProductManagement self-service upgrades', () => {
     expect(alerts().some((t) => /supported image/.test(t))).toBe(true)
     expect(apiUploadAuth).not.toHaveBeenCalled()
   })
+
+  it('filters the list down to products with no image', async () => {
+    const withImage = {
+      ...PRODUCTS[0],
+      prod_id: '33333333-3333-3333-3333-333333333333',
+      prod_name: 'Photo Product',
+      image_url: 'https://cdn.example.com/photo.jpg',
+    }
+    const noImage = { ...PRODUCTS[0], prod_id: '44444444-4444-4444-4444-444444444444', prod_name: 'Bare Product', image_url: null }
+    const rows = [withImage, noImage]
+    apiGetAuth.mockImplementation(async () => ({ items: rows, total: rows.length }))
+    apiGet.mockResolvedValue({ items: ['TOYS'] })
+
+    const c = await render()
+    await flush()
+    const chip = () => [...c.querySelectorAll('button')].find((b) => /No Image/.test(b.textContent))
+    expect(chip().textContent).toMatch(/No Image \(1\)/)
+    expect(c.textContent).toContain('Photo Product')
+
+    await act(async () => { chip().click() })
+    expect(chip().getAttribute('aria-pressed')).toBe('true')
+    expect(c.textContent).toContain('Bare Product')
+    expect(c.textContent).not.toContain('Photo Product')
+
+    // the empty-state escape hatch turns the filter back off
+    await act(async () => { chip().click() })
+    expect(chip().getAttribute('aria-pressed')).toBe('false')
+    expect(c.textContent).toContain('Photo Product')
+  })
 })
