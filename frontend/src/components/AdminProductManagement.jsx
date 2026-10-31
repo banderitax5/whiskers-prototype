@@ -187,6 +187,8 @@ const AdminProductManagement = () => {
   const mobileFileRef = useRef(null);
   const importFileRef = useRef(null);
   const PAGE_SIZE = 10;
+  // counts loads so a slow, older load cannot overwrite a newer one
+  const fetchSeqRef = useRef(0);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchProducts(); }, [reloadKey]);
@@ -238,19 +240,31 @@ const AdminProductManagement = () => {
   async function fetchProducts({ silent = false } = {}) {
     if (!silent) setLoading(true);
     setError(null);
+    const seq = ++fetchSeqRef.current;
+    const current = () => seq === fetchSeqRef.current;
     try {
       const token = await getToken(); if (!token) return;
       const all = [];
       // archived=all: the view split (catalog vs archived) happens client-side
-      // so the Archived toggle needs no refetch
+      // so the Archived toggle needs no refetch. sort=name_asc: the table opens
+      // sorted by name, so pages must arrive in name order too; otherwise rows
+      // jump around as each page lands.
       for (let p = 1; p <= 100; p++) {
-        const { items, total } = await apiGetAuth(`/admin/products?page=${p}&pageSize=100&archived=all`, token);
+        const { items, total } = await apiGetAuth(`/admin/products?page=${p}&pageSize=100&archived=all&sort=name_asc`, token);
+        if (!current()) return;
         all.push(...(items || []));
+        // first load: show each page as it arrives instead of waiting for the
+        // whole catalog. silent refreshes keep the old one-shot update so a
+        // selection on a later page is not pruned mid-refresh.
+        if (!silent) {
+          setProducts([...all]);
+          if (p === 1) setLoading(false);
+        }
         if (!items || items.length < 100 || all.length >= (total ?? 0)) break;
       }
-      setProducts(all);
-    } catch (err) { setError(err.message || 'Could not reach the server.'); }
-    finally { setLoading(false); }
+      if (silent && current()) setProducts(all);
+    } catch (err) { if (current()) setError(err.message || 'Could not reach the server.'); }
+    finally { if (current()) setLoading(false); }
   }
 
   // Optimistic helpers: change one row on screen at once, and return a function
