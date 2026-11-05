@@ -50,7 +50,7 @@ const SHOPPER_PAGES = [
   { href: "/cart", label: "Shopping cart" },
   { href: "/checkout", label: "Checkout" },
   { href: "/orders", label: "My orders (asks to sign in)" },
-  { href: "/pets", label: "Pet recommendation (asks to sign in)" },
+  { href: "/pets", label: "Pet recommendation (no sign-in needed)" },
   { href: "/profile", label: "My profile (asks to sign in)" },
   { href: "/about", label: "About us" },
   { href: "/support", label: "Customer support" },

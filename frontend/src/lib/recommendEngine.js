@@ -8,19 +8,25 @@
 // rule is kept in `excluded` with the rule's name, so every result can be
 // explained and tested:
 //   1. unavailable - inactive, unpriced, out of stock, or test rows
-//   2. species     - not for this species (hard exclude)
-//   3. lifeStage   - every pet only gets products for its own stage or for
+//   2. non-food    - litter, shampoo and similar rows filed under a pet category
+//   3. species     - not for this species (hard exclude)
+//   4. lifeStage   - every pet only gets products for its own stage or for
 //                    every stage (hard exclude)
-//   4. allergen    - product text names an allergen the pet has (hard exclude)
-//   5. therapeutic - condition-specific products only for a pet whose condition
+//   5. allergen    - product text names an allergen the pet has (hard exclude)
+//   6. therapeutic - condition-specific products only for a pet whose condition
 //                    matches one of their tags (hard exclude)
-//   6. score       - life stage, one condition match (never one per tag), a
+//   7. score       - life stage, one condition match (never one per tag), a
 //                    healthy baseline, and an allergy-friendly boost. Products
 //                    that match the pet's condition go in `best`; other eligible
 //                    products go in `other` and are labelled as general foods.
 //
 // Ties are broken by price (low first), then name, then id, so the same input
 // always gives the same order.
+
+// The allergy names come from the same list the pet form shows, so a stored
+// value and its label can never drift apart. canonicalAllergy() also folds an
+// older name ("wheat") onto today's one ("grain") before any filtering happens.
+import { ALLERGY_OPTIONS, canonicalAllergy, findLabel } from '../data/petFormOptions'
 
 const SPECIES_BY_CATEGORY = [
   { match: (c) => c.startsWith('dogs'), species: ['dog'] },
@@ -70,7 +76,7 @@ const THERAPEUTIC_TAGS = new Set(
 
 const TAG_KEYWORDS = [
   { tag: 'kidney-safe', words: ['renal', 'kidney'] },
-  { tag: 'urinary-support', words: ['urinary', 'bladder'] },
+  { tag: 'urinary-support', words: ['urinary', 'bladder', 'struvite', 'urolith', 'oxalate', 'crystal'] },
   { tag: 'heart-support', words: ['cardiac', 'heart'] },
   { tag: 'liver-support', words: ['hepatic', 'liver'] },
   { tag: 'sensitive-stomach', words: ['gastrointestinal', 'gastro', 'digestive', 'sensitive'] },
@@ -80,18 +86,35 @@ const TAG_KEYWORDS = [
   { tag: 'dental', words: ['dental', 'teeth', 'oral'] },
   { tag: 'diabetes-safe', words: ['diabetes', 'diabetic'] },
   { tag: 'joint-support', words: ['glucosamine', 'mobility', 'joint', 'arthritis'] },
+  { tag: 'recovery-support', words: ['recovery', 'critical', 'intensive'] },
   { tag: 'growth-support', words: ['puppy', 'kitten', 'baby', 'junior', 'growth'] },
 ]
+
+// A product name that says "VD" (veterinary diet), "VT" or "prescription" is a
+// vet-only food even when no condition word is in the name. Without a matching
+// condition there is nothing to match it to, so it stays hidden for a healthy pet.
+// "Mr Vet" is a normal brand name, so a bare "vet" does not count. PENDING EXPERT REVIEW.
+const VET_DIET_RE = /\bvd\b|\bvt\b|\bveterinary\b|\bprescription\b|\btherapeutic\b/i
 
 // Allergen group (the same names as the form's allergy options) -> words that
 // name it in product text. Only unambiguous names are listed. Rice is left out of
 // "grain" on purpose until the expert review decides. PENDING EXPERT REVIEW.
+// Philippine store names shorten ingredients ("CKN", "BF") and use local fish
+// words, so those forms are listed too - a missed synonym is a safety bug.
 const ALLERGEN_TERMS = {
-  chicken: ['chicken'],
-  beef: ['beef'],
-  fish: ['fish', 'salmon', 'tuna', 'shrimp', 'prawn', 'squid', 'seafood', 'sardine', 'anchovy', 'mackerel', 'herring'],
+  chicken: ['chicken', 'ckn', 'chkn', 'chik', 'poultry'],
+  beef: ['beef', 'bf', 'veal', 'bovine'],
+  fish: [
+    'fish', 'oceanfish', 'fishmeal', 'fishball', 'fishcake', 'catfish', 'milkfish',
+    'whitefish', 'swordfish', 'shellfish', 'salmon', 'tuna', 'sardine', 'anchovy',
+    'anchovies', 'mackerel', 'herring', 'shrimp', 'prawn', 'squid', 'seafood', 'cod',
+    'haddock', 'pollock', 'tilapia', 'trout', 'dory', 'basa', 'bonito', 'katsuo',
+    'maguro', 'krill', 'crab', 'lobster', 'oyster', 'mussel', 'clam', 'scallop',
+    'octopus', 'calamari', 'bangus', 'galunggong', 'tamban', 'crabstick', 'surimi',
+    'marine',
+  ],
   grain: ['wheat', 'barley', 'rye', 'oats', 'oatmeal'],
-  dairy: ['dairy', 'milk', 'cheese', 'whey', 'yogurt', 'yoghurt'],
+  dairy: ['dairy', 'milk', 'cheese', 'whey', 'yogurt', 'yoghurt', 'butter', 'cream'],
   egg: ['egg'],
 }
 
@@ -107,9 +130,19 @@ const ALL_STAGES = {
   fish: ['juvenile', 'adult'],
 }
 
-const GENERAL_FORMULA_REASON = 'General formula while condition-specific options are out of stock'
+// A pet with a condition can be shown general foods when no formula matches.
+// "available" covers both cases - none made for that condition, or all of them
+// out of stock - so the card never claims a formula exists when it does not.
+const GENERAL_FORMULA_REASON = 'General formula - no condition-specific match available'
 const LABEL_CHECK_WARNING = 'Check the label: ingredients are not listed in our catalog.'
 const LABEL_CHECK_NOTICE = 'Our catalog does not list full ingredients. Always check the product label for allergens.'
+
+// Rows filed under a pet category that are not food (litter, shampoo, chews that
+// are really toothbrushes). Recommending a bag of litter as dinner is the worst
+// kind of wrong, so these are refused before any scoring happens.
+const NON_FOOD_RE = /\blitter\b|\bbentonite\b|\btofu\b|cat sand|\bsand\b|scratcher|clumping|deodorizer|toothbrush|shampoo|\bsoap\b|\bspray\b|\bcollar\b|\bharness\b|\bleash\b|\bbowl\b|feeder|fountain|\btoy\b|\bpads?\b|\bwipe\b|\bdiaper\b|training pad|cat grass/i
+// A food name never says how many litres it holds; cat litter always does.
+const LITRE_RE = /\b\d+(?:\.\d+)?\s*l\b/i
 
 // a whole word, allowing a plural "s" or "es" (kidneys, eggs, allergens)
 function wordPattern(word) {
@@ -129,29 +162,56 @@ export function speciesFor(category) {
   return row ? row.species : []
 }
 
+// Life-stage words suppliers put in product names. The stage always stands on
+// its own (space, dash or slash either side), so brand and weight around it do
+// not matter: "Royal Canin Medium Puppy 4kg" -> puppy.
+//   - junior, baby, growth -> the growth stage of this species
+//   - All Stages / All Life Stages -> every stage of the species
+//   - "Adult 7+" style age markers -> senior
+const ALL_STAGES_RE = /\ball[\s-]*(?:life[\s-]*)?stages?\b|\bany[\s-]*stages?\b|\bevery[\s-]*stages?\b|\ball[\s-]*ages?\b/
+const AGE_PLUS_RE = /\b(\d{1,2})\s*\+/
+const SENIOR_AGE = 7
+
+// one canonical order, so the same name always produces the same list
+const STAGE_ORDER = ['puppy', 'kitten', 'juvenile', 'adult', 'senior']
+
+// "junior", "baby" and "growth" name the growth stage of the species
+function growthStageFor(species) {
+  if (species.includes('cat')) return 'kitten'
+  if (species.includes('dog')) return 'puppy'
+  return 'juvenile'
+}
+
 export function deriveProfile(product) {
   const haystack = `${product.prod_name || ''} ${product.brand || ''} ${product.category || ''}`.toLowerCase()
   const species = speciesFor(product.category)
 
-  const lifeStage = []
-  if (/\b(puppy|puppies)\b/.test(haystack)) lifeStage.push('puppy')
-  if (/\b(kitten|kittens|babycat)\b/.test(haystack)) lifeStage.push('kitten')
-  if (/\b(junior|baby)\b/.test(haystack)) {
-    if (species.includes('cat')) lifeStage.push('kitten')
-    else if (species.includes('dog')) lifeStage.push('puppy')
-    else lifeStage.push('juvenile')
-  }
-  if (/\b(senior|geriatric)\b/.test(haystack)) lifeStage.push('senior')
-  if (/\badult\b/.test(haystack)) lifeStage.push('adult')
-  const stageExplicit = lifeStage.length > 0
-  // products with no stage marker suit every stage of their species
-  if (!stageExplicit && species.length > 0) {
+  const stages = new Set()
+  if (/\b(puppy|puppies)\b/.test(haystack)) stages.add('puppy')
+  if (/\b(kitten|kittens|babycat)\b/.test(haystack)) stages.add('kitten')
+  // "junior", "baby" and "growth" name the growth stage: puppy, kitten or juvenile
+  if (/\b(junior|baby|growth)\b/.test(haystack)) stages.add(growthStageFor(species))
+  if (/\b(senior|geriatric|mature)\b/.test(haystack)) stages.add('senior')
+  if (/\badult\b/.test(haystack)) stages.add('adult')
+  // "Adult 7+", "Senior 11+": an age marker from 7 up is a senior formula
+  const agePlus = haystack.match(AGE_PLUS_RE)
+  if (agePlus && Number(agePlus[1]) >= SENIOR_AGE) stages.add('senior')
+
+  // "All Stages" / "All Life Stages" states a stage in the name, so it counts
+  // as explicit and passes the growth-stage rule
+  const allStages = ALL_STAGES_RE.test(haystack)
+  const named = stages.size > 0
+  // products with no stage marker, and all-stages products, suit every stage
+  if (!named && species.length > 0) {
     for (const s of species) {
-      for (const stage of ALL_STAGES[s] || []) {
-        if (!lifeStage.includes(stage)) lifeStage.push(stage)
-      }
+      for (const stage of ALL_STAGES[s] || []) stages.add(stage)
     }
   }
+  // "All Stages" states a stage, so it passes the growth-stage rule...
+  const stageExplicit = named || allStages
+  // ...but only a name that names one stage is built for that stage
+  const stageSpecific = named
+  const lifeStage = STAGE_ORDER.filter((stage) => stages.has(stage))
 
   // the description also feeds the health keywords (e.g. "for sensitive stomachs")
   const healthText = `${haystack} ${(product.description || '').toLowerCase()}`
@@ -160,7 +220,7 @@ export function deriveProfile(product) {
     if (patterns.some((p) => p.test(healthText))) healthTags.push(tag)
   }
 
-  return { species, lifeStage, healthTags, stageExplicit }
+  return { species, lifeStage, healthTags, stageExplicit, stageSpecific }
 }
 
 // Allergen groups named in a product's text (name, brand, description). The
@@ -172,10 +232,18 @@ export function allergensFor(product) {
 }
 
 // 'none' means no allergy. It is ignored when other allergies are listed too,
-// so ['none', 'chicken'] behaves exactly like ['chicken'].
+// so ['none', 'chicken'] behaves exactly like ['chicken']. An older stored name
+// ("wheat", "seafood") is folded onto today's value before the rules run, so the
+// pet is protected exactly as if the profile had been saved today.
 function activeAllergies(pet) {
   const list = Array.isArray(pet.allergies) ? pet.allergies : []
-  return [...new Set(list.filter((a) => a && a !== 'none'))]
+  // canonicalize first, so an older "None" (any capitalisation) is still read as
+  // "no allergy" and never becomes an unknown-allergy notice
+  const values = list
+    .filter((a) => typeof a === 'string' && a.trim())
+    .map((a) => canonicalAllergy(a))
+    .filter((a) => a && a !== 'none')
+  return [...new Set(values)]
 }
 
 function unavailableReason(product) {
@@ -184,6 +252,14 @@ function unavailableReason(product) {
   if (Number(product.stock_quantity || 0) <= 0) return 'Out of stock'
   if ((product.category || '').toLowerCase() === 'test') return 'Test listing'
   return null
+}
+
+// a bag of litter or a bottle of shampoo filed under "Cats" is not dinner. Pet
+// milk is the one food sold by the litre, so the volume clue skips it.
+function isNonFood(product) {
+  const name = product.prod_name || ''
+  if (NON_FOOD_RE.test(name)) return true
+  return LITRE_RE.test(name) && !/\bmilk\b/i.test(name)
 }
 
 function compareText(a, b) {
@@ -217,13 +293,19 @@ export function evaluate(pet, products) {
   const wanted = condition ? CONDITION_TAGS[condition] || [] : []
   const stage = KNOWN_STAGES.includes(pet.lifeStage) ? pet.lifeStage : null
 
-  for (const allergy of allergies) {
-    if (!ALLERGEN_TERMS[allergy]) {
-      result.notices.push({
-        code: 'unknown-allergy',
-        message: `"${allergy}" is not a known allergy category. Check every label carefully.`,
-      })
-    }
+  // an old or hand-edited profile can name an allergen we have no rule for, so
+  // the notice names it in words (never as the stored code) and one notice
+  // covers the whole list, keeping the notice code unique
+  const unknownAllergies = allergies.filter((allergy) => !ALLERGEN_TERMS[allergy])
+  if (unknownAllergies.length > 0) {
+    const names = unknownAllergies.map((allergy) => findLabel(ALLERGY_OPTIONS, allergy))
+    result.notices.push({
+      code: 'unknown-allergy',
+      message:
+        unknownAllergies.length === 1
+          ? `"${names[0]}" is not an allergy our list covers, so we could not screen products for it. Check every label carefully.`
+          : `${names.map((n) => `"${n}"`).join(', ')} are not allergies our list covers, so we could not screen products for them. Check every label carefully.`,
+    })
   }
 
   const eligible = []
@@ -235,6 +317,11 @@ export function evaluate(pet, products) {
     const unavailable = unavailableReason(product)
     if (unavailable) {
       exclude('unavailable', unavailable)
+      continue
+    }
+
+    if (isNonFood(product)) {
+      exclude('non-food', 'Not a food item')
       continue
     }
 
@@ -263,7 +350,9 @@ export function evaluate(pet, products) {
     }
 
     const matches = wanted.some((tag) => profile.healthTags.includes(tag))
-    const isTherapeutic = profile.healthTags.some((tag) => THERAPEUTIC_TAGS.has(tag))
+    const isTherapeutic =
+      profile.healthTags.some((tag) => THERAPEUTIC_TAGS.has(tag)) ||
+      VET_DIET_RE.test(product.prod_name || '')
     if (isTherapeutic && !matches) {
       exclude(
         'therapeutic',
@@ -285,7 +374,8 @@ export function evaluate(pet, products) {
       score += 3
       reasons.push(`Suitable for ${pet.lifeStage} ${pet.species}`)
       // products built for this stage beat products that merely suit it
-      if (profile.stageExplicit) score += 2
+      // (an "All Stages" food suits every stage but is built for none)
+      if (profile.stageSpecific) score += 2
     }
 
     if (condition) {

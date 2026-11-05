@@ -52,6 +52,82 @@ describe('deriveProfile', () => {
   })
 })
 
+describe('deriveProfile: reading the life stage from the name', () => {
+  const profile = (prod_name, category = 'dogs food') =>
+    deriveProfile({ ...baseProduct, prod_name, category })
+
+  it('reads the stage word wherever it sits in the name', () => {
+    expect(profile('Royal Canin Medium Puppy 4kg').lifeStage).toEqual(['puppy'])
+    expect(profile('Brit Care Junior Large Breed').lifeStage).toEqual(['puppy'])
+    expect(profile('Royal Canin Maxi Senior 15kg').lifeStage).toEqual(['senior'])
+    expect(profile('Royal Canin Mini Adult 8kg').lifeStage).toEqual(['adult'])
+    expect(profile('Sweet Kitten Salmon 10KG', 'cats food').lifeStage).toEqual(['kitten'])
+  })
+
+  it('treats All Stages and All Life Stages as every stage of the species', () => {
+    const dog = profile('Aozi All Stages Salmon/Tuna 20KG')
+    expect(dog.stageExplicit).toBe(true)
+    // suits every stage, but is not built for one, so it earns no stage bonus
+    expect(dog.stageSpecific).toBe(false)
+    expect(dog.lifeStage).toEqual(['puppy', 'adult', 'senior'])
+
+    const cat = profile('Kit Cat All Life Stages Chicken', 'cats food')
+    expect(cat.stageExplicit).toBe(true)
+    expect(cat.stageSpecific).toBe(false)
+    expect(cat.lifeStage).toEqual(['kitten', 'adult', 'senior'])
+  })
+
+  it('marks a name that names one stage as built for that stage', () => {
+    expect(profile('Royal Canin Medium Puppy 4kg').stageSpecific).toBe(true)
+    expect(profile('Whiskers Dry Dog Food').stageSpecific).toBe(false)
+  })
+
+  it('reads growth and mature as the stage they mean', () => {
+    expect(profile('Purina One Growth Formula').lifeStage).toEqual(['puppy'])
+    expect(profile('Growth Formula Cat Food', 'cats food').lifeStage).toEqual(['kitten'])
+    expect(profile('Iams ProActive Health Mature Adult').lifeStage).toEqual(['adult', 'senior'])
+  })
+
+  it('reads an age marker of 7 and above as senior', () => {
+    expect(profile("Hill's Science Diet Adult 7+ Chicken").lifeStage).toEqual(['adult', 'senior'])
+    expect(profile('Whiskas Senior 11+ Ocean Fish', 'cats food').lifeStage).toEqual(['senior'])
+    expect(profile('Whiskers Adult 3+ Chicken').lifeStage).toEqual(['adult'])
+  })
+
+  it('lists each stage only once', () => {
+    expect(profile('Junior Puppy Formula').lifeStage).toEqual(['puppy'])
+    expect(profile('Puppy Growth Formula').lifeStage).toEqual(['puppy'])
+  })
+
+  it('leaves a name with no stage words as every stage, not explicit', () => {
+    const p = profile('Royal Canin Urinary S/O Big Dog 2kg')
+    expect(p.stageExplicit).toBe(false)
+    expect(p.lifeStage).toEqual(['puppy', 'adult', 'senior'])
+  })
+
+  it('does not read a weight as an age marker', () => {
+    expect(profile('Royal Canin Maxi Adult 15KG').lifeStage).toEqual(['adult'])
+  })
+
+  it('shows an All Stages food to a puppy', () => {
+    const allStages = { ...baseProduct, prod_id: 'all', prod_name: 'Aozi All Stages Salmon/Tuna 20KG' }
+    const puppy = { species: 'dog', lifeStage: 'puppy', healthCondition: 'healthy', allergies: [] }
+    const r = evaluate(puppy, [allStages])
+    expect(r.best.map((p) => p.id)).toEqual(['all'])
+  })
+
+  it('ranks a puppy-only food above an All Stages food for a puppy', () => {
+    const products = [
+      { ...baseProduct, prod_id: 'all', prod_name: 'Aozi All Stages Salmon/Tuna 20KG' },
+      { ...baseProduct, prod_id: 'puppy', prod_name: 'Royal Canin Medium Puppy 4kg' },
+    ]
+    const puppy = { species: 'dog', lifeStage: 'puppy', healthCondition: 'healthy', allergies: [] }
+    const r = evaluate(puppy, products)
+    expect(r.best.map((p) => p.id)).toEqual(['puppy', 'all'])
+    expect(r.best[0].score).toBe(r.best[1].score + 2)
+  })
+})
+
 describe('recommendFromCatalog', () => {
   const dog = { species: 'dog', lifeStage: 'adult', healthCondition: 'healthy', allergies: [] }
 
@@ -94,7 +170,7 @@ describe('recommendFromCatalog', () => {
     )
     expect(matchedCondition).toBe(false)
     expect(items.length).toBe(1)
-    expect(items[0].reasons.join(' ')).toContain('General formula while condition-specific options are out of stock')
+    expect(items[0].reasons.join(' ')).toContain('General formula - no condition-specific match available')
   })
 
   it('ranks explicit-stage products above generic ones', () => {
@@ -189,6 +265,55 @@ describe('evaluate: allergy exclusion', () => {
     const product = { ...baseProduct, prod_id: 'gf', prod_name: 'Grain-Free Adult Dog Food' }
     expect(evaluate({ ...dogAdult, allergies: ['grain'] }, [product]).excluded).toEqual([])
   })
+
+  it('catches fish sold under a local or compound name', () => {
+    const rows = [
+      { ...baseProduct, prod_id: 'oceanfish', prod_name: 'Whiskas Adult Oceanfish 20KG' },
+      { ...baseProduct, prod_id: 'cod', prod_name: 'Fancy Feast Classic Cod 85G' },
+      { ...baseProduct, prod_id: 'crabstick', prod_name: 'Deboned Chicken And Crabstick 80G' },
+      { ...baseProduct, prod_id: 'bonito', prod_name: 'Cat Puree Bonito 15G' },
+      { ...baseProduct, prod_id: 'bangus', prod_name: 'Bangus Cat Food 400G' },
+    ]
+    const r = evaluate({ ...dogAdult, allergies: ['fish'] }, rows)
+    expect(r.best).toEqual([])
+    expect(r.other).toEqual([])
+    expect(r.excluded.map((e) => e.id).sort()).toEqual(
+      ['bangus', 'bonito', 'cod', 'crabstick', 'oceanfish']
+    )
+  })
+
+  it('catches the short ingredient spellings a Filipino store uses', () => {
+    const r = evaluate({ ...dogAdult, allergies: ['chicken', 'beef'] }, [
+      { ...baseProduct, prod_id: 'ckn', prod_name: 'Pedigree Pouch Adult CKN N LVR Chunks 130G' },
+      { ...baseProduct, prod_id: 'bf', prod_name: 'Pedigree Pouch Adult BF Chunks In Gravy 130G' },
+      { ...baseProduct, prod_id: 'veal', prod_name: 'Special Dog Can Pate W Veal N Vegetables 400G' },
+    ])
+    expect(r.best).toEqual([])
+    expect(r.excluded.map((e) => e.id).sort()).toEqual(['bf', 'ckn', 'veal'])
+  })
+
+  it('does not treat "grain-free" or a brand name as an allergen', () => {
+    const rows = [
+      { ...baseProduct, prod_id: 'gf', prod_name: 'Grain-Free Adult Dog Food' },
+      { ...baseProduct, prod_id: 'brand', prod_name: 'Wheaty Paws Adult Food' },
+    ]
+    const r = evaluate({ ...dogAdult, allergies: ['grain'] }, rows)
+    // "wheat" inside "Wheaty" is not a word of its own, and "grain-free" is the
+    // absence of grain, so neither is the allergen the pet avoids
+    expect(r.excluded.filter((e) => e.rule === 'allergen')).toEqual([])
+    expect(ids(r.best).sort()).toEqual(['brand', 'gf'])
+  })
+
+  it('screens an older stored name the same way as today\'s name', () => {
+    const wheat = evaluate({ ...dogAdult, allergies: ['wheat'] }, sample)
+    const grain = evaluate({ ...dogAdult, allergies: ['grain'] }, sample)
+    expect(wheat.excluded).toEqual(grain.excluded)
+    expect(ids(wheat.best)).toEqual(ids(grain.best))
+
+    const seafood = evaluate({ ...dogAdult, allergies: ['seafood'] }, sample)
+    expect(seafood.excluded.map((e) => e.id)).toContain('salmon')
+    expect(seafood.notices.map((n) => n.code)).not.toContain('unknown-allergy')
+  })
 })
 
 describe('evaluate: therapeutic gating', () => {
@@ -198,6 +323,26 @@ describe('evaluate: therapeutic gating', () => {
     expect(r.excluded.filter((e) => e.rule === 'therapeutic').map((e) => e.id)).toEqual(
       expect.arrayContaining(['renal', 'renal-uro', 'diabetic', 'dental'])
     )
+  })
+
+  it('hides a vet diet whose name has no condition word', () => {
+    const rows = [
+      { ...baseProduct, prod_id: 'vd', prod_name: 'Brit GF VD Dog Can Hypoallergenic 400G' },
+      { ...baseProduct, prod_id: 'vt', prod_name: 'Brit GF VT Dog Cat Can Recovery 400G' },
+      { ...baseProduct, prod_id: 'rx', prod_name: 'Prescription Adult Dog Food' },
+    ]
+    const r = evaluate(dogAdult, rows)
+    expect(r.best).toEqual([])
+    expect(r.other).toEqual([])
+    expect(r.excluded.map((e) => e.id).sort()).toEqual(['rx', 'vd', 'vt'])
+    expect(r.excluded.every((e) => e.rule === 'therapeutic')).toBe(true)
+  })
+
+  it('still shows a vet diet to the pet whose condition it matches', () => {
+    const r = evaluate({ ...dogAdult, healthCondition: 'kidney' }, [
+      { ...baseProduct, prod_id: 'vd-renal', prod_name: 'Brit GF VD Dog Can Renal 400G' },
+    ])
+    expect(ids(r.best)).toEqual(['vd-renal'])
   })
 
   it('shows only the matching condition food as best for a kidney dog, and hides diabetic foods', () => {
@@ -220,9 +365,33 @@ describe('evaluate: therapeutic gating', () => {
     const r = evaluate({ species: 'fish', lifeStage: 'adult', healthCondition: 'diabetes', allergies: [] }, sample)
     expect(r.best).toEqual([])
     expect(ids(r.other)).toEqual(['fish-flake'])
-    expect(r.other[0].reasons).toContain('General formula while condition-specific options are out of stock')
+    expect(r.other[0].reasons).toContain('General formula - no condition-specific match available')
     expect(r.notices.map((n) => n.code)).toContain('no-condition-match')
     expect(r.matchedCondition).toBe(false)
+  })
+})
+
+describe('evaluate: rows that are not food', () => {
+  it('refuses cat litter and shampoo filed under a pet category', () => {
+    const rows = [
+      { ...baseProduct, prod_id: 'litter', prod_name: 'Top Cat Bentonite 10L Coffee', category: 'cats food' },
+      { ...baseProduct, prod_id: 'litter2', prod_name: 'Neo Clean Cat Litter Apple 4kg', category: 'cats food' },
+      { ...baseProduct, prod_id: 'shampoo', prod_name: 'Puppy Safe 2-in-1 Pet Shampoo 1L', category: 'dogs food' },
+      { ...baseProduct, prod_id: 'toothbrush', prod_name: 'Dent Fresh 360 Toothbrush 150G', category: 'dogs treats' },
+      { ...baseProduct, prod_id: 'food', prod_name: 'Adult Chicken Dog Food 1kg', category: 'dogs food' },
+    ]
+    const r = evaluate(dogAdult, rows)
+    expect(ids(r.best)).toEqual(['food'])
+    expect(r.excluded.filter((e) => e.rule === 'non-food').map((e) => e.id).sort()).toEqual(
+      ['litter', 'litter2', 'shampoo', 'toothbrush']
+    )
+  })
+
+  it('keeps a real 1L pet milk, which is food', () => {
+    const rows = [{ ...baseProduct, prod_id: 'milk', prod_name: 'Cosi Milk 1L', category: 'pets milk' }]
+    const r = evaluate(dogAdult, rows)
+    expect(r.excluded.filter((e) => e.rule === 'non-food')).toEqual([])
+    expect(ids(r.best)).toEqual(['milk'])
   })
 })
 
@@ -309,5 +478,17 @@ describe('evaluate: unknown allergy values', () => {
   it('shows a notice for an allergy that is not a known category', () => {
     const r = evaluate({ ...dogAdult, allergies: ['mystery'] }, sample)
     expect(r.notices.map((n) => n.code)).toContain('unknown-allergy')
+  })
+
+  it('never quotes the stored code, only a readable name', () => {
+    const r = evaluate({ ...dogAdult, allergies: ['weird-stuff'] }, sample)
+    const notice = r.notices.find((n) => n.code === 'unknown-allergy')
+    expect(notice.message).toContain('Weird stuff')
+    expect(notice.message).not.toContain('weird-stuff')
+  })
+
+  it('gives one notice for several unknown values, so keys stay unique', () => {
+    const r = evaluate({ ...dogAdult, allergies: ['mystery', 'weird-stuff'] }, sample)
+    expect(r.notices.filter((n) => n.code === 'unknown-allergy')).toHaveLength(1)
   })
 })

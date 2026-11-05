@@ -131,4 +131,22 @@ describe('CartRecommendations', () => {
     expect(container.querySelector('section')).toBeNull()
     expect(apiState.calls).toBe(0)
   })
+
+  it('uses a visitor\'s pet for the heading without a sign-in', async () => {
+    apiState.result = { items: [row('bbbbbbbb-0000-4000-8000-000000000002', 'Fresh Pick')] }
+    shopState.cartItems = [{ id: CART_ID, name: 'In Cart', price: 150, quantity: 1, collection: 'dogs - dry', brand: 'Aozi' }]
+    // pets live in this browser, so a signed-out visitor still has one
+    petsState.isAuthenticated = false
+    petsState.getActivePet.mockImplementation(() => ({
+      id: 'pet-1',
+      name: 'Mochi',
+      species: 'dog',
+      lifeStage: 'adult',
+      healthCondition: 'healthy',
+      allergies: ['none'],
+    }))
+    const container = await render(<CartRecommendations />)
+    expect(container.textContent).toContain('Recommended for Mochi')
+    expect(container.textContent).not.toContain('You may also like')
+  })
 })

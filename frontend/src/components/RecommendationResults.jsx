@@ -1,11 +1,17 @@
 import { useMemo, useEffect, useRef, useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useShop } from '../context/ShopContext'
 import { usePets } from '../context/PetsContext'
 import { evaluate } from '../lib/recommendEngine'
 import { logTopRecommendation } from '../lib/recommendationLogger'
 import { loadCatalog, resetCatalogCache } from '../lib/catalogCache'
-import { findLabel, HEALTH_CONDITION_OPTIONS } from '../data/petFormOptions'
+import { getStockStatus, useLowStockThreshold } from '../lib/productDisplay'
+import {
+  findLabel,
+  HEALTH_CONDITION_OPTIONS,
+  SPECIES_OPTIONS,
+  getLifeStageOptions,
+} from '../data/petFormOptions'
 import ProductQuickViewDialog from './ProductQuickViewDialog.jsx'
 
 const PAGE_SIZES = [8, 16, 24, 36]
@@ -47,6 +53,25 @@ function toDialogProduct(item) {
   }
 }
 
+// prices keep the short peso mark so the card footer fits a phone, but always
+// carry thousands separators and never a dangling decimal ("₱1,200" but
+// "₱1,200.50"), so a shopper never misreads the amount
+function pesoLabel(price) {
+  const n = Number(price)
+  if (!Number.isFinite(n)) return null
+  const decimals = Number.isInteger(n) ? 0 : 2
+  return `₱${n.toLocaleString('en-US', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })}`
+}
+
+// every card carries a short vet note. A pet with a condition or an allergy gets
+// the stronger wording, because changing its food is a medical decision
+function vetNoteFor(atRisk) {
+  return atRisk ? 'Ask your vet before switching.' : 'Ask your vet if unsure about switching.'
+}
+
 // the cart only needs these fields. Works for a recommendation item and for the
 // dialog copy of it (the dialog copy spreads the item, so the same names exist)
 function toCartItem(p) {
@@ -60,38 +85,53 @@ function toCartItem(p) {
   }
 }
 
-function ProductCard({ product, topMatch, onOpen, onAddToCart }) {
+function ProductCard({ product, topMatch, lowStockThreshold, vetNote, onOpen, onAddToCart }) {
+  const { stock, hasStockInfo, inStock, lowStock } = getStockStatus(product.stock, lowStockThreshold)
+  const priceLabel = pesoLabel(product.price)
+  const stockText = !hasStockInfo
+    ? null
+    : !inStock
+      ? 'Out of stock'
+      : lowStock
+        ? `Only ${stock} left in stock`
+        : 'In stock'
+  const stockClass = !inStock
+    ? 'font-semibold text-red-600 dark:text-red-400'
+    : lowStock
+      ? 'font-semibold text-amber-600 dark:text-amber-400'
+      : 'text-emerald-700 dark:text-emerald-400'
+
   return (
     <article
       onClick={() => onOpen(product)}
-      className="group bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col hover:shadow-md transition-shadow cursor-pointer dark:bg-gray-800 dark:border-gray-700"
+      className="group flex cursor-pointer flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-800"
     >
-      <div className="relative h-36 sm:h-40 bg-gray-50 overflow-hidden dark:bg-gray-700/50">
+      <div className="relative h-36 overflow-hidden bg-gray-50 sm:h-40 dark:bg-gray-700/50">
         {product.image && (
           <img
             src={product.image}
             alt={product.name}
             loading="lazy"
-            className="w-full h-full object-contain p-2 group-hover:scale-105 transition"
+            className="h-full w-full object-contain p-2 transition group-hover:scale-105"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
             }}
           />
         )}
         {topMatch && (
-          <span className="absolute top-2 left-2 bg-[#dbb727] text-[#0b2e59] text-[10px] font-bold px-2 py-0.5 rounded-full">
+          <span className="absolute left-2 top-2 rounded-full bg-[#dbb727] px-2 py-0.5 text-[10px] font-bold text-[#0b2e59]">
             TOP MATCH
           </span>
         )}
       </div>
 
-      <div className="p-3 flex-1 flex flex-col">
-        <div className="text-[10px] text-gray-500 uppercase tracking-wide truncate dark:text-gray-400">{product.brand}</div>
-        <h4 className="font-semibold text-sm text-gray-900 mt-0.5 mb-1 line-clamp-2 dark:text-white">
+      <div className="flex flex-1 flex-col p-3">
+        <div className="truncate text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">{product.brand}</div>
+        <h4 className="mb-1 mt-0.5 text-sm font-semibold text-gray-900 dark:text-white">
           {/* a real button so keyboard users can open the quick view too */}
           <button
             type="button"
-            className="text-left hover:text-[#0b2e59] hover:underline dark:hover:text-blue-400"
+            className="line-clamp-2 text-left hover:text-[#0b2e59] hover:underline dark:hover:text-blue-400"
           >
             {product.name}
           </button>
@@ -101,7 +141,7 @@ function ProductCard({ product, topMatch, onOpen, onAddToCart }) {
           <ul className="mb-1.5 space-y-0.5">
             {product.reasons.map((reason, i) => (
               <li key={i} className="flex items-start gap-1 text-[11px] text-emerald-700 dark:text-emerald-400">
-                <span>&#10003;</span>
+                <span aria-hidden="true">&#10003;</span>
                 <span>{reason}</span>
               </li>
             ))}
@@ -116,15 +156,35 @@ function ProductCard({ product, topMatch, onOpen, onAddToCart }) {
           </ul>
         )}
 
-        <div className="mt-auto flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-700">
-          <span className="font-bold text-sm text-[#0b2e59] dark:text-blue-400">&#8369;{product.price.toLocaleString()}</span>
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onAddToCart(product, 1) }}
-            className="px-2.5 py-1.5 rounded-lg bg-[#dbb727] hover:bg-[#c9a820] text-[#0b2e59] text-xs font-semibold transition-colors"
-          >
-            Add to Cart
-          </button>
+        <div className="mt-auto space-y-1.5 border-t border-gray-100 pt-2 dark:border-gray-700">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-bold text-[#0b2e59] dark:text-blue-400">
+              {priceLabel || 'Price not set'}
+            </span>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onAddToCart(product, 1) }}
+              aria-label={`Add ${product.name} to cart`}
+              className="rounded-lg bg-[#dbb727] px-2.5 py-1.5 text-xs font-semibold text-[#0b2e59] transition-colors hover:bg-[#c9a820]"
+            >
+              Add to Cart
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between gap-2 text-[11px]">
+            <span className={stockClass}>
+              {stockText}
+            </span>
+            <Link
+              to={`/products/${product.prod_id}`}
+              onClick={(e) => e.stopPropagation()}
+              className="font-semibold text-[#0b2e59] hover:underline dark:text-blue-400"
+            >
+              View details
+            </Link>
+          </div>
+
+          <p className="text-[10px] text-gray-500 dark:text-gray-400">{vetNote}</p>
         </div>
       </div>
     </article>
@@ -135,6 +195,7 @@ function RecommendationResults({ pet }) {
   const { addToCart } = useShop()
   const { isAuthenticated } = usePets()
   const navigate = useNavigate()
+  const lowStockThreshold = useLowStockThreshold()
   const [catalog, setCatalog] = useState(null)
   const [loadError, setLoadError] = useState(false)
   const [attempt, setAttempt] = useState(0)
@@ -244,12 +305,12 @@ function RecommendationResults({ pet }) {
 
   if (catalog === null) {
     return (
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4" aria-hidden="true">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4" aria-hidden="true">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="bg-white rounded-xl border border-gray-200 dark:bg-gray-800 dark:border-gray-700 p-3 space-y-3">
-            <div className="h-36 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse" />
-            <div className="h-4 w-2/3 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
-            <div className="h-3 w-1/2 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+          <div key={i} className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+            <div className="h-36 animate-pulse rounded-lg bg-gray-200 dark:bg-gray-700" />
+            <div className="h-4 w-2/3 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+            <div className="h-3 w-1/2 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
           </div>
         ))}
         <span role="status" className="sr-only">Loading recommendations...</span>
@@ -261,6 +322,16 @@ function RecommendationResults({ pet }) {
   const hasCondition = Boolean(pet.healthCondition) && pet.healthCondition !== 'healthy'
   const conditionText = healthLabel.toLowerCase()
   const hiddenForAllergy = excluded.filter((e) => e.rule === 'allergen').length
+  const activeAllergies = (pet.allergies || []).filter((a) => a && a !== 'none')
+  // a condition or an allergy makes a food switch a medical decision, so the
+  // note on every card is worded more strongly for those pets
+  const vetNote = vetNoteFor(hasCondition || activeAllergies.length > 0)
+  const speciesText = findLabel(SPECIES_OPTIONS, pet.species) || 'pet'
+  // a stage saved under a different species (dog "puppy" after switching to cat)
+  // is left out rather than printed as nonsense
+  const stageValue = getLifeStageOptions(pet.species).some((opt) => opt.value === pet.lifeStage)
+    ? pet.lifeStage
+    : null
 
   const noticeList = notices.map((notice) => (
     <div key={notice.code} className={`border rounded-lg p-4 text-xs ${noticeClass(notice.code)}`}>
@@ -296,13 +367,18 @@ function RecommendationResults({ pet }) {
 
   return (
     <div className="space-y-4">
-      <div className="bg-gradient-to-r from-[#0b2e59] to-[#134680] text-white rounded-xl p-5">
-        <h2 className="text-lg sm:text-xl font-semibold">
+      <div className="rounded-xl bg-gradient-to-r from-[#0b2e59] to-[#134680] p-4 text-white sm:p-5">
+        <h2 className="text-lg font-semibold sm:text-xl">
           Recommended for {pet.name}
         </h2>
-        <p className="text-sm text-white/80 mt-1">
+        <p className="mt-1 text-sm text-white/80">
           {recommendations.length} product{recommendations.length === 1 ? '' : 's'} for a{' '}
-          <span className="font-medium">{pet.lifeStage} {pet.species}</span>
+          {speciesText.toLowerCase()}
+          {stageValue && (
+            <>
+              {' '}in the <span className="font-medium">{stageValue}</span> stage
+            </>
+          )}
           {hasCondition && (
             <>
               {' '}with <span className="font-medium">{conditionText}</span>
@@ -341,12 +417,14 @@ function RecommendationResults({ pet }) {
             <h3 id="best-matches-heading" className="text-base font-semibold text-gray-900 dark:text-white">
               {hasCondition ? `Best matches for ${conditionText}` : 'Recommended foods'}
             </h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
               {run.entries.map(({ item, index }) => (
                 <ProductCard
                   key={item.prod_id}
                   product={item}
                   topMatch={index === 0}
+                  lowStockThreshold={lowStockThreshold}
+                  vetNote={vetNote}
                   onOpen={setQuickItem}
                   onAddToCart={addItem}
                 />
@@ -359,14 +437,20 @@ function RecommendationResults({ pet }) {
               Other options
             </h3>
             <p className="text-xs text-gray-600 dark:text-gray-400">
-              These are general foods. None is made for {conditionText}. Ask your vet before you switch to one.
+              {hasCondition
+                ? `These are general foods. No food made for ${conditionText} is available right now.`
+                : 'These are general foods rather than a match for your pet\'s profile.'}
             </p>
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-              {run.entries.map(({ item, index }) => (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+              {run.entries.map(({ item }) => (
                 <ProductCard
                   key={item.prod_id}
                   product={item}
-                  topMatch={index === 0}
+                  // a general food is never the top match: no formula here is
+                  // built for this pet's condition
+                  topMatch={false}
+                  lowStockThreshold={lowStockThreshold}
+                  vetNote={vetNote}
                   onOpen={setQuickItem}
                   onAddToCart={addItem}
                 />
@@ -377,28 +461,28 @@ function RecommendationResults({ pet }) {
       ))}
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-1 pt-4 border-t border-gray-100 dark:border-gray-800">
+        <div className="flex flex-wrap items-center justify-center gap-1 border-t border-gray-100 pt-4 dark:border-gray-800">
           <button
             type="button"
             disabled={safePage <= 1}
             onClick={() => goToPage(Math.max(1, safePage - 1))}
-            className="h-9 px-3 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition"
+            className="h-9 rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-30 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
           >
             Prev
           </button>
           {pageNumbersFor(safePage, totalPages).map((p, i) =>
             p === '...' ? (
-              <span key={`dots-${i}`} className="px-1.5 text-gray-300 dark:text-gray-600 text-xs">...</span>
+              <span key={`dots-${i}`} className="px-1.5 text-xs text-gray-300 dark:text-gray-600">...</span>
             ) : (
               <button
                 key={p}
                 type="button"
                 onClick={() => goToPage(p)}
                 aria-current={p === safePage ? 'page' : undefined}
-                className={`h-9 min-w-[36px] px-2 rounded-lg text-xs font-semibold transition ${
+                className={`h-9 min-w-[36px] rounded-lg px-2 text-xs font-semibold transition ${
                   p === safePage
                     ? 'bg-[#0b2e59] text-white shadow-sm'
-                    : 'border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                    : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700'
                 }`}
               >
                 {p}
@@ -409,7 +493,7 @@ function RecommendationResults({ pet }) {
             type="button"
             disabled={safePage >= totalPages}
             onClick={() => goToPage(Math.min(totalPages, safePage + 1))}
-            className="h-9 px-3 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition"
+            className="h-9 rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-30 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
           >
             Next
           </button>

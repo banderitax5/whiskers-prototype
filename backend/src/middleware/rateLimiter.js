@@ -110,6 +110,17 @@ export const cartLimiter = rateLimit({
   keyGenerator: clientKey,
 })
 
+// 60 pet-profile writes per minute per account. Saving a profile is a handful
+// of clicks, so this only stops scripted abuse.
+export const petLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: { error: 'Too many pet profile changes. Please slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+})
+
 // 600 catalog fetches per minute per IP (public: list + categories + brands).
 // Anonymous traffic can only be keyed by IP; 60/min throttled a normal NAT
 // once ~10 shoppers browsed at the same time.

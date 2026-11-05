@@ -12,7 +12,7 @@ import ProductThumb from './ProductThumb'
 // fetch failure or empty result renders nothing and never blocks the cart.
 export default function CartRecommendations() {
   const { cartItems, addToCart } = useShop()
-  const { getActivePet, isAuthenticated } = usePets()
+  const { getActivePet } = usePets()
   const [rows, setRows] = useState(null)
 
   const hasItems = cartItems.length > 0
@@ -29,7 +29,8 @@ export default function CartRecommendations() {
     return () => { alive = false }
   }, [hasItems])
 
-  const pet = isAuthenticated ? getActivePet() : null
+  // a visitor's pet counts too: profiles live in this browser for guests as well
+  const pet = getActivePet()
   const recs = useMemo(
     () => (rows ? pickCartRecommendations(rows, cartItems, pet) : []),
     [rows, cartItems, pet],
