@@ -18,3 +18,15 @@ export function otpError(value) {
   if (!isOtpComplete(value)) return 'The code must be exactly 6 digits.'
   return ''
 }
+
+// Supabase returns the TOTP QR as raw <svg> markup in this project (not a data
+// URI), which an <img src> cannot display - the browser shows a broken image
+// with only the alt text. Wrap it in a data URI; anything already usable (a
+// data: URI or a plain URL) is passed through untouched.
+export function qrImageSrc(value) {
+  const raw = typeof value === 'string' ? value.trim() : ''
+  if (!raw) return ''
+  if (/^data:/i.test(raw)) return raw
+  if (raw.startsWith('<')) return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(raw)}`
+  return raw
+}

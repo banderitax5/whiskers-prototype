@@ -158,3 +158,27 @@ test('list query: archived defaults to false, accepts true/all, rejects junk', (
   assert.equal(parseProductListQuery({ archived: 'all' }).archived, 'all')
   assert.equal(parseProductListQuery({ archived: 'banana' }).archived, 'false')
 })
+
+test('expiry: accepts YYYY-MM-DD on create, empty means no expiry', () => {
+  const made = sanitizeProductCreate({ prod_name: 'Expiry Test', category: 'Dogs', price: 100, expires_at: '2027-03-31' })
+  assert.equal(made.error, undefined)
+  assert.equal(made.value.expires_at, '2027-03-31')
+
+  // an untouched field must not be sent at all, so a create still works on a
+  // database that has not run the expiry migration yet
+  const plain = sanitizeProductCreate({ prod_name: 'No Expiry', category: 'Dogs', price: 100 })
+  assert.equal('expires_at' in plain.value, false)
+
+  assert.equal(sanitizeProductPatch({ expires_at: '' }).updates.expires_at, null)
+  assert.equal(sanitizeProductPatch({ expires_at: null }).updates.expires_at, null)
+  assert.equal(sanitizeProductPatch({ expires_at: '2026-12-01' }).updates.expires_at, '2026-12-01')
+})
+
+test('expiry: rejects impossible dates, junk and out-of-range years', () => {
+  assert.ok(sanitizeProductPatch({ expires_at: '2026-02-30' }).error)
+  assert.ok(sanitizeProductPatch({ expires_at: '31/12/2026' }).error)
+  assert.ok(sanitizeProductPatch({ expires_at: 'soon' }).error)
+  assert.ok(sanitizeProductPatch({ expires_at: 20261231 }).error)
+  assert.ok(sanitizeProductPatch({ expires_at: '1999-12-31' }).error)
+  assert.ok(sanitizeProductPatch({ expires_at: '2101-01-01' }).error)
+})

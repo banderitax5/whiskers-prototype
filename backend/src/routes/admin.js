@@ -607,9 +607,9 @@ router.get('/products', async (req, res) => {
     let columns = [
       'prod_id', 'created_at', 'prod_name', 'category', 'price', 'stock_quantity',
       'brand', 'image_url', 'is_active', 'description', 'details',
-      'archived_at', 'cost_price', 'supplier',
+      'archived_at', 'cost_price', 'supplier', 'expires_at',
     ]
-    const M2_COLUMNS = ['archived_at', 'cost_price', 'supplier']
+    const M2_COLUMNS = ['archived_at', 'cost_price', 'supplier', 'expires_at']
     let archivedFilter = archived // 'true' | 'false' | 'all'
 
     const build = () => {
@@ -847,7 +847,7 @@ router.post('/products', requireAdmin, async (req, res) => {
       .single()
     if (error) {
       if (isSchemaPendingError(error)) {
-        return res.status(503).json({ error: 'Cost/supplier fields require a pending database migration (M2).', code: 'MIGRATION_REQUIRED' })
+        return res.status(503).json({ error: 'Saving this product is waiting on a database update. Please ask the site owner to finish the setup.', code: 'MIGRATION_REQUIRED' })
       }
       throw error
     }
@@ -932,7 +932,7 @@ router.patch('/products/:id', async (req, res) => {
         return res.status(404).json({ error: 'Product not found' })
       }
       if (isSchemaPendingError(error)) {
-        return res.status(503).json({ error: 'Cost/supplier/archived fields require a pending database migration (M2).', code: 'MIGRATION_REQUIRED' })
+        return res.status(503).json({ error: 'Saving this product is waiting on a database update. Please ask the site owner to finish the setup.', code: 'MIGRATION_REQUIRED' })
       }
       throw error
     }

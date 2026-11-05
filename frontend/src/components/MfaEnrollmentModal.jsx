@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
-import { normalizeOtp, otpError } from '../lib/mfa.js'
+import { normalizeOtp, otpError, qrImageSrc } from '../lib/mfa.js'
+
 
 function MfaEnrollmentModal({ enrollment, onClose, onVerify, saving, error }) {
   const [verifyCode, setVerifyCode] = useState('')
   const [localError, setLocalError] = useState('')
+  const [qrBroken, setQrBroken] = useState(false)
   const codeRef = useRef(null)
   const dialogRef = useRef(null)
 
   useEffect(() => {
     setVerifyCode('')
     setLocalError('')
+    setQrBroken(false)
     if (enrollment) {
       const t = setTimeout(() => codeRef.current?.focus(), 60)
       return () => clearTimeout(t)
@@ -99,17 +102,18 @@ function MfaEnrollmentModal({ enrollment, onClose, onVerify, saving, error }) {
             Scan the QR code with an authenticator app such as Google Authenticator, Authy, or 1Password.
           </p>
 
-          {enrollment.qrCode ? (
+          {enrollment.qrCode && !qrBroken ? (
             <div className="flex justify-center mb-4">
               <img
-                src={enrollment.qrCode}
+                src={qrImageSrc(enrollment.qrCode)}
                 alt="QR code for authenticator app"
+                onError={() => setQrBroken(true)}
                 className="w-48 h-48 bg-white p-2 rounded-lg border"
               />
             </div>
           ) : (
             <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-center text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
-              The QR code could not be generated. Add the secret key below to your app manually.
+              We could not show the QR code. Add the secret key below to your app manually.
             </p>
           )}
 

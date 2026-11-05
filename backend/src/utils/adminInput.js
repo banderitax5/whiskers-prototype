@@ -27,6 +27,31 @@ function sanitizeOptionalMoney(value, label) {
   return { value: num }
 }
 
+// validates an optional calendar date (expires_at) as YYYY-MM-DD. Empty values
+// stay null (no expiry tracked); anything unparseable is rejected so a typo
+// never becomes a silently wrong shelf life.
+function sanitizeOptionalDate(value, label) {
+  if (value === undefined || value === null || value === '') return { value: null }
+  if (typeof value !== 'string') return { error: `${label} must be a date` }
+  const text = value.trim()
+  if (!text) return { value: null }
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text)
+  if (!m) return { error: `Enter ${label.toLowerCase()} as a date (YYYY-MM-DD).` }
+  const [, y, mo, d] = m
+  const date = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)))
+  if (
+    date.getUTCFullYear() !== Number(y)
+    || date.getUTCMonth() !== Number(mo) - 1
+    || date.getUTCDate() !== Number(d)
+  ) {
+    return { error: `Enter a real ${label.toLowerCase()} (that day does not exist).` }
+  }
+  if (Number(y) < 2000 || Number(y) > 2100) {
+    return { error: `Enter ${label.toLowerCase()} between 2000 and 2100.` }
+  }
+  return { value: text }
+}
+
 // validates a product payload for create. returns { error } or { value }
 // where value is the exact column map to insert.
 export function sanitizeProductCreate(body) {
@@ -62,6 +87,9 @@ export function sanitizeProductCreate(body) {
   const supplier = asTrimmedString(body.supplier)
   if (supplier && supplier.length > MAX_SUPPLIER) return { error: `Supplier must be ${MAX_SUPPLIER} characters or fewer` }
 
+  const expiry = sanitizeOptionalDate(body.expires_at, 'Expiry date')
+  if (expiry.error) return expiry
+
   if (body.description != null && typeof body.description !== 'string') {
     return { error: 'Description must be text' }
   }
@@ -85,13 +113,16 @@ export function sanitizeProductCreate(body) {
     value.cost_price = cost.value
   }
   if (supplier) value.supplier = supplier
+  // only sent when provided, so a create still works before the expiry column
+  // exists (the route turns a missing column into a clear 503)
+  if (expiry.value) value.expires_at = expiry.value
   return { value }
 }
 
 // validates a partial product update. returns { error } or { updates }.
 // `details` is passed through untouched here; the route runs sanitizeDetails.
 export function sanitizeProductPatch(body) {
-  const allowed = ['prod_name', 'category', 'brand', 'price', 'stock_quantity', 'image_url', 'is_active', 'description', 'details', 'cost_price', 'supplier']
+  const allowed = ['prod_name', 'category', 'brand', 'price', 'stock_quantity', 'image_url', 'is_active', 'description', 'details', 'cost_price', 'supplier', 'expires_at']
   const updates = {}
   for (const key of allowed) {
     if (body?.[key] !== undefined) updates[key] = body[key]
@@ -167,6 +198,11 @@ export function sanitizeProductPatch(body) {
       else if (supplier.length > MAX_SUPPLIER) return { error: `Supplier must be ${MAX_SUPPLIER} characters or fewer` }
       else updates.supplier = supplier
     }
+  }
+  if ('expires_at' in updates) {
+    const expiry = sanitizeOptionalDate(updates.expires_at, 'Expiry date')
+    if (expiry.error) return expiry
+    updates.expires_at = expiry.value // null clears the date
   }
   return { updates }
 }

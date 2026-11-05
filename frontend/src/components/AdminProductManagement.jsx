@@ -132,7 +132,7 @@ const AdminProductManagement = () => {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [editingOriginal, setEditingOriginal] = useState(null);
-  const [formData, setFormData] = useState({ prod_name: '', category: '', brand: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: sectionsForEdit(null), cost_price: '', supplier: '' });
+  const [formData, setFormData] = useState({ prod_name: '', category: '', brand: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: sectionsForEdit(null), cost_price: '', supplier: '', expires_at: '' });
   const [sortKey, setSortKey] = useState('prod_name');
   const [sortDir, setSortDir] = useState('asc');
   const [priceMin, setPriceMin] = useState('');
@@ -148,7 +148,7 @@ const AdminProductManagement = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [mobileEditItem, setMobileEditItem] = useState(null);
-  const [mobileForm, setMobileForm] = useState({ prod_name: '', category: '', brand: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: sectionsForEdit(null), cost_price: '', supplier: '' });
+  const [mobileForm, setMobileForm] = useState({ prod_name: '', category: '', brand: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: sectionsForEdit(null), cost_price: '', supplier: '', expires_at: '' });
   const [mobileUploading, setMobileUploading] = useState(false);
   const [mobileImageError, setMobileImageError] = useState('');
   const [aiBusy, setAiBusy] = useState(false);
@@ -304,6 +304,7 @@ const AdminProductManagement = () => {
       details: sectionsForEdit(item.details),
       cost_price: item.cost_price != null ? String(item.cost_price) : '',
       supplier: item.supplier || '',
+      expires_at: item.expires_at ? String(item.expires_at).slice(0, 10) : '',
     });
     setShowForm(true);
   }
@@ -335,7 +336,7 @@ const AdminProductManagement = () => {
     setLabelFacts('');
     setEditing(null);
     setEditingOriginal(null);
-    setFormData({ prod_name: '', category: '', brand: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: sectionsForEdit(null), cost_price: '', supplier: '' });
+    setFormData({ prod_name: '', category: '', brand: '', price: '', stock_quantity: '0', is_active: true, image_url: '', description: '', details: sectionsForEdit(null), cost_price: '', supplier: '', expires_at: '' });
   }
 
   function closeForm() {
@@ -428,6 +429,7 @@ const AdminProductManagement = () => {
         is_active: formData.is_active,
         image_url: formData.image_url,
         description: formData.description || null,
+        expires_at: formData.expires_at || null,
         details: sectionsToDetails(formData.details),
         ...costPatchFields(formData, editingOriginal, showCosts),
       };
@@ -442,6 +444,7 @@ const AdminProductManagement = () => {
           is_active: payload.is_active,
           image_url: payload.image_url,
           description: payload.description,
+          expires_at: payload.expires_at,
           details: payload.details,
           ...(showCosts && payload.cost_price !== undefined ? { cost_price: payload.cost_price } : {}),
           ...(showCosts && payload.supplier !== undefined ? { supplier: payload.supplier } : {}),
@@ -668,6 +671,7 @@ const AdminProductManagement = () => {
       details: sectionsForEdit(item.details),
       cost_price: item.cost_price != null ? String(item.cost_price) : '',
       supplier: item.supplier || '',
+      expires_at: item.expires_at ? String(item.expires_at).slice(0, 10) : '',
     });
   }
 
@@ -740,6 +744,7 @@ const AdminProductManagement = () => {
         is_active: mobileForm.is_active,
         image_url: mobileForm.image_url,
         description: mobileForm.description || null,
+        expires_at: mobileForm.expires_at || null,
         details: sectionsToDetails(mobileForm.details),
         ...costPatchFields(mobileForm, mobileEditItem, showCosts),
       };
@@ -753,6 +758,7 @@ const AdminProductManagement = () => {
         is_active: body.is_active,
         image_url: body.image_url,
         description: body.description,
+        expires_at: body.expires_at,
         details: body.details,
       });
       try {
@@ -816,6 +822,14 @@ const AdminProductManagement = () => {
           va = Number(a.stock_quantity || 0);
           vb = Number(b.stock_quantity || 0);
           break;
+        case 'expires_at':
+          // rows without an expiry always sort last
+          if (!a.expires_at && !b.expires_at) return 0;
+          if (!a.expires_at) return 1;
+          if (!b.expires_at) return -1;
+          va = String(a.expires_at).slice(0, 10);
+          vb = String(b.expires_at).slice(0, 10);
+          break;
         case 'prod_name':
           va = (a.prod_name || '').toLowerCase();
           vb = (b.prod_name || '').toLowerCase();
@@ -869,6 +883,19 @@ const AdminProductManagement = () => {
   }
 
   // ARCHIVED beats HIDDEN beats OUT beats ACTIVE — the badge rules
+  // expiry tone: red once the date has passed, amber inside 30 days, quiet
+  // otherwise. Compared in whole days so "today" is never counted as expired.
+  function expiryInfo(value) {
+    if (!value) return null
+    const day = String(value).slice(0, 10)
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+    const days = Math.round((Date.parse(`${day}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86400000)
+    const label = new Date(`${day}T00:00:00Z`).toLocaleDateString('en-PH', { timeZone: 'UTC', year: 'numeric', month: 'short', day: 'numeric' })
+    if (days < 0) return { label, days, className: 'text-red-600 dark:text-red-400 font-semibold', title: 'Expired' }
+    if (days <= 30) return { label, days, className: 'text-amber-600 dark:text-amber-400 font-semibold', title: days === 0 ? 'Expires today' : `Expires in ${days} day${days === 1 ? '' : 's'}` }
+    return { label, days, className: 'text-gray-700 dark:text-slate-300', title: 'Expiry date' }
+  }
+
   function productBadge(item) {
     if (item.archived_at) return { kind: 'info', label: 'Archived' };
     if (item.is_active === false) return { kind: 'neutral', label: 'Hidden' };
@@ -918,6 +945,11 @@ const AdminProductManagement = () => {
       ) },
     ] : []),
     { key: 'stock_quantity', label: 'Stock', sortable: true, render: (item) => <span className="text-gray-700 dark:text-slate-300">{item.stock_quantity}</span> },
+    { key: 'expires_at', label: 'Expires', sortable: true, render: (item) => {
+      const info = expiryInfo(item.expires_at)
+      if (!info) return <span className="text-gray-400 dark:text-slate-500" title="No expiry date set">-</span>
+      return <span className={info.className} title={info.title}>{info.label}</span>
+    } },
     { key: 'status', label: 'Status', sortable: true, render: (item) => {
       const s = productBadge(item);
       return <StatusPill kind={s.kind}>{s.label}</StatusPill>;
@@ -1014,6 +1046,21 @@ const AdminProductManagement = () => {
             <div>
               <label htmlFor="product-stock-desktop" className={FIELD_LABEL}>Stock quantity <span className="text-red-500">*</span></label>
               <input id="product-stock-desktop" value={formData.stock_quantity} onChange={(e) => setFormData({...formData, stock_quantity: e.target.value})} type="number" min="0" step="1" placeholder="How many you have" title="How many you have; 0 shows as out of stock" aria-label="Stock quantity" className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
+            </div>
+            <div>
+              <label htmlFor="product-expiry-desktop" className={FIELD_LABEL}>Expiry date (optional)</label>
+              <input
+                id="product-expiry-desktop"
+                value={formData.expires_at}
+                onChange={(e) => setFormData({ ...formData, expires_at: e.target.value })}
+                type="date"
+                aria-label="Expiry date"
+                aria-describedby="product-expiry-desktop-hint"
+                className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 focus:outline-none focus:border-[#0b2e59]"
+              />
+              <p id="product-expiry-desktop-hint" className="mt-1 text-[11px] text-gray-500 dark:text-slate-400">
+                The best-before date on the pack. Leave it empty for products that do not expire.
+              </p>
             </div>
             <div>
               <label htmlFor="product-image-desktop" className={FIELD_LABEL}>Product image</label>
@@ -1284,7 +1331,7 @@ const AdminProductManagement = () => {
         rows={displayed}
         rowKey={(p) => p.prod_id}
         loading={loading}
-        colSpan={showCosts ? 10 : 8}
+        colSpan={showCosts ? 11 : 9}
         sortKey={sortKey}
         sortDir={sortDir}
         onSort={handleSort}
@@ -1316,6 +1363,11 @@ const AdminProductManagement = () => {
                     <span className={`font-semibold ${marginTone(item.price, item.cost_price)}`}>
                       {formatMargin(item.price, item.cost_price)}
                     </span>
+                  </div>
+                )}
+                {expiryInfo(item.expires_at) && (
+                  <div className="text-xs text-gray-500 dark:text-slate-400">
+                    Expires <span className={`font-semibold ${expiryInfo(item.expires_at).className}`}>{expiryInfo(item.expires_at).label}</span>
                   </div>
                 )}
               </div>
@@ -1440,6 +1492,19 @@ const AdminProductManagement = () => {
                 <div>
                   <label htmlFor="product-stock-mobile" className={FIELD_LABEL}>Stock <span className="text-red-500">*</span></label>
                   <input id="product-stock-mobile" value={mobileForm.stock_quantity} onChange={(e) => setMobileForm({...mobileForm, stock_quantity: e.target.value})} type="number" min="0" step="1" placeholder="How many" title="How many you have; 0 shows as out of stock" aria-label="Stock quantity" className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#0b2e59]" required />
+                </div>
+                <div>
+                  <label htmlFor="product-expiry-mobile" className={FIELD_LABEL}>Expiry date</label>
+                  <input
+                    id="product-expiry-mobile"
+                    value={mobileForm.expires_at}
+                    onChange={(e) => setMobileForm({ ...mobileForm, expires_at: e.target.value })}
+                    type="date"
+                    aria-label="Expiry date"
+                    aria-describedby="product-expiry-mobile-hint"
+                    className="mt-1.5 w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#162d4a] border border-gray-200 dark:border-[#1e3a5f] text-gray-900 dark:text-slate-100 text-sm focus:outline-none focus:border-[#0b2e59]"
+                  />
+                  <p id="product-expiry-mobile-hint" className="mt-1 text-[10px] text-gray-500 dark:text-slate-400">Optional. Empty = no expiry.</p>
                 </div>
               </div>
               {showCosts && (
