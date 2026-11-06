@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { describe, it, expect } from 'vitest';
-import { ADMIN_NAV, canSeeNav, ADMIN_ONLY_PAGES, STAFF_FALLBACK, canSeeCosts, canManageProductLifecycle, canEditPrice } from '../lib/permissions';
+import { ADMIN_NAV, ADMIN_NAV_GROUPS, canSeeNav, ADMIN_ONLY_PAGES, STAFF_FALLBACK, canSeeCosts, canManageProductLifecycle, canEditPrice } from '../lib/permissions';
 
 describe('permissions - admin navigation', () => {
   it('exposes orders, payments, products, support to staff but not customers/audit-logs', () => {
@@ -28,6 +28,12 @@ describe('permissions - admin navigation', () => {
     ADMIN_NAV.forEach((l) => {
       expect(typeof l.iconKey).toBe('string');
       expect(l.iconKey.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('assigns every nav link to a known sidebar group', () => {
+    ADMIN_NAV.forEach((l) => {
+      expect(ADMIN_NAV_GROUPS).toContain(l.group);
     });
   });
 });

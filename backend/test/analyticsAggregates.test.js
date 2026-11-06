@@ -6,6 +6,7 @@ import {
   buildTraffic,
   buildFunnel,
   buildDailyViews,
+  buildDeviceViews,
   buildTopPages,
   buildTopSearches,
   summarizeOrderCosting,
@@ -107,6 +108,25 @@ test('buildDailyViews zero-fills the requested Manila days', () => {
     { date: '2026-10-05', count: 1 },
     { date: '2026-10-06', count: 0 },
     { date: '2026-10-07', count: 2 },
+  ])
+})
+
+test('buildDeviceViews zero-fills daily mobile and desktop page views', () => {
+  const now = new Date('2026-10-07T12:00:00Z')
+  const out = buildDeviceViews([
+    ev('page_view', { device: 'mobile' }, { created_at: '2026-10-07T10:00:00Z' }),
+    ev('page_view', { device: 'mobile' }, { created_at: '2026-10-07T11:00:00Z' }),
+    ev('page_view', { device: 'desktop' }, { created_at: '2026-10-07T11:30:00Z' }),
+    ev('page_view', { device: 'desktop' }, { created_at: '2026-10-05T10:00:00Z' }),
+    // other event types and untagged legacy events are ignored
+    ev('product_view', { device: 'mobile' }, { created_at: '2026-10-07T10:00:00Z' }),
+    ev('page_view', {}, { created_at: '2026-10-07T10:00:00Z' }),
+    ev('page_view', { device: 'unknown' }, { created_at: '2026-10-07T10:00:00Z' }),
+  ], 3, now)
+  assert.deepEqual(out, [
+    { date: '2026-10-05', mobile: 0, desktop: 1 },
+    { date: '2026-10-06', mobile: 0, desktop: 0 },
+    { date: '2026-10-07', mobile: 2, desktop: 1 },
   ])
 })
 

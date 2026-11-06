@@ -4,17 +4,36 @@ import { BsQuestionCircle } from 'react-icons/bs';
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function useThemeDetection() {
-  useEffect(() => {
-    const saved = localStorage.getItem('theme');
-    let theme;
-    if (saved === 'dark' || saved === 'light') {
-      theme = saved;
-    } else {
-      theme = window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  const [theme, setTheme] = useState(() => {
+    try {
+      const saved = localStorage.getItem('theme');
+      if (saved === 'dark' || saved === 'light') return saved;
+    } catch {
+      // storage can be unavailable (private mode)
     }
+    const prefersDark = typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+    return prefersDark ? 'dark' : 'light';
+  });
+
+  useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     document.documentElement.classList.toggle('dark', theme === 'dark');
-  }, []);
+  }, [theme]);
+
+  function toggleTheme() {
+    setTheme((current) => {
+      const next = current === 'dark' ? 'light' : 'dark';
+      try {
+        localStorage.setItem('theme', next);
+      } catch {
+        // the toggle still works for this visit without persistence
+      }
+      return next;
+    });
+  }
+
+  return { theme, toggleTheme };
 }
 
 const SURFACE = 'bg-white dark:bg-[#0f2137]';

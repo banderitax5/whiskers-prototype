@@ -16,6 +16,7 @@ import {
   buildTraffic,
   buildFunnel,
   buildDailyViews,
+  buildDeviceViews,
   buildTopPages,
   buildTopSearches,
   summarizeOrderCosting,
@@ -294,6 +295,7 @@ router.get('/analytics', requireAdmin, async (req, res) => {
       funnel: funnel.counts,
       funnelMetric: funnel.metric,
       dailyViews: buildDailyViews(rows, days, now),
+      deviceViews: buildDeviceViews(rows, days, now),
       topPages: buildTopPages(rows),
       topSearches: buildTopSearches(rows),
     })

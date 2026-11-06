@@ -116,6 +116,38 @@ export function buildDailyViews(events, days = 30, now = new Date()) {
   return keys.map((date) => ({ date, count: counts.get(date) || 0 }))
 }
 
+// Zero-filled daily page views split by device. Events recorded before device
+// classification existed have no tag and are skipped rather than guessed.
+export function buildDeviceViews(events, days = 30, now = new Date()) {
+  const total = Math.max(1, Math.min(90, Number(days) || 30))
+  const list = Array.isArray(events) ? events : []
+  const counts = new Map()
+
+  for (const e of list) {
+    if (e.event_type !== 'page_view') continue
+    const device = e.metadata?.device
+    if (device !== 'mobile' && device !== 'desktop') continue
+    const day = manilaDayKey(e.created_at)
+    if (!day) continue
+    if (!counts.has(day)) counts.set(day, { mobile: 0, desktop: 0 })
+    counts.get(day)[device] += 1
+  }
+
+  const keys = []
+  for (let i = total - 1; i >= 0; i--) {
+    keys.push(manilaDayKey(new Date(now.getTime() - i * 86400000)))
+  }
+
+  return keys.map((date) => {
+    const bucket = counts.get(date)
+    return {
+      date,
+      mobile: bucket?.mobile || 0,
+      desktop: bucket?.desktop || 0,
+    }
+  })
+}
+
 export function buildTopPages(events, limit = 10) {
   const counts = new Map()
   for (const e of Array.isArray(events) ? events : []) {

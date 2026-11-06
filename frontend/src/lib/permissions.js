@@ -7,21 +7,26 @@
 
 export const ADMIN_ONLY_PAGES = ['/', '/customers', '/audit-logs']
 
-// sidebar entries for the back office, filtered by role at render time
+// sidebar entries for the back office, filtered by role at render time.
+// `group` drives the section headings in AdminLayout; groups render in the
+// order of ADMIN_NAV_GROUPS, and a group is hidden when the role can't see
+// any of its links.
+export const ADMIN_NAV_GROUPS = ['Overview', 'Catalog', 'Sales', 'Customers', 'Content', 'System']
+
 export const ADMIN_NAV = [
-  { to: '/admin', label: 'Data Analytics', iconKey: 'barChart', end: true, roles: ['admin'] },
-  { to: '/admin/products', label: 'Product Management', iconKey: 'boxSeam', roles: ['admin', 'staff'] },
-  { to: '/admin/customers', label: 'Customers', iconKey: 'people', roles: ['admin'] },
-  { to: '/admin/orders', label: 'Orders', iconKey: 'receipt', roles: ['admin', 'staff'] },
-  { to: '/admin/payments', label: 'Payments', iconKey: 'creditCard', roles: ['admin', 'staff'] },
-  { to: '/admin/promos', label: 'Promos', iconKey: 'gift', roles: ['admin'] },
-  { to: '/admin/media', label: 'Media Library', iconKey: 'images', roles: ['admin'] },
-  { to: '/admin/banners', label: 'Banners', iconKey: 'cardImage', roles: ['admin'] },
-  { to: '/admin/home-sections', label: 'Home Sections', iconKey: 'grid', roles: ['admin'] },
-  { to: '/admin/navigation', label: 'Navigation', iconKey: 'listUl', roles: ['admin'] },
-  { to: '/admin/settings', label: 'Site Settings', iconKey: 'gear', roles: ['admin'] },
-  { to: '/admin/support', label: 'Customer Support', iconKey: 'chatDots', roles: ['admin', 'staff'] },
-  { to: '/admin/audit-logs', label: 'Audit Logs', iconKey: 'clockHistory', roles: ['admin'] },
+  { to: '/admin', label: 'Data Analytics', iconKey: 'barChart', group: 'Overview', end: true, roles: ['admin'] },
+  { to: '/admin/products', label: 'Product Management', iconKey: 'boxSeam', group: 'Catalog', roles: ['admin', 'staff'] },
+  { to: '/admin/orders', label: 'Orders', iconKey: 'receipt', group: 'Sales', roles: ['admin', 'staff'] },
+  { to: '/admin/payments', label: 'Payments', iconKey: 'creditCard', group: 'Sales', roles: ['admin', 'staff'] },
+  { to: '/admin/promos', label: 'Promos', iconKey: 'gift', group: 'Sales', roles: ['admin'] },
+  { to: '/admin/customers', label: 'Customers', iconKey: 'people', group: 'Customers', roles: ['admin'] },
+  { to: '/admin/support', label: 'Customer Support', iconKey: 'chatDots', group: 'Customers', roles: ['admin', 'staff'] },
+  { to: '/admin/media', label: 'Media Library', iconKey: 'images', group: 'Content', roles: ['admin'] },
+  { to: '/admin/banners', label: 'Banners', iconKey: 'cardImage', group: 'Content', roles: ['admin'] },
+  { to: '/admin/home-sections', label: 'Home Sections', iconKey: 'grid', group: 'Content', roles: ['admin'] },
+  { to: '/admin/navigation', label: 'Navigation', iconKey: 'listUl', group: 'Content', roles: ['admin'] },
+  { to: '/admin/settings', label: 'Site Settings', iconKey: 'gear', group: 'System', roles: ['admin'] },
+  { to: '/admin/audit-logs', label: 'Audit Logs', iconKey: 'clockHistory', group: 'System', roles: ['admin'] },
 ]
 
 // staff land here when they hit an admin-only page

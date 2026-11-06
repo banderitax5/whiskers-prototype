@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { supabaseAdmin } from '../config/supabase.js'
 import { eventLimiter } from '../middleware/rateLimiter.js'
+import { classifyDevice } from '../utils/device.js'
 import logger from '../utils/logger.js'
 
 const router = Router()
@@ -24,7 +25,9 @@ router.post('/', eventLimiter, async (req, res) => {
     const { error } = await supabaseAdmin.from('events').insert({
       event_type: event_type.slice(0, 50),
       page: page.slice(0, 200),
-      metadata: cleanMetadata,
+      // Classified server-side so every event uses the same rule and a client
+      // cannot mislabel traffic by sending its own device field.
+      metadata: { ...cleanMetadata, device: classifyDevice(req.get('user-agent')) },
       user_id: req.userId || null,
     })
     if (error) throw error

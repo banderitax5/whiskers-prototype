@@ -9,6 +9,7 @@ export const HERO_SLIDES = [
   { image: '/categoryshop/cat.jpg', alt: 'Cat Food Collection' },
   { image: '/categoryshop/fish.png', alt: 'Fish Supplies' },
   { image: '/categoryshop/berd.jpg', alt: 'Bird Supplies' },
+  { image: '/categoryshop/bannn.webp', alt: 'Purr-fect Nutrition in Every Bite' },
 ]
 
 // mirror of NavLinks.jsx brand tiles (public/brands/*)

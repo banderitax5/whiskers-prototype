@@ -17,7 +17,7 @@ test('RESTORE_SCOPES all resolve to a scope', () => {
   }
 })
 
-test('home_hero scope: 5 published slides, filtered by placement', () => {
+test('home_hero scope: 6 published slides, filtered by placement', () => {
   const def = defaultRowsFor('home_hero')
   assert.equal(def.table, 'site_banners')
   assert.deepEqual(def.filter, { column: 'placement', value: 'home_hero' })

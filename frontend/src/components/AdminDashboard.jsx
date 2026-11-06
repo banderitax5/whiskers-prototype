@@ -444,6 +444,30 @@ function AdminDashboard() {
     value: Number(bucket.count || 0),
   }));
   const totalViews = viewPoints.reduce((sum, point) => sum + point.value, 0);
+  const deviceViews = analytics?.deviceViews || [];
+  const deviceByDate = new Map(deviceViews.map((bucket) => [bucket.date, bucket]));
+  // The page-view chart keeps its original total line and adds the overlapping
+  // mobile/desktop areas, so all three series share one x-axis and tooltip.
+  const combinedViewPoints = (analytics?.dailyViews || []).map((bucket) => {
+    const device = deviceByDate.get(bucket.date);
+    const total = Number(bucket.count || 0);
+    const mobile = Number(device?.mobile || 0);
+    const desktop = Number(device?.desktop || 0);
+    return {
+      label: bucketLabel(bucket.date, 'daily'),
+      total,
+      mobile,
+      desktop,
+    };
+  });
+  const deviceTotals = deviceViews.reduce(
+    (sum, bucket) => ({ mobile: sum.mobile + Number(bucket.mobile || 0), desktop: sum.desktop + Number(bucket.desktop || 0) }),
+    { mobile: 0, desktop: 0 }
+  );
+  const deviceTotal = deviceTotals.mobile + deviceTotals.desktop;
+  // Percentages describe the split of device-tagged page views.
+  const mobilePct = deviceTotal ? Math.round((deviceTotals.mobile / deviceTotal) * 100) : 0;
+  const desktopPct = deviceTotal ? 100 - mobilePct : 0;
 
   return (
     <AdminPage title="Data Analytics" subtitle="A live look at how the store is performing." help={DASHBOARD_HELP}>
@@ -623,13 +647,45 @@ function AdminDashboard() {
               <SectionCard
                 title="Page views"
                 description={`${totalViews.toLocaleString()} views · last ${analytics.days} days`}
+                action={
+                  deviceTotal ? (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-medium text-gray-500 dark:text-slate-400">
+                      <span className="flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-[#0b2e59] dark:bg-yellow-400" aria-hidden="true" />
+                        Total
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500 dark:bg-emerald-400" aria-hidden="true" />
+                        Mobile {mobilePct}%
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-indigo-500 dark:bg-indigo-400" aria-hidden="true" />
+                        Desktop {desktopPct}%
+                      </span>
+                    </div>
+                  ) : null
+                }
               >
-                <AnalyticsAreaChart
-                  points={viewPoints}
-                  height={220}
-                  formatValue={(value) => `${Number(value).toLocaleString()} views`}
-                  ariaLabel="Page views over the last 30 days"
-                />
+                {deviceTotal ? (
+                  <AnalyticsAreaChart
+                    points={combinedViewPoints}
+                    series={[
+                      { key: 'total', label: 'Total' },
+                      { key: 'mobile', label: 'Mobile' },
+                      { key: 'desktop', label: 'Desktop' },
+                    ]}
+                    height={220}
+                    formatValue={(value) => `${Number(value).toLocaleString()} views`}
+                    ariaLabel={`Page views by mobile and desktop over the last ${analytics.days} days`}
+                  />
+                ) : (
+                  <AnalyticsAreaChart
+                    points={viewPoints}
+                    height={220}
+                    formatValue={(value) => `${Number(value).toLocaleString()} views`}
+                    ariaLabel={`Page views over the last ${analytics.days} days`}
+                  />
+                )}
               </SectionCard>
 
               <div className={GRID}>
