@@ -1,0 +1,49 @@
+Blocking Issue,Product Name,Original Category,Original Price,Original Stock,Original Brand,Tab,Row,DB Match,Closest DB Name
+PRICE IS A RANGE (3450-3400),Aozi Cat All Stages Salmon 20KG,Cat Food & Treats - Dry,3450-3400,,Aozi,Cat Food & Treats,19,NEW,Aozi Salmon
+PRICE IS A RANGE (3450-3400),Aozi Cat All Stages Tuna 20KG,Cat Food & Treats - Dry,3450-3400,,Aozi,Cat Food & Treats,20,NEW,Zoi Cat Tuna 20kg
+PRICE IS A RANGE (1950-1900),Aozi Kitten Salmon 10KG,Cat Food & Treats - Dry,1950-1900,,Aozi,Cat Food & Treats,21,NEW,Aozi (K) Salmon 10kg
+PRICE IS A RANGE (1950-1900),Aozi Kitten Tuna 10KG,Cat Food & Treats - Dry,1950-1900,,Aozi,Cat Food & Treats,22,NEW,Aozi Tuna
+PRICE IS A RANGE (2450-2400),Goodest Cat Tuna 22KG,Cat Food & Treats - Dry,2450-2400,,Goodest,Cat Food & Treats,35,NEW,Goodest Tuna
+PRICE IS A RANGE (1950-1920),Infinity Cat Adult Salmon 20KG,Cat Food & Treats - Dry,1950-1920,,Infinity,Cat Food & Treats,36,NEW,
+NO PRICE,"Friskies Party Mix Beachside (Tuna, Salmon, Snapper) 60g",Cat Food & Treats - Treats,,,Friskies,Cat Food & Treats,240,EXACT,"Friskies Party Mix Beachside (Tuna, Salmon, Snapper) 60g"
+NO PRICE,"Friskies Party Mix Classic (Tuna, Chicken, Bonito) 60g",Cat Food & Treats - Treats,,,Friskies,Cat Food & Treats,241,EXACT,"Friskies Party Mix Classic (Tuna, Chicken, Bonito) 60g"
+NO PRICE,"Friskies Party Mix Mixed Grill (Chicken, Beef, Salmon) 60g",Cat Food & Treats - Treats,,,Friskies,Cat Food & Treats,242,EXACT,"Friskies Party Mix Mixed Grill (Chicken, Beef, Salmon) 60g"
+NO PRICE,Champion Treats Cat Cookies Salmon,Cat Food & Treats - Treats,,,Champion,Cat Food & Treats,250,EXACT,Champion Treats Cat Cookies Salmon
+NO PRICE,Champion Treats Catcookies Tuna,Cat Food & Treats - Treats,,,Champion,Cat Food & Treats,251,EXACT,Champion Treats Catcookies Tuna
+DUPLICATE NAME (same as Dog Food & Treats row 181),Knotte Bones Treats 2.5IN - Beef Milk,Dog Food & Treats - Treats,10.0,,,Dog Food & Treats,187,NEW,
+DUPLICATE NAME (same as Dog Food & Treats row 253),Entree Gourmet Treats Angus Steak,Dog Food & Treats - Treats,85.0,,Entree,Dog Food & Treats,257,NEW,Entree American Bacon
+DUPLICATE NAME (same as Dog Food & Treats row 253),Entree Gourmet Treats Angus Steak,Dog Food & Treats - Treats,85.0,,Entree,Dog Food & Treats,258,NEW,Entree American Bacon
+NO PRICE,Vitakraft Hamster 1kg,Rabbit/Hamster/Guinea Pig Food - Dry,,,Vitakraft,RabbitHamsterGuinea Pig Food - ,3,NEW,Vitakraft rabbit 1kg
+NO PRICE,Vitakraft Guinea Pig 1kg,Rabbit/Hamster/Guinea Pig Food - Dry,,,Vitakraft,RabbitHamsterGuinea Pig Food - ,4,NEW,Jolly Fullvit guinea pig 1kg
+NO PRICE,Hikari Tropical Vibra Bites Baby XL Sinking 1Kg,Fish Food- Dry,,,Hikari,Fish Food - Dry,73,NEW,Hikari Vibra Bites 35G
+NO PRICE,Hikari Marine Marine A Sinking 110G,Fish Food- Dry,,,Hikari,Fish Food - Dry,74,NEW,Hikari Sinking Wafers 50G
+NO PRICE,Hikari Marine Marine S Sinking 50G,Fish Food- Dry,,,Hikari,Fish Food - Dry,75,NEW,Hikari Sinking Wafers 50G
+NO PRICE,Hikari Marine Seaweed Extreme Small Sinking 45G,Fish Food- Dry,,,Hikari,Fish Food - Dry,76,NEW,Hikari Sinking Wafers 50G
+NO PRICE,Hikari Marine Seaweed Extreme Small Sinking 100G,Fish Food- Dry,,,Hikari,Fish Food - Dry,77,NEW,Hikari Sinking Cihclid Gold 100G
+NO PRICE,Hikari Marine Seaweed Extreme Medium Sinking 90G,Fish Food- Dry,,,Hikari,Fish Food - Dry,78,NEW,Hikari Sinking Wafers 50G
+NO PRICE,Hikari Marine Coralific Delite Floating 35G,Fish Food- Dry,,,Hikari,Fish Food - Dry,79,NEW,Hikari Vibra Bites 35G
+NO PRICE,Hikari Friend Large Floating 10Kg,Fish Food- Dry,,,Hikari,Fish Food - Dry,80,NEW,Hikari Sinking Wafers 50G
+NO PRICE,Saki-Hikari R Balance Large Floating 15Kg,Fish Food- Dry,,,Hikari,Fish Food - Dry,81,NEW,Saki-Hikari200g
+NO PRICE,Hikari Tropical Algae Wafers Sinking 1Kg,Fish Food- Dry,,,Hikari,Fish Food - Dry,82,NEW,Hikari Algae Wafers 20G
+NO PRICE; DUPLICATE NAME (same as Fish Food - Dry row 65),Hikari Tropical Sinking Carnivore Pellets Sinking 1Kg,Fish Food- Dry,,,Hikari,Fish Food - Dry,83,NEW,Hikari Sinking Wafers 50G
+NO PRICE,Hikari Tropical Massivore Delite Sinking 1Kg,Fish Food- Dry,,,Hikari,Fish Food - Dry,84,NEW,Hikari Sinking Wafers 50G
+NO PRICE,Hikari Friend Medium Floating 10Kg,Fish Food- Dry,,,Hikari,Fish Food - Dry,85,NEW,Hikari Sinking Wafers 50G
+NO PRICE,Saki-Hikari Balance Medium Floating 15Kg,Fish Food- Dry,,,Hikari,Fish Food - Dry,86,NEW,Saki-Hikari200g
+NO PRICE,Saki-Hikari Balance Large Floating 15Kg,Fish Food- Dry,,,Hikari,Fish Food - Dry,87,NEW,Saki-Hikari200g
+NO PRICE,Saki-Hikari Balance Large Floating 5Kg,Fish Food- Dry,,,Hikari,Fish Food - Dry,88,NEW,Saki-Hikari200g
+NO PRICE,Saki-Hikari Color Enhancing Medium Floating 5Kg,Fish Food- Dry,,,Hikari,Fish Food - Dry,89,NEW,Saki-Hikari200g
+NO PRICE,Saki-Hikari Color Enhancing Medium Floating 15Kg,Fish Food- Dry,,,Hikari,Fish Food - Dry,90,NEW,Saki-Hikari200g
+NO PRICE,Saki-Hikari Color Enhancing Large Floating 15Kg,Fish Food- Dry,,,Hikari,Fish Food - Dry,91,NEW,Saki-Hikari200g
+NO PRICE,Saki-Hikari Color Enhancing Large Floating 5Kg,Fish Food- Dry,,,Hikari,Fish Food - Dry,92,NEW,Saki-Hikari200g
+NO PRICE,Saki-Hikari Growth Medium Floating 5Kg,Fish Food- Dry,,,Hikari,Fish Food - Dry,93,NEW,Saki-Hikari200g
+NO PRICE,Saki-Hikari Growth Medium Floating 15Kg,Fish Food- Dry,,,Hikari,Fish Food - Dry,94,NEW,Saki-Hikari200g
+NO PRICE,Saki-Hikari Growth Large Floating 15Kg,Fish Food- Dry,,,Hikari,Fish Food - Dry,95,NEW,Saki-Hikari200g
+NO PRICE,Saki-Hikari Growth Large Floating 5Kg,Fish Food- Dry,,,Hikari,Fish Food - Dry,96,NEW,Saki-Hikari200g
+NO PRICE,Saki-Hikari Growth Medium Sinking 20Kg,Fish Food- Dry,,,Hikari,Fish Food - Dry,97,NEW,Saki-Hikari200g
+NO PRICE,Saki-Hikari Growth Large Sinking 20Kg,Fish Food- Dry,,,Hikari,Fish Food - Dry,98,NEW,Saki-Hikari200g
+NO PRICE,Saki-Hikari Fancy Goldfish Balance Baby Sinking 200G,Fish Food- Dry,,,Hikari,Fish Food - Dry,99,NEW,Saki-Hikari200g
+NO PRICE,Saki-Hikari Fancy Goldfish Color Enhancing Baby Sinking 200G,Fish Food- Dry,,,Hikari,Fish Food - Dry,100,NEW,Saki-Hikari200g
+NO PRICE,Saki-Hikari Fancy Goldfish Extreme Color Enhancing Baby Sinking 100G,Fish Food- Dry,,,Hikari,Fish Food - Dry,101,NEW,Saki-Hikari200g
+DUPLICATE NAME (same as Cat Food & Treats row 187),Mr Vet Cat Pouch Vitamin Nutrition 70G,Cat Veterinary Diet - Wet Pouch,35.0,5.0,Mr. Vet,Vet Food,65,NEW,
+DUPLICATE NAME (same as Pet Health & Wellness row 14),Papi MVP 120ml,Pet Health & Wellness - Medicine,200.0,5.0,Papi MVP,Pet Health & Wellness,58,NEW,
+DUPLICATE NAME (same as Pet Health & Wellness row 46),Papi Doxy 60ml,Pet Health & Wellness - Medicine,250.0,5.0,Papi Doxy,Pet Health & Wellness,61,NEW,

@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
+    "localize-images": "node scripts/localize-product-images.js",
     "test": "node --test",
     "test:e2e": "powershell -ExecutionPolicy Bypass -File test\\e2e.ps1"
   },
