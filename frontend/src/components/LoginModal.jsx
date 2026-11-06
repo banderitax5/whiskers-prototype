@@ -5,6 +5,7 @@ import { trackEvent } from '../lib/appEvents.js'
 import { normalizeOtp, otpError } from '../lib/mfa.js'
 import { errorFromResponse, friendlyMessage } from '../lib/errors'
 import LostAuthenticatorHelp from './LostAuthenticatorHelp.jsx'
+import OtpInput from './OtpInput.jsx'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -27,7 +28,6 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
   const [pendingSession, setPendingSession] = useState(null)
   const dialogRef = useRef(null)
   const emailRef = useRef(null)
-  const mfaRef = useRef(null)
 
   // The dialog stays mounted for the whole session (it is rendered by the
   // navbar), so nothing here disappears on its own. Clear the credentials and
@@ -51,14 +51,6 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
       setPendingSession(null)
     }
   }, [isOpen])
-
-  useEffect(() => {
-    if (isOpen && view === 'mfa') {
-      const t = setTimeout(() => mfaRef.current?.focus(), 50)
-      return () => clearTimeout(t)
-    }
-    return undefined
-  }, [isOpen, view])
 
   // focus trap: move focus into the dialog on open and cycle Tab inside it
   const trapFocus = useCallback((e) => {
@@ -169,10 +161,10 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
     }
   }
 
-  async function handleMfaVerify(e) {
-    e.preventDefault()
+  async function verifyMfaCode(codeValue) {
+    if (mfaLoading) return
     setMfaError('')
-    const code = normalizeOtp(mfaCode)
+    const code = normalizeOtp(codeValue)
     const problem = otpError(code)
     if (problem) {
       setMfaError(problem)
@@ -216,6 +208,11 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
     } finally {
       setMfaLoading(false)
     }
+  }
+
+  function handleMfaVerify(e) {
+    e.preventDefault()
+    verifyMfaCode(mfaCode)
   }
 
   if (!isOpen) return null
@@ -329,20 +326,15 @@ function LoginModal({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) {
                 <label htmlFor="mfa-code" className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   TOTP CODE
                 </label>
-                <input
-                  ref={mfaRef}
-                  type="text"
+                <OtpInput
                   id="mfa-code"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={6}
                   value={mfaCode}
-                  onChange={(e) => { setMfaCode(normalizeOtp(e.target.value)); setMfaError('') }}
-                  required
-                  autoComplete="one-time-code"
-                  aria-invalid={mfaError ? 'true' : undefined}
-                  aria-describedby={mfaError ? 'mfa-code-error' : undefined}
-                  className="w-full px-3 sm:px-4 py-2 rounded-lg border bg-white dark:bg-gray-700 border-gray-500 dark:border-gray-600 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-center tracking-widest"
+                  onChange={(next) => { setMfaCode(next); setMfaError('') }}
+                  onComplete={verifyMfaCode}
+                  disabled={mfaLoading}
+                  autoFocus
+                  ariaInvalid={Boolean(mfaError)}
+                  ariaDescribedby={mfaError ? 'mfa-code-error' : undefined}
                 />
               </div>
               <button

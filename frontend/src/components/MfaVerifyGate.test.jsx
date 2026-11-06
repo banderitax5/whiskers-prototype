@@ -70,7 +70,7 @@ describe('MfaVerifyGate', () => {
     globalThis.fetch.mockResolvedValue(okResponse({ access_token: 'aal2-token', refresh_token: 'refresh' }))
     const { c, onVerified } = await render()
     await type(c.querySelector('#gate-mfa-code'), '123 456')
-    await act(async () => { button(c, 'Verify code').click() })
+    await act(async () => {})
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1)
     const [url, opts] = globalThis.fetch.mock.calls[0]
@@ -85,7 +85,7 @@ describe('MfaVerifyGate', () => {
     globalThis.fetch.mockResolvedValue({ ok: false, json: async () => ({ error: 'Invalid code' }) })
     const { c, onVerified } = await render()
     await type(c.querySelector('#gate-mfa-code'), '123456')
-    await act(async () => { button(c, 'Verify code').click() })
+    await act(async () => {})
 
     expect(c.querySelector('[role="alert"]')?.textContent).toMatch(/Invalid code/)
     expect(supabase.auth.setSession).not.toHaveBeenCalled()

@@ -73,8 +73,18 @@ describe('MfaEnrollmentModal', () => {
   it('verifies a complete code and normalizes pasted spaces', async () => {
     const { c, onVerify } = await render()
     await type(c.querySelector('#mfa-enroll-code'), '123 456')
-    await act(async () => { button(c, 'Verify and turn on').click() })
     expect(onVerify).toHaveBeenCalledWith('123456')
+  })
+
+  it('copies the manual secret key from the box', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const { c } = await render()
+    const copy = c.querySelector('button[aria-label="Copy secret key"]')
+    expect(copy).toBeTruthy()
+    await act(async () => { copy.click() })
+    expect(writeText).toHaveBeenCalledWith('JBSWY3DPEHPK3PXP')
+    expect(c.textContent).toContain('Copied to clipboard')
   })
 
   it('closes on Escape and on a backdrop click, but not on a panel click', async () => {

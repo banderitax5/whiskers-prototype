@@ -1,24 +1,25 @@
 import { useEffect, useRef, useState } from 'react'
+import { BsCheck2, BsClipboard } from 'react-icons/bs'
 import { normalizeOtp, otpError, qrImageSrc } from '../lib/mfa.js'
+import OtpInput from './OtpInput.jsx'
 
 
 function MfaEnrollmentModal({ enrollment, onClose, onVerify, saving, error }) {
   const [verifyCode, setVerifyCode] = useState('')
   const [localError, setLocalError] = useState('')
   const [qrBroken, setQrBroken] = useState(false)
-  const codeRef = useRef(null)
+  const [copied, setCopied] = useState(false)
   const dialogRef = useRef(null)
+  const copyTimer = useRef(null)
 
   useEffect(() => {
     setVerifyCode('')
     setLocalError('')
     setQrBroken(false)
-    if (enrollment) {
-      const t = setTimeout(() => codeRef.current?.focus(), 60)
-      return () => clearTimeout(t)
-    }
-    return undefined
+    setCopied(false)
   }, [enrollment])
+
+  useEffect(() => () => clearTimeout(copyTimer.current), [])
 
   // Escape closes unless verification is in flight; Tab cycles inside the
   // dialog so keyboard focus never escapes behind the overlay.
@@ -64,6 +65,17 @@ function MfaEnrollmentModal({ enrollment, onClose, onVerify, saving, error }) {
     }
     setLocalError('')
     onVerify(code)
+  }
+
+  async function copySecret() {
+    try {
+      await navigator.clipboard.writeText(secret)
+      setCopied(true)
+      clearTimeout(copyTimer.current)
+      copyTimer.current = setTimeout(() => setCopied(false), 2000)
+    } catch {
+      setLocalError('Could not copy the secret. Select it and copy manually.')
+    }
   }
 
   return (
@@ -117,32 +129,41 @@ function MfaEnrollmentModal({ enrollment, onClose, onVerify, saving, error }) {
             </p>
           )}
 
-          <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg text-center">
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Secret key (manual entry)</p>
-            <code className="break-all text-sm font-mono text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 px-2 py-1 rounded">
-              {groupedSecret}
-            </code>
+          <div className="mb-4 rounded-lg bg-gray-50 p-3 text-center dark:bg-gray-700/50">
+            <p className="mb-1 text-xs text-gray-500 dark:text-gray-400">Secret key (manual entry)</p>
+            <div className="mx-auto flex max-w-full items-center gap-2 rounded bg-white px-2 py-1 dark:bg-gray-800">
+              <code className="min-w-0 flex-1 break-all text-left font-mono text-sm text-gray-900 dark:text-gray-100">
+                {groupedSecret}
+              </code>
+              <button
+                type="button"
+                onClick={copySecret}
+                disabled={saving}
+                title="Copy secret key"
+                aria-label="Copy secret key"
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-60 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+              >
+                {copied ? <BsCheck2 className="h-3.5 w-3.5 text-green-600 dark:text-green-400" /> : <BsClipboard className="h-3.5 w-3.5" />}
+              </button>
+            </div>
+            <p className="mt-1 min-h-[1rem] text-[11px] text-green-700 dark:text-green-400" role="status" aria-live="polite">
+              {copied ? 'Copied to clipboard' : ''}
+            </p>
           </div>
 
           <form onSubmit={submit}>
             <label htmlFor="mfa-enroll-code" className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               ENTER THE 6-DIGIT CODE FROM YOUR APP
             </label>
-            <input
-              ref={codeRef}
-              type="text"
+            <OtpInput
               id="mfa-enroll-code"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              maxLength={6}
               value={verifyCode}
-              onChange={(e) => { setVerifyCode(normalizeOtp(e.target.value)); setLocalError('') }}
-              autoComplete="one-time-code"
-              className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-center focus:ring-2 focus:ring-[#0b2e59] dark:focus:ring-yellow-400 transition-colors text-lg tracking-widest"
-              placeholder="000000"
-              aria-invalid={shownError ? 'true' : undefined}
-              aria-describedby={shownError ? 'mfa-enroll-error' : undefined}
-              required
+              onChange={(next) => { setVerifyCode(next); setLocalError('') }}
+              onComplete={(code) => { setLocalError(''); onVerify(code) }}
+              disabled={saving}
+              autoFocus
+              ariaInvalid={Boolean(shownError)}
+              ariaDescribedby={shownError ? 'mfa-enroll-error' : undefined}
             />
             <div className="min-h-[1.75rem]">
               {shownError && (

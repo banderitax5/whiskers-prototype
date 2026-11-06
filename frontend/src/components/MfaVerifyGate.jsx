@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import supabase from '../lib/supabase'
 import { normalizeOtp, otpError } from '../lib/mfa.js'
 import { errorFromResponse, friendlyMessage } from '../lib/errors'
 import LostAuthenticatorHelp from './LostAuthenticatorHelp.jsx'
+import OtpInput from './OtpInput.jsx'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -15,12 +16,6 @@ function MfaVerifyGate({ onVerified }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [email, setEmail] = useState('')
-  const inputRef = useRef(null)
-
-  useEffect(() => {
-    const t = setTimeout(() => inputRef.current?.focus(), 50)
-    return () => clearTimeout(t)
-  }, [])
 
   // prefill the account email in the recovery email so the shop can find the
   // account quickly (the session here is aal1 but still identifies the user)
@@ -32,10 +27,10 @@ function MfaVerifyGate({ onVerified }) {
     return () => { cancelled = true }
   }, [])
 
-  async function submit(e) {
-    e.preventDefault()
+  async function verify(codeValue) {
+    if (busy) return
     setError('')
-    const clean = normalizeOtp(code)
+    const clean = normalizeOtp(codeValue)
     const problem = otpError(clean)
     if (problem) {
       setError(problem)
@@ -77,6 +72,11 @@ function MfaVerifyGate({ onVerified }) {
     }
   }
 
+  function submit(e) {
+    e.preventDefault()
+    verify(code)
+  }
+
   async function signOut() {
     await supabase.auth.signOut()
     window.location.assign('/')
@@ -94,20 +94,15 @@ function MfaVerifyGate({ onVerified }) {
             <label htmlFor="gate-mfa-code" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
               TOTP CODE
             </label>
-            <input
-              ref={inputRef}
+            <OtpInput
               id="gate-mfa-code"
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              maxLength={6}
               value={code}
-              onChange={(e) => { setCode(normalizeOtp(e.target.value)); setError('') }}
-              autoComplete="one-time-code"
-              required
-              aria-invalid={error ? 'true' : undefined}
-              aria-describedby={error ? 'gate-mfa-error' : undefined}
-              className="w-full rounded-lg border border-gray-500 bg-white px-4 py-2 text-center tracking-widest text-gray-900 focus:border-transparent focus:ring-2 focus:ring-yellow-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+              onChange={(next) => { setCode(next); setError('') }}
+              onComplete={verify}
+              disabled={busy}
+              autoFocus
+              ariaInvalid={Boolean(error)}
+              ariaDescribedby={error ? 'gate-mfa-error' : undefined}
             />
           </div>
           {error && (

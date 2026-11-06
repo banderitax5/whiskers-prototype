@@ -96,7 +96,7 @@ describe('ResetPassword MFA step-up', () => {
     })
     const c = await render()
     await type(c.querySelector('#reset-mfa-code'), '123 456')
-    await act(async () => { button(c, 'Verify code').click() })
+    await act(async () => {})
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1)
     const [url, opts] = globalThis.fetch.mock.calls[0]

@@ -9,6 +9,7 @@ import { normalizeOtp, otpError } from '../lib/mfa.js'
 import { errorFromResponse, friendlyMessage } from '../lib/errors'
 import PasswordRequirements from '../components/PasswordRequirements.jsx'
 import LostAuthenticatorHelp from '../components/LostAuthenticatorHelp.jsx'
+import OtpInput from '../components/OtpInput.jsx'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -104,10 +105,10 @@ function ResetPassword() {
     return () => { cancelled = true }
   }, [mfaRequired])
 
-  async function handleVerifyMfa(e) {
-    e.preventDefault()
+  async function verifyMfaCode(codeValue) {
+    if (mfaBusy) return
     setMfaError('')
-    const clean = normalizeOtp(mfaCode)
+    const clean = normalizeOtp(codeValue)
     const problem = otpError(clean)
     if (problem) {
       setMfaError(problem)
@@ -147,6 +148,11 @@ function ResetPassword() {
     } finally {
       setMfaBusy(false)
     }
+  }
+
+  function handleVerifyMfa(e) {
+    e.preventDefault()
+    verifyMfaCode(mfaCode)
   }
 
   async function handleSubmit(e) {
@@ -280,19 +286,15 @@ function ResetPassword() {
               <label htmlFor="reset-mfa-code" className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 TOTP CODE
               </label>
-              <input
+              <OtpInput
                 id="reset-mfa-code"
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={6}
                 value={mfaCode}
-                onChange={(e) => { setMfaCode(normalizeOtp(e.target.value)); setMfaError('') }}
-                autoComplete="one-time-code"
-                required
-                aria-invalid={mfaError ? 'true' : undefined}
-                aria-describedby={mfaError ? 'reset-mfa-error' : undefined}
-                className="w-full px-3 sm:px-4 py-2 rounded-lg border bg-white dark:bg-gray-700 border-gray-500 dark:border-gray-600 dark:text-gray-100 text-center tracking-widest focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                onChange={(next) => { setMfaCode(next); setMfaError('') }}
+                onComplete={verifyMfaCode}
+                disabled={mfaBusy}
+                autoFocus
+                ariaInvalid={Boolean(mfaError)}
+                ariaDescribedby={mfaError ? 'reset-mfa-error' : undefined}
               />
             </div>
 
