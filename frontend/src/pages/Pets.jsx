@@ -35,6 +35,8 @@ function Pets() {
     hydrated,
     isAuthenticated,
     localOnly,
+    loadError,
+    retryLoad,
   } = usePets()
   const { openLogin } = useShop()
   const [mode, setMode] = useState('view')
@@ -169,6 +171,22 @@ function Pets() {
         </div>
       )}
 
+      {loadError && (
+        <div
+          role="alert"
+          className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/30 dark:text-red-200"
+        >
+          <p>{loadError}</p>
+          <button
+            type="button"
+            onClick={retryLoad}
+            className="mt-2.5 rounded-lg bg-red-700 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-red-800 dark:bg-red-600 dark:hover:bg-red-700"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
       {!hydrated ? (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_1fr]" aria-hidden="true">
           <div className="h-24 rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-[#1a2236] lg:h-64">
@@ -186,10 +204,16 @@ function Pets() {
             <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-[#1a2236]">
               <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-gray-700">
                 <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Your Pets</h2>
-                <span className="text-xs text-gray-400 dark:text-gray-500">{pets.length}</span>
+                <span className="text-xs text-gray-400 dark:text-gray-500">
+                  {loadError ? '—' : pets.length}
+                </span>
               </div>
 
-              {pets.length === 0 ? (
+              {loadError ? (
+                <div className="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
+                  Your pets could not be loaded.
+                </div>
+              ) : pets.length === 0 ? (
                 <div className="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
                   No pets yet. Click &quot;Add a Pet&quot; to start.
                 </div>
@@ -302,7 +326,7 @@ function Pets() {
               </>
             )}
 
-            {mode === 'view' && pets.length === 0 && (
+            {mode === 'view' && !loadError && pets.length === 0 && (
               <div className="rounded-xl border border-gray-200 bg-white p-6 text-center shadow-sm sm:p-8 dark:border-gray-700 dark:bg-[#1a2236]">
                 <h2 className="mb-1 text-lg font-semibold text-gray-900 dark:text-white">Welcome!</h2>
                 <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">

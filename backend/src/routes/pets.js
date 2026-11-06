@@ -3,7 +3,7 @@ import { supabaseAdmin } from '../config/supabase.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { petLimiter } from '../middleware/rateLimiter.js'
 import { isUuid } from '../utils/uuid.js'
-import { isSchemaPendingError } from '../utils/pgErrors.js'
+import { isSchemaPendingError, isStalePetsAllergyError } from '../utils/pgErrors.js'
 import { MIGRATION_REQUIRED, INVALID_ID } from '../utils/messages.js'
 import {
   MAX_PETS,
@@ -27,6 +27,14 @@ const PET_COLUMNS =
 
 function sendSchemaPending(res) {
   return res.status(503).json({ error: MIGRATION_REQUIRED, code: 'MIGRATION_REQUIRED' })
+}
+
+// The live table can still carry an older allergy list (a check constraint is
+// not changed by re-running "create table if not exists"). That is the same
+// kind of problem as a missing column - fixed by a migration, not by the owner
+// editing their pet - so it answers 503 with the same setup wording.
+function isSchemaProblem(err) {
+  return isSchemaPendingError(err) || isStalePetsAllergyError(err)
 }
 
 // a pet id from the client is only accepted in UUID shape; anything else is a
@@ -83,7 +91,7 @@ router.post('/', async (req, res) => {
       .single()
 
     if (error) {
-      if (isSchemaPendingError(error)) return sendSchemaPending(res)
+      if (isSchemaProblem(error)) return sendSchemaPending(res)
       throw error
     }
     res.status(201).json({ pet: petRowToClient(data) })
@@ -113,7 +121,7 @@ router.put('/:petId', async (req, res) => {
       .maybeSingle()
 
     if (error) {
-      if (isSchemaPendingError(error)) return sendSchemaPending(res)
+      if (isSchemaProblem(error)) return sendSchemaPending(res)
       throw error
     }
     if (!data) return res.status(404).json({ error: MSG.notFound })

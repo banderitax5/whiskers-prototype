@@ -4,6 +4,7 @@ import supabase from '../lib/supabase'
 import { apiGetAuth, apiPostAuth, apiPutAuth, apiDeleteAuth } from '../lib/api'
 import { withCurrentLifeStage } from '../lib/petAge'
 import { toServerPet } from '../lib/petProfileApi'
+import { friendlyMessage } from '../lib/errors'
 
 // this context manages the list of pets.
 //
@@ -71,6 +72,9 @@ export function PetsProvider({ children }) {
   // true when the signed-in list had to fall back to this browser because the
   // server database is not ready yet
   const [localOnly, setLocalOnly] = useState(false)
+  // a failed first load must not look like "this account has no pets"
+  const [loadError, setLoadError] = useState('')
+  const [reloadToken, setReloadToken] = useState(0)
   const hydratedForRef = useRef(null)
 
   const userId = session?.user?.id || null
@@ -101,18 +105,28 @@ export function PetsProvider({ children }) {
     }
   }, [])
 
-  // load once per sign-in state. Signed in reads the account's pets from the
-  // server; a visitor reads this browser. A visitor who filled in a pet before
-  // signing in keeps it: the guest list moves into an empty account, but never
+  // load once per account. Signed in reads the account's pets from the server;
+  // a visitor reads this browser. A visitor who filled in a pet before signing
+  // in keeps it: the guest list moves into an empty account, but never
   // overwrites pets the account already has.
+  //
+  // Only the account id is a dependency, not the session object: Supabase emits
+  // a fresh session on every token refresh, and re-running this effect would
+  // cancel the request that is already in flight (the guard below would then
+  // skip the replacement, leaving `hydrated` false and the page on its skeleton
+  // forever).
   useEffect(() => {
     if (!sessionReady) return
     if (hydratedForRef.current === (userId || 'guest')) return
-    hydratedForRef.current = userId || 'guest'
 
+    // The account is claimed only once the read settles, never at the start:
+    // React can clean the effect up and run it again while the request is in
+    // flight (StrictMode, a retry), and the replacement run must not be skipped
+    // by a guard the cancelled run already set.
     let cancelled = false
 
     async function load() {
+      setLoadError('')
       let list = []
       let fellBack = false
 
@@ -161,6 +175,7 @@ export function PetsProvider({ children }) {
       }
 
       if (cancelled) return
+      hydratedForRef.current = userId || 'guest'
       setLocalOnly(fellBack)
       setPets(current)
       setActivePetId((id) =>
@@ -169,19 +184,31 @@ export function PetsProvider({ children }) {
       setHydrated(true)
     }
 
-    load().catch(() => {
+    load().catch((err) => {
       if (cancelled) return
+      // Never show an empty account after a failed read: that looks exactly like
+      // "you have no pets" and hides the real problem.
+      hydratedForRef.current = userId || 'guest'
       setPets([])
+      setLoadError(friendlyMessage(err, 'Could not load your pets. Please try again.'))
       setHydrated(true)
     })
 
     return () => { cancelled = true }
-  }, [session, sessionReady, userId])
+  }, [sessionReady, userId, reloadToken])
 
   const persistLocal = useCallback((next) => {
     setPets(next)
     savePetsToStorage(userId, next)
   }, [userId])
+
+  // let the page retry after a failed read without a full reload
+  const retryLoad = useCallback(() => {
+    hydratedForRef.current = null
+    setLoadError('')
+    setHydrated(false)
+    setReloadToken((n) => n + 1)
+  }, [])
 
   // Every write is optimistic: the screen updates at once, and a failed request
   // puts the previous list back and passes the error to the caller, which shows
@@ -266,6 +293,9 @@ export function PetsProvider({ children }) {
     // true when a signed-in account is showing browser-only pets because the
     // server database is not set up yet
     localOnly,
+    // set when the first read failed; the page shows it instead of "no pets"
+    loadError,
+    retryLoad,
     isAuthenticated: !!session,
     userEmail: session?.user?.email || null,
   }

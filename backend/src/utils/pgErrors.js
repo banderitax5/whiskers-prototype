@@ -21,3 +21,13 @@ export function isSchemaPendingError(err) {
   const text = `${err?.message || ''} ${err?.details || ''}`
   return /does not exist|could not find the .* column|not find the table/i.test(text)
 }
+
+// true when a check constraint refused an allergy value the app already offers
+// (SQLSTATE 23514 on the allergies column). That means the live table still has
+// an older list, e.g. one saved before "lamb" was added, so the fix is the
+// migration, not the pet profile.
+export function isStalePetsAllergyError(err) {
+  if (err?.code !== '23514') return false
+  const text = `${err?.message || ''} ${err?.details || ''}`
+  return /allerg/i.test(text)
+}

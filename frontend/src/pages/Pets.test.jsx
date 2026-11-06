@@ -13,6 +13,8 @@ const { petsState } = vi.hoisted(() => ({
     activePetId: null,
     isAuthenticated: false,
     hydrated: true,
+    loadError: '',
+    retryLoad: vi.fn(),
     setActivePetId: vi.fn(),
     addPet: vi.fn(),
     updatePet: vi.fn(),
@@ -93,6 +95,8 @@ beforeEach(() => {
   petsState.pets = []
   petsState.activePetId = null
   petsState.isAuthenticated = false
+  petsState.loadError = ''
+  petsState.retryLoad = vi.fn()
 })
 
 afterEach(() => {
@@ -160,5 +164,31 @@ describe('Pets page: daily-life facts', () => {
     expect(text).not.toContain('High activity')
     expect(text).not.toContain('Indoor only')
     expect(text).not.toContain('Small breed')
+  })
+})
+
+describe('Pets page: a failed first load', () => {
+  it('shows the server message with a way to try again', async () => {
+    petsState.loadError = 'Something went wrong on our side. Please try again in a moment.'
+    const container = await renderWith([])
+
+    const alert = container.querySelector('[role="alert"]')
+    expect(alert).not.toBeNull()
+    expect(alert.textContent).toContain('Something went wrong on our side.')
+
+    const retry = [...container.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Try again')
+    expect(retry).not.toBeUndefined()
+    await act(async () => { retry.click() })
+    expect(petsState.retryLoad).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not show an empty account behind the alert', async () => {
+    petsState.loadError = 'Could not load your pets. Please try again.'
+    const container = await renderWith([])
+
+    const text = container.textContent
+    expect(text).not.toContain('No pets yet')
+    expect(text).not.toContain('Add My First Pet')
+    expect(text).not.toContain('Welcome!')
   })
 })

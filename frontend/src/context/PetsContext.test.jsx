@@ -8,7 +8,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 // the auth stub lets a test pretend somebody signs in or out mid-session
 const { auth, api } = vi.hoisted(() => ({
   auth: { listener: null, session: null },
-  api: { rows: [], failWith: null, calls: [] },
+  api: { rows: [], failWith: null, calls: [], gate: null },
 }))
 
 vi.mock('../lib/supabase', () => ({
@@ -48,6 +48,8 @@ vi.mock('../lib/api', () => {
   return {
     apiGetAuth: async (path) => {
       api.calls.push(['GET', path])
+      // a test can hold the read open to act while it is in flight
+      if (api.gate) await api.gate
       if (api.failWith) fail()
       return { items: api.rows.map(toClient) }
     },
@@ -173,6 +175,7 @@ beforeEach(() => {
   api.rows = []
   api.failWith = null
   api.calls = []
+  api.gate = null
   vi.restoreAllMocks()
 })
 
@@ -356,6 +359,52 @@ describe('a signed-in account', () => {
     })
 
     expect(ctx.pets.map((p) => p.name)).toEqual(['Bruno'])
+  })
+
+  it('finishes the first read when the token refreshes mid-request', async () => {
+    auth.session = SESSION
+    api.rows = [row(1, 'Bruno')]
+
+    // hold the read open, so the refresh happens while it is still in flight
+    let release
+    api.gate = new Promise((resolve) => { release = resolve })
+    await renderPets()
+    expect(ctx.hydrated).toBe(false)
+
+    // Supabase sends a fresh session object on a token refresh; the user is the
+    // same person, so the read must not be cancelled or skipped
+    await act(async () => {
+      auth.listener('TOKEN_REFRESHED', { ...SESSION, access_token: 'token-2' })
+    })
+    await act(async () => { release() })
+    await act(async () => {})
+
+    expect(ctx.hydrated).toBe(true)
+    expect(ctx.pets.map((p) => p.name)).toEqual(['Bruno'])
+    expect(api.calls.filter((c) => c[0] === 'GET')).toHaveLength(1)
+  })
+
+  it('shows a load error instead of "no pets", then recovers on retry', async () => {
+    auth.session = SESSION
+    api.rows = [row(1, 'Bruno')]
+    api.failWith = { status: 500, code: 'BOOM', error: 'Could not load your pets. Please try again.' }
+    await renderPets()
+
+    // the owner must see that the read failed, not an empty account
+    expect(ctx.hydrated).toBe(true)
+    expect(ctx.loadError).toBe('Could not load your pets. Please try again.')
+    expect(ctx.pets).toEqual([])
+
+    api.failWith = null
+    await act(async () => {
+      ctx.retryLoad()
+    })
+    await act(async () => {})
+    await act(async () => {})
+
+    expect(ctx.loadError).toBe('')
+    expect(ctx.pets.map((p) => p.name)).toEqual(['Bruno'])
+    expect(ctx.hydrated).toBe(true)
   })
 })
 
