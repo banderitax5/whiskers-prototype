@@ -395,6 +395,91 @@ describe('evaluate: rows that are not food', () => {
   })
 })
 
+describe('evaluate: organ words that are ingredients, not therapy', () => {
+  const rows = [
+    { ...baseProduct, prod_id: 'hearts', prod_name: 'Adult Chicken With Hearts 400G' },
+    { ...baseProduct, prod_id: 'liver', prod_name: 'Adult Beef & Liver 430G' },
+    { ...baseProduct, prod_id: 'hepatic', prod_name: 'Hepatic Care Dog Food' },
+    { ...baseProduct, prod_id: 'cardiac', prod_name: 'Cardiac Care Dog Food' },
+  ]
+
+  it('does not call "Chicken With Hearts" a heart diet', () => {
+    const r = evaluate({ ...dogAdult, healthCondition: 'heart' }, rows)
+    // only the named formula is a heart diet; the ingredient row is a general food
+    expect(ids(r.best)).toEqual(['cardiac'])
+    expect(ids(r.other)).toContain('hearts')
+  })
+
+  it('does not call "Beef & Liver" a liver diet', () => {
+    const r = evaluate({ ...dogAdult, healthCondition: 'liver' }, rows)
+    expect(ids(r.best)).toEqual(['hepatic'])
+    expect(ids(r.other)).toContain('liver')
+  })
+
+  it('still tags a named condition formula', () => {
+    expect(deriveProfile({ prod_name: 'Mr Vet Cat Pouch Heart Nutrition 70G' }).healthTags)
+      .toContain('heart-support')
+    expect(deriveProfile({ prod_name: 'Brit VD Urinary And Stress Relief Cat Pouch 85G' }).healthTags)
+      .toContain('urinary-support')
+  })
+})
+
+describe('evaluate: a name that disagrees with its category', () => {
+  it('refuses a "Dog Food" row filed under Cats', () => {
+    const row = { ...baseProduct, prod_id: 'mix', prod_name: 'Moochie Casserole Dog Food 85G', category: 'cats food' }
+    const r = evaluate({ ...dogAdult, species: 'cat' }, [row])
+    expect(r.best).toEqual([])
+    expect(r.excluded[0].rule).toBe('species')
+  })
+
+  it('keeps a product that names both animals', () => {
+    const row = { ...baseProduct, prod_id: 'both', prod_name: 'Dog & Cat Recovery Food', category: 'dogs food' }
+    expect(evaluate(dogAdult, [row]).excluded).toEqual([])
+  })
+})
+
+describe('evaluate: dog weight picks a breed-size line', () => {
+  const rows = [
+    { ...baseProduct, prod_id: 'small', prod_name: 'Adult Small Breed Dog Food' },
+    { ...baseProduct, prod_id: 'medium', prod_name: 'Adult Medium Breed Dog Food' },
+    { ...baseProduct, prod_id: 'large', prod_name: 'Adult Large Breed Dog Food' },
+    { ...baseProduct, prod_id: 'open', prod_name: 'Adult Chicken Dog Food' },
+    { ...baseProduct, prod_id: 'mini-bites', prod_name: 'Adult Small Bites Chicken 3Kg' },
+  ]
+
+  it('keeps only the matching breed size for a 30 kg dog', () => {
+    const r = evaluate({ ...dogAdult, weight: 30 }, rows)
+    const shown = [...ids(r.best), ...ids(r.other)]
+    expect(shown).toContain('large')
+    expect(shown).toContain('open')
+    // "Small Bites" is a kibble size, not a breed size, so it stays available
+    expect(shown).toContain('mini-bites')
+    expect(shown).not.toContain('small')
+    expect(shown).not.toContain('medium')
+    expect(r.excluded.map((e) => e.id)).toEqual(expect.arrayContaining(['small', 'medium']))
+  })
+
+  it('keeps every size when the weight is unknown', () => {
+    const r = evaluate(dogAdult, rows)
+    const shown = [...ids(r.best), ...ids(r.other)]
+    expect(shown).toEqual(expect.arrayContaining(['small', 'medium', 'large']))
+    expect(r.excluded.filter((e) => e.rule === 'size')).toEqual([])
+  })
+})
+
+describe('evaluate: treats rank below complete food', () => {
+  it('never gives the top match to a pouch of puree', () => {
+    const rows = [
+      { ...baseProduct, prod_id: 'puree', prod_name: 'Adult Cat Puree Chicken 15G', category: 'cats food' },
+      { ...baseProduct, prod_id: 'food', prod_name: 'Adult Cat Chicken Food 400G', category: 'cats food' },
+    ]
+    const r = evaluate({ ...dogAdult, species: 'cat' }, rows)
+    expect(ids(r.best)[0]).toBe('food')
+    expect(r.best.find((p) => p.id === 'food').topMatch).toBe(true)
+    expect(r.best.find((p) => p.id === 'puree').topMatch).toBeUndefined()
+  })
+})
+
 describe('evaluate: life stage', () => {
   it('shows only growth-stage or all-stage products to a puppy', () => {
     const r = evaluate({ ...dogAdult, lifeStage: 'puppy' }, sample)

@@ -77,8 +77,11 @@ const THERAPEUTIC_TAGS = new Set(
 const TAG_KEYWORDS = [
   { tag: 'kidney-safe', words: ['renal', 'kidney'] },
   { tag: 'urinary-support', words: ['urinary', 'bladder', 'struvite', 'urolith', 'oxalate', 'crystal'] },
-  { tag: 'heart-support', words: ['cardiac', 'heart'] },
-  { tag: 'liver-support', words: ['hepatic', 'liver'] },
+  // Only the words a therapeutic diet uses. "Chicken With Hearts" and "Beef &
+  // Liver" are ingredients on an ordinary food, and tagging those as therapy put
+  // them at the top of a sick pet's list, so the bare organ word is not used.
+  { tag: 'heart-support', words: ['cardiac', 'heart care', 'heart health', 'heart support', 'heart nutrition'] },
+  { tag: 'liver-support', words: ['hepatic', 'liver care', 'liver health', 'liver support', 'liver diet'] },
   { tag: 'sensitive-stomach', words: ['gastrointestinal', 'gastro', 'digestive', 'sensitive'] },
   { tag: 'allergy-friendly', words: ['hypoallergenic', 'allergen'] },
   { tag: 'weight-management', words: ['satiety', 'weight', 'obesity', 'low cal'] },
@@ -104,6 +107,7 @@ const VET_DIET_RE = /\bvd\b|\bvt\b|\bveterinary\b|\bprescription\b|\btherapeutic
 const ALLERGEN_TERMS = {
   chicken: ['chicken', 'ckn', 'chkn', 'chik', 'poultry'],
   beef: ['beef', 'bf', 'veal', 'bovine'],
+  lamb: ['lamb', 'mutton'],
   fish: [
     'fish', 'oceanfish', 'fishmeal', 'fishball', 'fishcake', 'catfish', 'milkfish',
     'whitefish', 'swordfish', 'shellfish', 'salmon', 'tuna', 'sardine', 'anchovy',
@@ -144,13 +148,56 @@ const NON_FOOD_RE = /\blitter\b|\bbentonite\b|\btofu\b|cat sand|\bsand\b|scratch
 // A food name never says how many litres it holds; cat litter always does.
 const LITRE_RE = /\b\d+(?:\.\d+)?\s*l\b/i
 
+// Treats and toppers are not a complete meal, so they are shown lower than real
+// food and never carry the TOP MATCH badge. "Small Bites" is a kibble size, not
+// a treat, so the words are specific.
+const TREAT_RE = /\btreats?\b|\bpuree\b|\bcreamy\b|\bchews?\b|\bsticks?\b|\bstix\b|\bbiscuits?\b|\bjerky\b|\bdentastix\b|\bsnack\b|\breward\b|\btopper\b/i
+
+// Breed-size words. "Small Bites" is deliberately not matched: that is the size
+// of the kibble, not the size of the dog.
+const SIZE_CLASSES = [
+  { size: 'small', re: /\bmini\b|\btoy\b|\bsmall\s+(?:breed|dog)\b/i },
+  { size: 'medium', re: /\bmedium\s+(?:breed|dog)\b/i },
+  { size: 'large', re: /\blarge\s+(?:breed|dog)\b|\bbig\s+dog\b|\bgiant\b|\bmaxi\b/i },
+]
+
+// A dog's weight decides which breed-size food is right. The bands are broad on
+// purpose: the catalog only labels a product "small/medium/large", so a 9 kg dog
+// and a 7 kg dog are both "small".
+export function sizeClassForWeight(weightKg) {
+  const kg = Number(weightKg)
+  if (!Number.isFinite(kg) || kg <= 0) return null
+  if (kg <= 10) return 'small'
+  if (kg <= 25) return 'medium'
+  return 'large'
+}
+
+export function dietSizeClass(product) {
+  const name = product.prod_name || ''
+  const hit = SIZE_CLASSES.find(({ re }) => re.test(name))
+  return hit ? hit.size : null
+}
+
+function isTreat(product) {
+  return TREAT_RE.test(product.prod_name || '')
+}
+
 // a whole word, allowing a plural "s" or "es" (kidneys, eggs, allergens)
 function wordPattern(word) {
   const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return new RegExp(`\\b${escaped}(?:s|es)?\\b`)
 }
 
-const TAG_PATTERNS = TAG_KEYWORDS.map(({ tag, words }) => ({ tag, patterns: words.map(wordPattern) }))
+const TAG_PATTERNS = TAG_KEYWORDS.map(({ tag, words }) => ({
+  tag,
+  patterns: words.map(wordPattern),
+}))
+// A species word in the product name can contradict the category ("Moochie
+// Casserole Dog Food" filed under Cats). The category is the supplier's own
+// filing, but the name is what a shopper reads, so a name that says dog on a
+// cat row is refused instead of guessed.
+const DOG_NAME_RE = /\bdog\b|\bdogs\b|\bpuppy\b|\bpuppies\b/i
+const CAT_NAME_RE = /\bcat\b|\bcats\b|\bkitten\b|\bkittens\b/i
 const ALLERGEN_PATTERNS = Object.entries(ALLERGEN_TERMS).map(([group, words]) => ({
   group,
   patterns: words.map(wordPattern),
@@ -223,6 +270,20 @@ export function deriveProfile(product) {
   return { species, lifeStage, healthTags, stageExplicit, stageSpecific }
 }
 
+// true when the product name names a different species than its category says.
+// A row filed under Cats that says "Dog Food" is a filing mistake, and showing
+// it to either animal is a wrong recommendation. Unknown species (birds, fish,
+// small pets) are left alone: those names rarely carry the species word.
+export function speciesMismatch(product) {
+  const name = product.prod_name || ''
+  const category = (product.category || '').toLowerCase()
+  const filedUnderCats = category.startsWith('cats')
+  const filedUnderDogs = category.startsWith('dogs')
+  if (filedUnderCats && DOG_NAME_RE.test(name) && !CAT_NAME_RE.test(name)) return true
+  if (filedUnderDogs && CAT_NAME_RE.test(name) && !DOG_NAME_RE.test(name)) return true
+  return false
+}
+
 // Allergen groups named in a product's text (name, brand, description). The
 // catalog has no ingredient list yet, so this is a best-effort check and the
 // results carry a "check the label" warning.
@@ -292,6 +353,9 @@ export function evaluate(pet, products) {
   const condition = pet.healthCondition && pet.healthCondition !== 'healthy' ? pet.healthCondition : null
   const wanted = condition ? CONDITION_TAGS[condition] || [] : []
   const stage = KNOWN_STAGES.includes(pet.lifeStage) ? pet.lifeStage : null
+  // a dog's weight picks the breed-size line (small / medium / large). A profile
+  // with no weight keeps every size: the owner can add it later.
+  const petSize = pet.species === 'dog' ? sizeClassForWeight(pet.weight) : null
 
   // an old or hand-edited profile can name an allergen we have no rule for, so
   // the notice names it in words (never as the stored code) and one notice
@@ -330,6 +394,12 @@ export function evaluate(pet, products) {
       exclude('species', `Not a ${pet.species} product`)
       continue
     }
+    // a cat-category row whose own name says "Dog Food" cannot be trusted for
+    // either animal, so it is refused instead of guessed
+    if (speciesMismatch(product)) {
+      exclude('species', 'The name and the category disagree on the animal')
+      continue
+    }
 
     // a stage-specific product must match the pet's stage
     if (stage && !profile.lifeStage.includes(stage)) {
@@ -363,10 +433,18 @@ export function evaluate(pet, products) {
       continue
     }
 
-    eligible.push({ product, profile, matches })
+    // a "Small Breed" food is not right for a large dog. A size word is only a
+    // hint, so a product with no size word stays available to every dog.
+    const dietSize = dietSizeClass(product)
+    if (petSize && dietSize && dietSize !== petSize) {
+      exclude('size', `Made for ${dietSize} dogs`)
+      continue
+    }
+
+    eligible.push({ product, profile, matches, treat: isTreat(product) })
   }
 
-  const scored = eligible.map(({ product, profile, matches }) => {
+  const scored = eligible.map(({ product, profile, matches, treat }) => {
     let score = 0
     const reasons = []
 
@@ -377,6 +455,9 @@ export function evaluate(pet, products) {
       // (an "All Stages" food suits every stage but is built for none)
       if (profile.stageSpecific) score += 2
     }
+
+    // a treat or topper is not a complete meal, so it never outranks real food
+    if (treat) score -= 4
 
     if (condition) {
       if (matches) {
@@ -407,6 +488,8 @@ export function evaluate(pet, products) {
       score,
       reasons,
       warnings: allergies.length > 0 ? [LABEL_CHECK_WARNING] : [],
+      // a treat is never a top match, even when it scores well
+      treat,
       section: condition && !matches ? 'other' : 'best',
     }
   })
@@ -415,6 +498,12 @@ export function evaluate(pet, products) {
   result.best = ranked.filter((item) => item.section === 'best')
   result.other = ranked.filter((item) => item.section === 'other')
   result.matchedCondition = !condition || result.best.length > 0
+
+  // the top match is the first complete food, so a pouch of treats never wears
+  // the badge
+  const topComplete = result.best.find((item) => !item.treat)
+  if (topComplete) topComplete.topMatch = true
+  else if (result.best[0]) result.best[0].topMatch = true
 
   if (condition && result.best.length === 0) {
     result.notices.push({

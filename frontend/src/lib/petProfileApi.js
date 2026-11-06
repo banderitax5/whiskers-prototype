@@ -6,7 +6,7 @@
 // the browser added stay local, so the server never receives a value it would
 // have to ignore.
 
-const ALLERGY_CODES = ['chicken', 'beef', 'fish', 'grain', 'dairy', 'egg']
+const ALLERGY_CODES = ['chicken', 'beef', 'lamb', 'fish', 'grain', 'dairy', 'egg']
 
 // "none" is not an allergen: the API stores an empty list, which is what the
 // column accepts. Anything unknown is dropped here too, because the server would

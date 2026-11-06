@@ -22,7 +22,7 @@ export const HEALTH_CONDITIONS = [
   'allergy-prone', 'weight-management', 'dental', 'joint', 'heart', 'liver',
 ]
 
-export const ALLERGIES = ['chicken', 'beef', 'fish', 'grain', 'dairy', 'egg']
+export const ALLERGIES = ['chicken', 'beef', 'lamb', 'fish', 'grain', 'dairy', 'egg']
 
 export const NEUTERED = ['unknown', 'yes', 'no']
 

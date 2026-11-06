@@ -418,11 +418,11 @@ function RecommendationResults({ pet }) {
               {hasCondition ? `Best matches for ${conditionText}` : 'Recommended foods'}
             </h3>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-              {run.entries.map(({ item, index }) => (
+              {run.entries.map(({ item }) => (
                 <ProductCard
                   key={item.prod_id}
                   product={item}
-                  topMatch={index === 0}
+                  topMatch={Boolean(item.topMatch)}
                   lowStockThreshold={lowStockThreshold}
                   vetNote={vetNote}
                   onOpen={setQuickItem}
@@ -438,7 +438,9 @@ function RecommendationResults({ pet }) {
             </h3>
             <p className="text-xs text-gray-600 dark:text-gray-400">
               {hasCondition
-                ? `These are general foods. No food made for ${conditionText} is available right now.`
+                ? best.length > 0
+                  ? `These are general foods, not made for ${conditionText}.`
+                  : `These are general foods. No food made for ${conditionText} is available right now.`
                 : 'These are general foods rather than a match for your pet\'s profile.'}
             </p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">

@@ -34,7 +34,7 @@ create table if not exists public.pets (
   )),
   -- only real allergens are stored; "none / not sure" is the empty array.
   allergies       text[] not null default '{}' check (allergies <@ array[
-    'chicken', 'beef', 'fish', 'grain', 'dairy', 'egg'
+    'chicken', 'beef', 'lamb', 'fish', 'grain', 'dairy', 'egg'
   ]::text[]),
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()

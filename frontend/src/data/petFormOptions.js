@@ -57,6 +57,7 @@ export const ALLERGY_OPTIONS = [
   { value: 'none', label: 'None / Not sure' },
   { value: 'chicken', label: 'Chicken' },
   { value: 'beef', label: 'Beef' },
+  { value: 'lamb', label: 'Lamb' },
   { value: 'fish', label: 'Fish / Seafood' },
   { value: 'grain', label: 'Grain / Wheat' },
   { value: 'dairy', label: 'Dairy' },
