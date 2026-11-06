@@ -38,11 +38,40 @@ async function token() {
   return data.session?.access_token || null
 }
 
+// How long to wait for the generated worker to activate before giving up.
+// `navigator.serviceWorker.ready` never settles when nothing is registered
+// (the dev server), so without a cap every caller would hang there forever.
+const REGISTRATION_TIMEOUT_MS = 5000
+
 async function registration() {
   if (!('serviceWorker' in navigator)) return null
   // `ready` waits for the generated worker to activate, which is what makes
   // push work on the very first visit after install.
-  return navigator.serviceWorker.ready
+  let ready
+  try {
+    ready = navigator.serviceWorker.ready
+  } catch {
+    ready = null
+  }
+  if (!ready) return null
+
+  let timer
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(null), REGISTRATION_TIMEOUT_MS)
+  })
+  try {
+    const reg = await Promise.race([ready, timeout])
+    if (reg) return reg
+  } catch {
+    // fall through to the lookup below
+  } finally {
+    clearTimeout(timer)
+  }
+  try {
+    return await navigator.serviceWorker.getRegistration()
+  } catch {
+    return null
+  }
 }
 
 // Public VAPID key from the server. No session needed, so this also works on a
@@ -66,6 +95,22 @@ export async function currentSubscription() {
   }
 }
 
+// One device's subscription just changed. The bell and the Profile row can be
+// on screen next to the permission card, so they listen for this and re-read
+// their On/Off state instead of showing "Off" right after the shopper allowed.
+const PUSH_CHANGED_EVENT = "whiskers:push-changed"
+
+export function onPushChange(handler) {
+  if (typeof window === "undefined") return () => {}
+  window.addEventListener(PUSH_CHANGED_EVENT, handler)
+  return () => window.removeEventListener(PUSH_CHANGED_EVENT, handler)
+}
+
+function announcePushChange() {
+  if (typeof window === "undefined") return
+  window.dispatchEvent(new Event(PUSH_CHANGED_EVENT))
+}
+
 export async function isSubscribed() {
   const sub = await currentSubscription()
   return Boolean(sub)
@@ -85,14 +130,41 @@ export async function enablePush() {
     }
   }
 
+  // Start the permission request in THIS tick, before any network await.
+  // Browsers only show the prompt while the tap/click still counts as a user
+  // gesture; an earlier `await` can spend it, and Chrome/Safari then resolve
+  // 'default' without showing anything. This is the whole reason the bell
+  // could look dead.
+  let permissionPromise
+  if (Notification.permission === 'granted') {
+    permissionPromise = Promise.resolve('granted')
+  } else if (Notification.permission === 'denied') {
+    return {
+      ok: false,
+      reason: 'Notifications are blocked for this site. Turn them on in your browser site settings, then try again.',
+    }
+  } else {
+    try {
+      permissionPromise = Promise.resolve(Notification.requestPermission())
+    } catch {
+      permissionPromise = Promise.resolve('denied')
+    }
+  }
+
   const config = await pushConfig()
   if (!config.enabled) {
     return { ok: false, reason: 'Notifications are not set up on this server yet.' }
   }
 
-  const permission = await Notification.requestPermission()
+  const permission = await permissionPromise
   if (permission !== 'granted') {
-    return { ok: false, reason: 'Notifications are blocked for this site. Allow them in your browser settings, then try again.' }
+    return {
+      ok: false,
+      reason:
+        permission === 'denied'
+          ? 'Notifications are blocked for this site. Turn them on in your browser site settings, then try again.'
+          : 'Notifications were not allowed. Tap Allow notifications and choose Allow when the browser asks.',
+    }
   }
 
   const reg = await registration()
@@ -124,6 +196,7 @@ export async function enablePush() {
     return { ok: false, reason: err?.message || 'We could not save this device. Please try again.' }
   }
 
+  announcePushChange()
   return { ok: true }
 }
 
@@ -143,6 +216,7 @@ export async function disablePush() {
   } catch {
     return { ok: false, reason: 'This device could not be unsubscribed. Try again.' }
   }
+  announcePushChange()
   return { ok: true }
 }
 

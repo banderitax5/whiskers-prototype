@@ -14,6 +14,7 @@ import {
   disablePush,
   enablePush,
   isSubscribed,
+  onPushChange,
   pushConfig,
   pushSupport,
   sendTestPush,
@@ -25,7 +26,7 @@ export default function AdminPushToggle() {
 
   useEffect(() => {
     let alive = true
-    ;(async () => {
+    async function refresh() {
       const support = pushSupport()
       if (support === "unsupported") {
         if (alive) setState("hidden")
@@ -45,9 +46,16 @@ export default function AdminPushToggle() {
       }
       const subscribed = await isSubscribed()
       if (alive) setState(subscribed ? "on" : "off")
-    })()
+    }
+
+    refresh()
+    // the permission card can turn this on from another component on screen
+    const stop = onPushChange(() => {
+      if (alive) refresh()
+    })
     return () => {
       alive = false
+      stop()
     }
   }, [])
 

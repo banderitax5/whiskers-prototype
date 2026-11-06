@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { BsBell, BsBellFill } from "react-icons/bs"
 import toast from "../lib/toast"
-import { disablePush, enablePush, isSubscribed, pushConfig, pushSupport, sendTestPush } from "../lib/webPush"
+import { disablePush, enablePush, isSubscribed, onPushChange, pushConfig, pushSupport, sendTestPush } from "../lib/webPush"
 
 export default function OrderNotificationToggle() {
   const [state, setState] = useState("loading") // loading | hidden | off | on | busy
@@ -18,7 +18,7 @@ export default function OrderNotificationToggle() {
 
   useEffect(() => {
     let alive = true
-    ;(async () => {
+    async function refresh() {
       const support = pushSupport()
       if (support === "unsupported") {
         if (alive) setState("hidden")
@@ -38,9 +38,16 @@ export default function OrderNotificationToggle() {
       }
       const subscribed = await isSubscribed()
       if (alive) setState(subscribed ? "on" : "off")
-    })()
+    }
+
+    refresh()
+    // the permission card above this row can turn alerts on by itself
+    const stop = onPushChange(() => {
+      if (alive) refresh()
+    })
     return () => {
       alive = false
+      stop()
     }
   }, [])
 

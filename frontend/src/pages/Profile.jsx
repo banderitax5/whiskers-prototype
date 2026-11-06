@@ -7,6 +7,7 @@ import { phoneError, addressLineError, postalError } from '../lib/addressValidat
 import { errorFromResponse, friendlyMessage } from '../lib/errors'
 import MfaEnrollmentModal from '../components/MfaEnrollmentModal'
 import OrderNotificationToggle from '../components/OrderNotificationToggle'
+import NotificationPermissionPrompt from '../components/NotificationPermissionPrompt'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -306,6 +307,7 @@ function Profile() {
   return (
     <>
     <div className={SHELL}>
+      <NotificationPermissionPrompt />
 
       <div className={HEADER}>
         <h1 className="text-xl sm:text-3xl font-bold text-[#0b2e59] dark:text-yellow-300 tracking-tight">

@@ -1,5 +1,5 @@
 /* eslint-env serviceworker */
-/* global self, clients */
+/* global clients */
 // Web Push handlers for the back office.
 //
 // This file is imported by the generated service worker (vite.config.js ->

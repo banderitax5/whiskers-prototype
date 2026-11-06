@@ -4,6 +4,7 @@ import supabase from "../lib/supabase"
 import RecoveryGate from "./RecoveryGate.jsx"
 import StepUpModal from "./StepUpModal.jsx"
 import AdminPushToggle from "./AdminPushToggle.jsx"
+import NotificationPermissionPrompt from "./NotificationPermissionPrompt.jsx"
 import { clearStepUp } from "../lib/stepUp"
 import { useThemeDetection } from "./adminTheme"
 import { useRole } from "../context/RoleContext"
@@ -301,6 +302,8 @@ function AdminLayout() {
         <Outlet />
       </main>
       <FloatingNotification />
+      {/* soft ask for push permission, same channel as the bell above */}
+      <NotificationPermissionPrompt variant="staff" />
     </div>
   )
 }
