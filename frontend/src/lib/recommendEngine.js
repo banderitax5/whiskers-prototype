@@ -194,7 +194,9 @@ export function petSizeClass(pet, stage) {
 // word boundaries keep it from counting as "active".
 const ENERGY_RE = /\bhigh[\s-]*energy\b|\bperformance\b|\bactive\b|\bsport\b|\bworking\b|\bagility\b|\bendurance\b/i
 const LIGHT_RE = /\blight\b|\blite\b|low[\s-]*fat|low[\s-]*calorie|reduced[\s-]*calorie|\bsatiety\b/i
-const INDOOR_RE = /\bindoor\b/i
+// "Indoor27" is one word in the catalog, so the prefix is enough: a product
+// whose name starts with "indoor" is an indoor formula whatever follows it
+const INDOOR_RE = /\bindoor/i
 const HAIRBALL_RE = /\bhairball\b/i
 
 // a product the engine wants to flag as a poor fit for a calm pet
@@ -542,7 +544,9 @@ export function evaluate(pet, products) {
 
     if (energyFormula) {
       if (activity === 'high') {
-        score += 2
+        // above a plain size match: an active dog needs the energy first, and
+        // the only high-energy formula in the catalog names no breed size
+        score += 4
         addReason(`High-energy formula for an active ${pet.species}`)
       } else if (lowActivity) {
         score -= 3
@@ -557,9 +561,11 @@ export function evaluate(pet, products) {
     }
 
     // one indoor bonus at most: an indoor cat with low activity is still only
-    // one preference, so the two rules never add up to four points
+    // one preference, so the two rules never add up to four points. An indoor
+    // cat gets the stronger nudge because the catalog's indoor foods otherwise
+    // tie with a page of ordinary cheap pouches.
     if ((indoorCat || lowActivity) && indoorFormula) {
-      score += 2
+      score += indoorCat ? 3 : 2
       addReason(indoorCat ? 'Indoor formula' : 'Indoor formula for a calm pet')
     }
 

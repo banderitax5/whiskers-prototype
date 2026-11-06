@@ -585,7 +585,7 @@ describe('evaluate: daily life only changes the order', () => {
       food('hairball', 'Adult Hairball Cat Food', { category: 'cats food' }),
     ]
     const r = evaluate({ ...cat, activity: 'normal', environment: 'indoor' }, rows)
-    expect(ids(r.best).slice(0, 2)).toEqual(['hairball', 'indoor'])
+    expect(ids(r.best).slice(0, 2)).toEqual(['indoor', 'hairball'])
     expect(r.best.find((p) => p.id === 'indoor').reasons).toContain('Indoor formula')
     expect(r.best.find((p) => p.id === 'hairball').reasons).toContain('Hairball control')
   })
