@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { speciesFor, deriveProfile, recommendFromCatalog, evaluate } from './recommendEngine'
+import { speciesFor, deriveProfile, recommendFromCatalog, evaluate, petSizeClass } from './recommendEngine'
 
 const baseProduct = {
   prod_id: 'p1',
@@ -538,6 +538,134 @@ describe('evaluate: life stage', () => {
     expect(ids(r.best)).toContain('kitten')
     expect(ids(r.best)).not.toContain('cat-adult')
     expect(r.excluded.map((e) => e.id)).toContain('cat-adult')
+  })
+})
+
+describe('evaluate: daily life only changes the order', () => {
+  const food = (id, name, extra = {}) => ({ ...baseProduct, prod_id: id, prod_name: name, ...extra })
+
+  it('puts an energy-rich formula first for a high-activity dog', () => {
+    const rows = [food('plain', 'Adult Chicken Dog Food'), food('energy', 'Adult High Energy Dog Food')]
+    const r = evaluate({ ...dogAdult, activity: 'high' }, rows)
+    expect(ids(r.best)).toEqual(['energy', 'plain'])
+    expect(r.best[0].reasons).toContain('High-energy formula for an active dog')
+  })
+
+  it('never hides a high-energy formula from a calm dog, only warns and pushes it down', () => {
+    const rows = [food('energy', 'Adult High Energy Dog Food'), food('plain', 'Adult Chicken Dog Food')]
+    const r = evaluate({ ...dogAdult, activity: 'low' }, rows)
+    expect(ids(r.best)).toEqual(['plain', 'energy'])
+    const energy = r.best.find((p) => p.id === 'energy')
+    expect(energy.warnings).toContain('High-energy formula, but your pet has low activity.')
+    expect(energy.lowFit).toBe(true)
+    // a poor fit never wears the badge
+    expect(energy.topMatch).toBeUndefined()
+    expect(r.best.find((p) => p.id === 'plain').topMatch).toBe(true)
+  })
+
+  it('checks the badge criteria on the total score, so a calm pet is never first', () => {
+    const rows = [food('energy', 'Adult Performance Dog Food')]
+    const r = evaluate({ ...dogAdult, activity: 'low' }, rows)
+    expect(ids(r.best)).toEqual(['energy'])
+    expect(r.best[0].topMatch).toBeUndefined()
+  })
+
+  it('prefers a light formula for a calm pet', () => {
+    const rows = [food('plain', 'Adult Chicken Dog Food'), food('light', 'Adult Light Dog Food')]
+    const r = evaluate({ ...dogAdult, activity: 'low' }, rows)
+    expect(ids(r.best)).toEqual(['light', 'plain'])
+    expect(r.best[0].reasons).toContain('Light formula for a less active pet')
+  })
+
+  it('gives an indoor cat the indoor and hairball bonuses', () => {
+    const cat = { species: 'cat', lifeStage: 'adult', healthCondition: 'healthy', allergies: [] }
+    const rows = [
+      food('plain', 'Adult Cat Food', { category: 'cats food' }),
+      food('indoor', 'Adult Indoor Cat Food', { category: 'cats food' }),
+      food('hairball', 'Adult Hairball Cat Food', { category: 'cats food' }),
+    ]
+    const r = evaluate({ ...cat, activity: 'normal', environment: 'indoor' }, rows)
+    expect(ids(r.best).slice(0, 2)).toEqual(['hairball', 'indoor'])
+    expect(r.best.find((p) => p.id === 'indoor').reasons).toContain('Indoor formula')
+    expect(r.best.find((p) => p.id === 'hairball').reasons).toContain('Hairball control')
+  })
+
+  it('does not give an indoor cat two bonuses for the same indoor rule', () => {
+    const cat = { species: 'cat', lifeStage: 'adult', healthCondition: 'healthy', allergies: [] }
+    const rows = [
+      food('plain', 'Adult Cat Food', { category: 'cats food' }),
+      food('indoor', 'Adult Indoor Cat Food', { category: 'cats food' }),
+    ]
+    const calmIndoor = evaluate({ ...cat, activity: 'low', environment: 'indoor' }, rows)
+    const indoorOnly = evaluate({ ...cat, activity: 'normal', environment: 'indoor' }, rows)
+    const gap = (r) => r.best[0].score - r.best[1].score
+    expect(gap(calmIndoor)).toBe(gap(indoorOnly))
+  })
+
+  it('leaves a cat with an outdoor life alone', () => {
+    const cat = { species: 'cat', lifeStage: 'adult', healthCondition: 'healthy', allergies: [] }
+    const rows = [
+      food('plain', 'Adult Cat Food', { category: 'cats food' }),
+      food('indoor', 'Adult Indoor Cat Food', { category: 'cats food' }),
+    ]
+    const r = evaluate({ ...cat, activity: 'normal', environment: 'outdoor' }, rows)
+    expect(r.best.find((p) => p.id === 'indoor').reasons).not.toContain('Indoor formula')
+  })
+
+  it('marks the food made for the dog\'s own breed size', () => {
+    const rows = [
+      food('large', 'Adult Large Breed Dog Food'),
+      food('open', 'Adult Chicken Dog Food'),
+    ]
+    const r = evaluate({ ...dogAdult, activity: 'normal', breedSize: 'large' }, rows)
+    expect(r.best.find((p) => p.id === 'large').reasons).toContain('Made for large-breed dogs')
+    expect(r.best.find((p) => p.id === 'open').reasons).not.toContain('Made for large-breed dogs')
+  })
+
+  it('treats an unknown activity value as normal', () => {
+    const rows = [food('energy', 'Adult High Energy Dog Food')]
+    const r = evaluate({ ...dogAdult, activity: 'zoomies' }, rows)
+    expect(r.best[0].warnings).toEqual([])
+    expect(r.best[0].reasons).not.toContain('High-energy formula for an active dog')
+  })
+
+  it('never applies the dog and cat questions to another species', () => {
+    const bird = { species: 'bird', lifeStage: 'adult', healthCondition: 'healthy', allergies: [], activity: 'low' }
+    const rows = [{ ...food('seed', 'Adult High Energy Bird Food'), category: 'birds' }]
+    const r = evaluate(bird, rows)
+    expect(r.best[0].warnings).toEqual([])
+    expect(r.best[0].lowFit).toBe(false)
+  })
+
+  it('reads a light formula without treating low calcium as low calorie', () => {
+    const rows = [
+      food('cal', 'Adult Low Calcium Dog Food'),
+      food('light', 'Adult Low Calorie Dog Food'),
+    ]
+    const r = evaluate({ ...dogAdult, activity: 'low' }, rows)
+    expect(r.best.find((p) => p.id === 'cal').reasons).not.toContain('Light formula for a less active pet')
+    expect(r.best.find((p) => p.id === 'light').reasons).toContain('Light formula for a less active pet')
+  })
+})
+
+describe('petSizeClass', () => {
+  it('lets the owner\'s breed-size answer win at every age', () => {
+    expect(petSizeClass({ species: 'dog', lifeStage: 'puppy', breedSize: 'large', weight: 3 }, 'puppy')).toBe('large')
+    expect(petSizeClass({ species: 'dog', lifeStage: 'adult', breedSize: 'small', weight: 30 }, 'adult')).toBe('small')
+  })
+
+  it('never guesses a puppy\'s adult size from its current weight', () => {
+    expect(petSizeClass({ species: 'dog', lifeStage: 'puppy', weight: 10 }, 'puppy')).toBeNull()
+  })
+
+  it('falls back to weight for a grown dog', () => {
+    expect(petSizeClass({ species: 'dog', weight: 8 }, 'adult')).toBe('small')
+    expect(petSizeClass({ species: 'dog', weight: 20 }, 'adult')).toBe('medium')
+    expect(petSizeClass({ species: 'dog', weight: 30 }, 'adult')).toBe('large')
+  })
+
+  it('has no size line for a cat', () => {
+    expect(petSizeClass({ species: 'cat', breedSize: 'large', weight: 30 }, 'adult')).toBeNull()
   })
 })
 

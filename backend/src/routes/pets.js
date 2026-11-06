@@ -23,7 +23,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // Columns the client receives. pet_id is renamed to id by petRowToClient so the
 // existing React context keeps working unchanged.
 const PET_COLUMNS =
-  'pet_id, name, species, life_stage, stage_source, birth_date, weight_kg, neutered, health_condition, allergies, created_at, updated_at'
+  'pet_id, name, species, life_stage, stage_source, birth_date, weight_kg, neutered, health_condition, allergies, activity, environment, breed_size, created_at, updated_at'
 
 function sendSchemaPending(res) {
   return res.status(503).json({ error: MIGRATION_REQUIRED, code: 'MIGRATION_REQUIRED' })

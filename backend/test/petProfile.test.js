@@ -34,6 +34,9 @@ test('normalizePetProfile accepts a profile the form can produce', () => {
     neutered: 'yes',
     health_condition: 'healthy',
     allergies: ['chicken', 'fish'],
+    activity: 'normal',
+    environment: 'both',
+    breed_size: 'unknown',
   })
 })
 
@@ -119,6 +122,50 @@ test('normalizePetProfile records a manual stage override without a birth date',
   assert.equal(res.value.birth_date, null)
 })
 
+test('normalizePetProfile keeps the daily-life answers a dog can give', () => {
+  const res = normalizePetProfile({ ...valid, activity: 'high', environment: 'indoor', breedSize: 'Large' })
+  assert.equal(res.value.activity, 'high')
+  // a dog is not asked where it lives, so the neutral answer is stored
+  assert.equal(res.value.environment, 'both')
+  assert.equal(res.value.breed_size, 'large')
+})
+
+test('normalizePetProfile keeps the daily-life answers a cat can give', () => {
+  const res = normalizePetProfile({
+    ...valid,
+    species: 'cat',
+    lifeStage: 'adult',
+    activity: 'low',
+    environment: 'Indoor',
+    breedSize: 'small',
+  })
+  assert.equal(res.value.activity, 'low')
+  assert.equal(res.value.environment, 'indoor')
+  // a cat is not asked its breed size
+  assert.equal(res.value.breed_size, 'unknown')
+})
+
+test('normalizePetProfile stores the neutral daily life for a bird or a fish', () => {
+  const bird = normalizePetProfile({
+    ...valid,
+    species: 'bird',
+    lifeStage: 'adult',
+    activity: 'high',
+    environment: 'indoor',
+    breedSize: 'small',
+  })
+  assert.equal(bird.value.activity, 'normal')
+  assert.equal(bird.value.environment, 'both')
+  assert.equal(bird.value.breed_size, 'unknown')
+})
+
+test('normalizePetProfile rejects an unknown daily-life value with a readable message', () => {
+  assert.equal(normalizePetProfile({ ...valid, activity: 'sleepy' }).error, MSG.activityInvalid)
+  assert.equal(normalizePetProfile({ ...valid, environment: 'moon' }).error, MSG.environmentInvalid)
+  assert.equal(normalizePetProfile({ ...valid, breedSize: 'giant' }).error, MSG.breedSizeInvalid)
+  assert.equal(normalizePetProfile({ ...valid, activity: 42 }).error, MSG.activityInvalid)
+})
+
 test('normalizePetProfile treats a birth date as the source unless overridden', () => {
   assert.equal(normalizePetProfile({ ...valid }).value.stage_source, 'birthDate')
   assert.equal(
@@ -158,8 +205,23 @@ test('petRowToClient returns the shape the frontend already uses', () => {
     neutered: 'yes',
     healthCondition: 'healthy',
     allergies: ['none'],
+    activity: 'normal',
+    environment: 'both',
+    breedSize: 'unknown',
     createdAt: '2026-01-01T00:00:00.000Z',
   })
+})
+
+test('petRowToClient returns the stored daily-life answers', () => {
+  const row = {
+    pet_id: 'x', name: 'Mochi', species: 'dog', life_stage: 'adult', stage_source: 'manual',
+    birth_date: null, weight_kg: null, neutered: 'unknown', health_condition: 'healthy',
+    allergies: [], activity: 'high', environment: 'both', breed_size: 'large', created_at: null,
+  }
+  const pet = petRowToClient(row)
+  assert.equal(pet.activity, 'high')
+  assert.equal(pet.environment, 'both')
+  assert.equal(pet.breedSize, 'large')
 })
 
 test('petRowToClient keeps the stored stage and allergies', () => {

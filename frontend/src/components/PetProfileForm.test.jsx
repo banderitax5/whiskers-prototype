@@ -102,3 +102,86 @@ describe('PetProfileForm: allergies saved by an older build', () => {
     expect(onSubmit.mock.calls[0][0].allergies).toEqual(['chicken'])
   })
 })
+
+async function choose(container, id, value) {
+  const select = container.querySelector(`#${id}`)
+  expect(select).toBeTruthy()
+  select.value = value
+  await act(async () => { select.dispatchEvent(new Event('change', { bubbles: true })) })
+}
+
+describe('PetProfileForm: daily life', () => {
+  it('asks a dog about activity and breed size, but not where it lives', async () => {
+    const container = await render(<PetProfileForm initialPet={savedPet(['none'])} />)
+    expect(container.textContent).toContain('Daily life')
+    expect(container.querySelector('#petActivity')).toBeTruthy()
+    expect(container.querySelector('#petBreedSize')).toBeTruthy()
+    expect(container.querySelector('#petEnvironment')).toBeNull()
+  })
+
+  it('asks a cat about activity and where it lives, but not its breed size', async () => {
+    const container = await render(
+      <PetProfileForm initialPet={{ ...savedPet(['none']), species: 'cat', lifeStage: 'adult' }} />
+    )
+    expect(container.querySelector('#petActivity')).toBeTruthy()
+    expect(container.querySelector('#petEnvironment')).toBeTruthy()
+    expect(container.querySelector('#petBreedSize')).toBeNull()
+  })
+
+  it('does not ask a bird, and saves the neutral answers', async () => {
+    const onSubmit = vi.fn()
+    const container = await render(
+      <PetProfileForm
+        initialPet={{ ...savedPet(['none']), species: 'bird', lifeStage: 'adult' }}
+        onSubmit={onSubmit}
+      />
+    )
+    expect(container.textContent).not.toContain('Daily life')
+    await submit(container)
+    const saved = onSubmit.mock.calls[0][0]
+    expect(saved.activity).toBe('normal')
+    expect(saved.environment).toBe('both')
+    expect(saved.breedSize).toBe('unknown')
+  })
+
+  it('starts a dog on the neutral answers', async () => {
+    const onSubmit = vi.fn()
+    const container = await render(<PetProfileForm initialPet={savedPet(['none'])} onSubmit={onSubmit} />)
+    await submit(container)
+    const saved = onSubmit.mock.calls[0][0]
+    expect(saved.activity).toBe('normal')
+    expect(saved.environment).toBe('both')
+    expect(saved.breedSize).toBe('unknown')
+  })
+
+  it('saves the answers the owner picked', async () => {
+    const onSubmit = vi.fn()
+    const container = await render(<PetProfileForm initialPet={savedPet(['none'])} onSubmit={onSubmit} />)
+    await choose(container, 'petActivity', 'high')
+    await choose(container, 'petBreedSize', 'large')
+    await submit(container)
+    const saved = onSubmit.mock.calls[0][0]
+    expect(saved.activity).toBe('high')
+    expect(saved.breedSize).toBe('large')
+    // a dog is never asked where it lives
+    expect(saved.environment).toBe('both')
+  })
+
+  it('opens an edited cat on its saved answers and saves them back', async () => {
+    const onSubmit = vi.fn()
+    const pet = {
+      ...savedPet(['none']),
+      species: 'cat',
+      lifeStage: 'adult',
+      activity: 'low',
+      environment: 'indoor',
+    }
+    const container = await render(<PetProfileForm initialPet={pet} onSubmit={onSubmit} />)
+    expect(container.querySelector('#petActivity').value).toBe('low')
+    expect(container.querySelector('#petEnvironment').value).toBe('indoor')
+    await submit(container)
+    const saved = onSubmit.mock.calls[0][0]
+    expect(saved.activity).toBe('low')
+    expect(saved.environment).toBe('indoor')
+  })
+})

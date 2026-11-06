@@ -19,6 +19,9 @@
 //                    healthy baseline, and an allergy-friendly boost. Products
 //                    that match the pet's condition go in `best`; other eligible
 //                    products go in `other` and are labelled as general foods.
+//   8. daily life  - activity, indoor/outdoor and breed size only change the
+//                    order (soft score) and the reason lines. They never hide a
+//                    product except through the existing breed-size rule.
 //
 // Ties are broken by price (low first), then name, then id, so the same input
 // always gives the same order.
@@ -171,6 +174,31 @@ export function sizeClassForWeight(weightKg) {
   if (kg <= 25) return 'medium'
   return 'large'
 }
+
+// The breed-size line for one dog. The owner's own answer wins, because it is
+// the only thing that knows a puppy's adult size. Without an answer, a grown
+// dog's weight decides; a puppy's current weight says nothing about the adult
+// size, so a puppy keeps every size instead of being classed by today's kilos.
+const BREED_SIZES = ['small', 'medium', 'large']
+
+export function petSizeClass(pet, stage) {
+  if (!pet || pet.species !== 'dog') return null
+  const explicit = typeof pet.breedSize === 'string' ? pet.breedSize.trim().toLowerCase() : ''
+  if (BREED_SIZES.includes(explicit)) return explicit
+  if (GROWTH_STAGES.includes(stage)) return null
+  return sizeClassForWeight(pet.weight)
+}
+
+// Daily-life words. They describe what the formula is (energy dense, light,
+// indoor, hairball) and never a health claim. "ProActive" is one word, so the
+// word boundaries keep it from counting as "active".
+const ENERGY_RE = /\bhigh[\s-]*energy\b|\bperformance\b|\bactive\b|\bsport\b|\bworking\b|\bagility\b|\bendurance\b/i
+const LIGHT_RE = /\blight\b|\blite\b|low[\s-]*fat|low[\s-]*calorie|reduced[\s-]*calorie|\bsatiety\b/i
+const INDOOR_RE = /\bindoor\b/i
+const HAIRBALL_RE = /\bhairball\b/i
+
+// a product the engine wants to flag as a poor fit for a calm pet
+const LOW_ACTIVITY_WARNING = 'High-energy formula, but your pet has low activity.'
 
 export function dietSizeClass(product) {
   const name = product.prod_name || ''
@@ -339,6 +367,13 @@ function byRank(a, b) {
   )
 }
 
+// The calm/active answer for a pet that was saved before these questions
+// existed, or with a value we do not know.
+export function normalizeActivity(value) {
+  const text = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  return ['low', 'normal', 'high'].includes(text) ? text : 'normal'
+}
+
 // Returns { best, other, excluded, notices, matchedCondition }.
 // best: products that match the pet's condition (or every eligible product when
 //       the pet has no condition).
@@ -353,9 +388,17 @@ export function evaluate(pet, products) {
   const condition = pet.healthCondition && pet.healthCondition !== 'healthy' ? pet.healthCondition : null
   const wanted = condition ? CONDITION_TAGS[condition] || [] : []
   const stage = KNOWN_STAGES.includes(pet.lifeStage) ? pet.lifeStage : null
-  // a dog's weight picks the breed-size line (small / medium / large). A profile
-  // with no weight keeps every size: the owner can add it later.
-  const petSize = pet.species === 'dog' ? sizeClassForWeight(pet.weight) : null
+  // a dog's own breed-size answer (or a grown dog's weight) picks the size line.
+  // A profile with neither keeps every size: the owner can add it later.
+  const petSize = petSizeClass(pet, stage)
+  // the daily-life questions are only asked about dogs and cats; another species
+  // (or an old hand-edited profile) keeps the neutral answer
+  const activity =
+    pet.species === 'dog' || pet.species === 'cat' ? normalizeActivity(pet.activity) : 'normal'
+  const indoorCat =
+    pet.species === 'cat' &&
+    typeof pet.environment === 'string' &&
+    pet.environment.trim().toLowerCase() === 'indoor'
 
   // an old or hand-edited profile can name an allergen we have no rule for, so
   // the notice names it in words (never as the stored code) and one notice
@@ -441,16 +484,23 @@ export function evaluate(pet, products) {
       continue
     }
 
-    eligible.push({ product, profile, matches, treat: isTreat(product) })
+    eligible.push({ product, profile, matches, treat: isTreat(product), dietSize })
   }
 
-  const scored = eligible.map(({ product, profile, matches, treat }) => {
+  const lowActivity = activity === 'low'
+
+  const scored = eligible.map(({ product, profile, matches, treat, dietSize }) => {
     let score = 0
     const reasons = []
+    const warnings = allergies.length > 0 ? [LABEL_CHECK_WARNING] : []
+    // a reason is listed once even when two rules agree on it
+    const addReason = (reason) => {
+      if (!reasons.includes(reason)) reasons.push(reason)
+    }
 
     if (pet.lifeStage && profile.lifeStage.includes(pet.lifeStage)) {
       score += 3
-      reasons.push(`Suitable for ${pet.lifeStage} ${pet.species}`)
+      addReason(`Suitable for ${pet.lifeStage} ${pet.species}`)
       // products built for this stage beat products that merely suit it
       // (an "All Stages" food suits every stage but is built for none)
       if (profile.stageSpecific) score += 2
@@ -462,18 +512,67 @@ export function evaluate(pet, products) {
     if (condition) {
       if (matches) {
         score += 5
-        reasons.push(`Formulated for ${CONDITION_PHRASE[condition] || condition}`)
+        addReason(`Formulated for ${CONDITION_PHRASE[condition] || condition}`)
       } else {
-        reasons.push(GENERAL_FORMULA_REASON)
+        addReason(GENERAL_FORMULA_REASON)
       }
     } else if (profile.healthTags.includes('healthy')) {
       score += 1
-      reasons.push('General wellness formula')
+      addReason('General wellness formula')
     }
 
     if (allergies.length > 0 && profile.healthTags.includes('allergy-friendly')) {
       score += 2
-      reasons.push('Allergy-friendly recipe')
+      addReason('Allergy-friendly recipe')
+    }
+
+    // the score before the daily-life hints. Only this score decides whether a
+    // product is shown, so a soft preference can move a product but never hide it.
+    const baseScore = score
+
+    // Daily life is a soft preference: it changes the order and the reason
+    // lines, never the list of products. A high-energy formula is a poor first
+    // pick for a calm pet, so it is pushed down and never wears the top badge.
+    const name = product.prod_name || ''
+    const energyFormula = ENERGY_RE.test(name)
+    const lightFormula = LIGHT_RE.test(name)
+    const indoorFormula = INDOOR_RE.test(name)
+    const hairballFormula = HAIRBALL_RE.test(name)
+    let lowFit = false
+
+    if (energyFormula) {
+      if (activity === 'high') {
+        score += 2
+        addReason(`High-energy formula for an active ${pet.species}`)
+      } else if (lowActivity) {
+        score -= 3
+        lowFit = true
+        warnings.push(LOW_ACTIVITY_WARNING)
+      }
+    }
+
+    if (lowActivity && lightFormula) {
+      score += 2
+      addReason('Light formula for a less active pet')
+    }
+
+    // one indoor bonus at most: an indoor cat with low activity is still only
+    // one preference, so the two rules never add up to four points
+    if ((indoorCat || lowActivity) && indoorFormula) {
+      score += 2
+      addReason(indoorCat ? 'Indoor formula' : 'Indoor formula for a calm pet')
+    }
+
+    if (indoorCat && hairballFormula) {
+      score += 2
+      addReason('Hairball control')
+    }
+
+    // the size rule already hid every other size, so the bonus only marks the
+    // product that was built for this pet's size
+    if (petSize && dietSize === petSize) {
+      score += 1
+      addReason(`Made for ${petSize}-breed dogs`)
     }
 
     return {
@@ -486,24 +585,31 @@ export function evaluate(pet, products) {
       collection: product.category || '',
       stock: Number(product.stock_quantity || 0),
       score,
+      // the score before the daily-life hints: it alone decides whether the
+      // product is shown, so a soft hint can move a product but never hide it
+      baseScore,
       reasons,
-      warnings: allergies.length > 0 ? [LABEL_CHECK_WARNING] : [],
+      warnings,
       // a treat is never a top match, even when it scores well
       treat,
+      // a high-energy formula for a calm pet is shown, but never first
+      lowFit,
       section: condition && !matches ? 'other' : 'best',
     }
   })
 
-  const ranked = scored.filter((item) => item.score > 0).sort(byRank)
+  // only the pre-lifestyle score decides whether a product is shown, so a soft
+  // daily-life hint can move a product up or down but never add or remove one
+  const ranked = scored.filter((item) => item.baseScore > 0).sort(byRank)
   result.best = ranked.filter((item) => item.section === 'best')
   result.other = ranked.filter((item) => item.section === 'other')
   result.matchedCondition = !condition || result.best.length > 0
 
-  // the top match is the first complete food, so a pouch of treats never wears
-  // the badge
-  const topComplete = result.best.find((item) => !item.treat)
+  // the top match is the first complete food that fits the pet's daily life, so
+  // neither a pouch of treats nor a high-energy formula for a calm pet ever
+  // wears the badge. When every option is a poor fit, no badge is shown.
+  const topComplete = result.best.find((item) => !item.treat && !item.lowFit)
   if (topComplete) topComplete.topMatch = true
-  else if (result.best[0]) result.best[0].topMatch = true
 
   if (condition && result.best.length === 0) {
     result.notices.push({

@@ -81,6 +81,14 @@ function avoidingText(container) {
   return line ? line.textContent.replace(/\s+/g, ' ').trim() : null
 }
 
+// the facts line under the pet's name (species, stage, weight, daily life)
+function factsText(container) {
+  const line = [...container.querySelectorAll('p')].find((p) =>
+    p.textContent.includes(' · ')
+  )
+  return line ? line.textContent.replace(/\s+/g, ' ').trim() : null
+}
+
 beforeEach(() => {
   petsState.pets = []
   petsState.activePetId = null
@@ -114,5 +122,43 @@ describe('Pets page: allergy summary', () => {
     const text = avoidingText(container)
     expect(text).toBe('Avoiding: Sensitive stomach')
     expect(text).not.toContain('sensitive-stomach')
+  })
+})
+
+describe('Pets page: daily-life facts', () => {
+  it('shows the answers the owner chose', async () => {
+    const container = await renderWith([pet({ activity: 'high', breedSize: 'large' })])
+    const text = factsText(container)
+    expect(text).toContain('High activity')
+    expect(text).toContain('Large breed')
+  })
+
+  it('leaves out the neutral answers, so the line stays short', async () => {
+    const container = await renderWith([
+      pet({ activity: 'normal', environment: 'both', breedSize: 'unknown' }),
+    ])
+    const text = factsText(container)
+    expect(text).not.toContain('Normal activity')
+    expect(text).not.toContain('Indoor and outdoor')
+    expect(text).not.toContain('Not sure')
+  })
+
+  it('shows where an indoor cat lives but never a breed size', async () => {
+    const container = await renderWith([
+      pet({ species: 'cat', lifeStage: 'adult', environment: 'indoor', breedSize: 'large' }),
+    ])
+    const text = factsText(container)
+    expect(text).toContain('Indoor only')
+    expect(text).not.toContain('Large breed')
+  })
+
+  it('never prints a daily-life answer the species is not asked about', async () => {
+    const container = await renderWith([
+      pet({ species: 'bird', lifeStage: 'adult', activity: 'high', environment: 'indoor', breedSize: 'small' }),
+    ])
+    const text = factsText(container)
+    expect(text).not.toContain('High activity')
+    expect(text).not.toContain('Indoor only')
+    expect(text).not.toContain('Small breed')
   })
 })

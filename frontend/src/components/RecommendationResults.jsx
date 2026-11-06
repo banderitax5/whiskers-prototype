@@ -391,7 +391,8 @@ function RecommendationResults({ pet }) {
 
       <div className="bg-yellow-50 border border-yellow-400 rounded-lg p-4 text-xs text-blue-900 dark:bg-yellow-900/20 dark:border-yellow-700 dark:text-yellow-100">
         <strong>Note:</strong> These suggestions come from a simple rule-based check of species, life stage,
-        health, and allergies. They are not a diagnosis and not a substitute for professional veterinary
+        health, allergies, and daily lifestyle. Daily lifestyle only changes which foods come first - it
+        never hides a food. They are not a diagnosis and not a substitute for professional veterinary
         advice. Check the label before you buy.
       </div>
 

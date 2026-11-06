@@ -53,6 +53,33 @@ export const NEUTERED_OPTIONS = [
   { value: 'no', label: 'No' },
 ]
 
+// Daily-life answers. These are soft hints for the recommendation engine, not
+// medical facts: an active dog gets energy-dense formulas suggested first, a
+// calm pet gets lighter ones, and an indoor cat gets indoor/hairball formulas.
+// "Normal", "both" and "unknown" are the defaults, so a profile saved before
+// these questions existed still behaves exactly as it did.
+export const DEFAULT_ACTIVITY = 'normal'
+export const ACTIVITY_OPTIONS = [
+  { value: 'low', label: 'Low activity (mostly indoors or resting)' },
+  { value: 'normal', label: 'Normal activity (walks and play most days)' },
+  { value: 'high', label: 'High activity (very active, working or sport)' },
+]
+
+export const DEFAULT_ENVIRONMENT = 'both'
+export const ENVIRONMENT_OPTIONS = [
+  { value: 'indoor', label: 'Indoor only' },
+  { value: 'outdoor', label: 'Outdoor access' },
+  { value: 'both', label: 'Indoor and outdoor' },
+]
+
+export const DEFAULT_BREED_SIZE = 'unknown'
+export const BREED_SIZE_OPTIONS = [
+  { value: 'small', label: 'Small breed (under 10 kg as an adult)' },
+  { value: 'medium', label: 'Medium breed (10 - 25 kg)' },
+  { value: 'large', label: 'Large breed (over 25 kg)' },
+  { value: 'unknown', label: 'Not sure' },
+]
+
 export const ALLERGY_OPTIONS = [
   { value: 'none', label: 'None / Not sure' },
   { value: 'chicken', label: 'Chicken' },

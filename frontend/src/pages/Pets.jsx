@@ -5,7 +5,10 @@ import PetProfileForm from '../components/PetProfileForm'
 import RecommendationResults from '../components/RecommendationResults'
 import ConfirmModal from '../components/ConfirmModal'
 import {
+  ACTIVITY_OPTIONS,
   allergyLabels,
+  BREED_SIZE_OPTIONS,
+  ENVIRONMENT_OPTIONS,
   findLabel,
   findShortLabel,
   SPECIES_OPTIONS,
@@ -99,6 +102,23 @@ function Pets() {
         ? 'Not neutered'
         : null
 
+  // only the daily-life answers the owner actually chose are printed; the
+  // neutral ones would just repeat themselves on every pet's line, and the
+  // questions only exist for dogs and cats
+  const isMammal = activePet?.species === 'dog' || activePet?.species === 'cat'
+  const activityText =
+    isMammal && activePet?.activity && activePet.activity !== 'normal'
+      ? findShortLabel(ACTIVITY_OPTIONS, activePet.activity)
+      : null
+  const environmentText =
+    activePet?.species === 'cat' && activePet.environment && activePet.environment !== 'both'
+      ? findShortLabel(ENVIRONMENT_OPTIONS, activePet.environment)
+      : null
+  const breedSizeText =
+    activePet?.species === 'dog' && activePet.breedSize && activePet.breedSize !== 'unknown'
+      ? findShortLabel(BREED_SIZE_OPTIONS, activePet.breedSize)
+      : null
+
   const facts = activePet
     ? [
         findLabel(SPECIES_OPTIONS, activePet.species),
@@ -106,6 +126,9 @@ function Pets() {
         ageText ? `${ageText} old` : null,
         weightText,
         neuteredText,
+        activityText,
+        breedSizeText,
+        environmentText,
       ].filter(Boolean)
     : []
 

@@ -1,7 +1,13 @@
 import { useState, useEffect, useMemo } from 'react'
 import {
+  ACTIVITY_OPTIONS,
   ALLERGY_OPTIONS,
+  BREED_SIZE_OPTIONS,
   canonicalAllergy,
+  DEFAULT_ACTIVITY,
+  DEFAULT_BREED_SIZE,
+  DEFAULT_ENVIRONMENT,
+  ENVIRONMENT_OPTIONS,
   findLabel,
   getLifeStageOptions,
   NEUTERED_OPTIONS,
@@ -44,6 +50,9 @@ function PetProfileForm({ initialPet, onSubmit, onCancel, submitLabel = 'Save Pe
     initialPet?.weight != null ? String(initialPet.weight) : ''
   )
   const [neutered, setNeutered] = useState(initialPet?.neutered || 'unknown')
+  const [activity, setActivity] = useState(initialPet?.activity || DEFAULT_ACTIVITY)
+  const [environment, setEnvironment] = useState(initialPet?.environment || DEFAULT_ENVIRONMENT)
+  const [breedSize, setBreedSize] = useState(initialPet?.breedSize || DEFAULT_BREED_SIZE)
   const [healthCondition, setHealthCondition] = useState(initialPet?.healthCondition || '')
   const [allergies, setAllergies] = useState(() => initialAllergies(initialPet))
   const [formError, setFormError] = useState('')
@@ -127,6 +136,11 @@ function PetProfileForm({ initialPet, onSubmit, onCancel, submitLabel = 'Save Pe
       birthDate: birthDate || null,
       weight: weightNumber,
       neutered: MAMMALS.includes(species) ? neutered : null,
+      // the daily-life questions only show for dogs and cats; other species
+      // store the neutral answers so the engine treats them as unknown
+      activity: MAMMALS.includes(species) ? activity : DEFAULT_ACTIVITY,
+      environment: species === 'cat' ? environment : DEFAULT_ENVIRONMENT,
+      breedSize: species === 'dog' ? breedSize : DEFAULT_BREED_SIZE,
       healthCondition,
       allergies: allergies.length === 0 ? ['none'] : allergies,
     })
@@ -279,6 +293,65 @@ function PetProfileForm({ initialPet, onSubmit, onCancel, submitLabel = 'Save Pe
             ))}
           </select>
           <p className={hintClass}>Neutered pets usually need a little less food, so this helps your vet advise you.</p>
+        </div>
+      )}
+
+      {MAMMALS.includes(species) && (
+        <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-4 dark:border-gray-700 dark:bg-gray-800/40">
+          <p className="text-sm font-semibold text-gray-900 dark:text-white">Daily life</p>
+          <p className={`${hintClass} mb-3`}>
+            These answers only adjust which foods we suggest first. They are not medical advice.
+          </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="petActivity" className={labelClass}>Activity level</label>
+              <select
+                id="petActivity"
+                value={activity}
+                onChange={(e) => setActivity(e.target.value)}
+                className={selectClass}
+              >
+                {ACTIVITY_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+              <p className={hintClass}>Active pets are shown energy-rich formulas first; calmer pets are shown lighter ones.</p>
+            </div>
+
+            {species === 'dog' && (
+              <div>
+                <label htmlFor="petBreedSize" className={labelClass}>Breed size</label>
+                <select
+                  id="petBreedSize"
+                  value={breedSize}
+                  onChange={(e) => setBreedSize(e.target.value)}
+                  className={selectClass}
+                >
+                  {BREED_SIZE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+                <p className={hintClass}>Helps us pick food shaped for your dog&apos;s jaw and size.</p>
+              </div>
+            )}
+
+            {species === 'cat' && (
+              <div>
+                <label htmlFor="petEnvironment" className={labelClass}>Where your cat lives</label>
+                <select
+                  id="petEnvironment"
+                  value={environment}
+                  onChange={(e) => setEnvironment(e.target.value)}
+                  className={selectClass}
+                >
+                  {ENVIRONMENT_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+                <p className={hintClass}>Indoor cats are shown indoor and hairball formulas first.</p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

@@ -36,6 +36,12 @@ create table if not exists public.pets (
   allergies       text[] not null default '{}' check (allergies <@ array[
     'chicken', 'beef', 'lamb', 'fish', 'grain', 'dairy', 'egg'
   ]::text[]),
+  -- Daily-life answers: soft hints for the recommendation order, not medical
+  -- facts. The neutral answer is the default, so a profile saved before these
+  -- questions existed behaves exactly as it did.
+  activity        text not null default 'normal' check (activity in ('low', 'normal', 'high')),
+  environment     text not null default 'both' check (environment in ('indoor', 'outdoor', 'both')),
+  breed_size      text not null default 'unknown' check (breed_size in ('small', 'medium', 'large', 'unknown')),
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );

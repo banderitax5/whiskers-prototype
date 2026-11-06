@@ -41,7 +41,38 @@ describe('toServerPet', () => {
       neutered: 'yes',
       healthCondition: 'healthy',
       allergies: ['chicken'],
+      activity: 'normal',
+      environment: 'both',
+      breedSize: 'unknown',
     })
+  })
+
+  it('sends the daily-life answers for the species that asks the question', () => {
+    const dog = toServerPet({ ...base, activity: 'high', environment: 'indoor', breedSize: 'large' })
+    expect(dog.activity).toBe('high')
+    // a dog is never asked where it lives, so the neutral answer is sent
+    expect(dog.environment).toBe('both')
+    expect(dog.breedSize).toBe('large')
+
+    const cat = toServerPet({ ...base, species: 'cat', activity: 'low', environment: 'indoor', breedSize: 'small' })
+    expect(cat.activity).toBe('low')
+    expect(cat.environment).toBe('indoor')
+    // a cat is never asked its breed size
+    expect(cat.breedSize).toBe('unknown')
+  })
+
+  it('replaces a value the server would refuse with the neutral answer', () => {
+    const pet = toServerPet({ ...base, activity: 'sleepy', environment: 'moon', breedSize: 'giant' })
+    expect(pet.activity).toBe('normal')
+    expect(pet.environment).toBe('both')
+    expect(pet.breedSize).toBe('unknown')
+  })
+
+  it('keeps the neutral answers for a bird or a fish', () => {
+    const bird = toServerPet({ ...base, species: 'bird', activity: 'high', environment: 'indoor', breedSize: 'small' })
+    expect(bird.activity).toBe('normal')
+    expect(bird.environment).toBe('both')
+    expect(bird.breedSize).toBe('unknown')
   })
 
   it('sends an empty weight as null', () => {

@@ -26,6 +26,14 @@ export const ALLERGIES = ['chicken', 'beef', 'lamb', 'fish', 'grain', 'dairy', '
 
 export const NEUTERED = ['unknown', 'yes', 'no']
 
+// Daily-life answers. The form shows them for dogs and cats only; an old profile
+// or a hand-written request can hold anything, and the neutral answer is used
+// when the value is missing. A species that is not asked the question always
+// stores the neutral answer.
+export const ACTIVITIES = ['low', 'normal', 'high']
+export const ENVIRONMENTS = ['indoor', 'outdoor', 'both']
+export const BREED_SIZES = ['small', 'medium', 'large', 'unknown']
+
 // species where neutering is a real question (matches the form)
 const MAMMALS = ['dog', 'cat']
 
@@ -48,6 +56,9 @@ export const MSG = {
   birthFuture: 'The date of birth cannot be in the future.',
   weightInvalid: `Weight must be between ${MIN_WEIGHT} and ${MAX_WEIGHT} kg.`,
   neuteredInvalid: 'Please choose whether the pet is neutered.',
+  activityInvalid: 'Please choose low, normal or high activity.',
+  environmentInvalid: 'Please choose indoor, outdoor or both.',
+  breedSizeInvalid: 'Please choose small, medium, large or not sure.',
   tooManyPets: `You can keep up to ${MAX_PETS} pets on one account.`,
   notFound: 'That pet could not be found. Refresh the page and try again.',
 }
@@ -104,6 +115,14 @@ export function normalizeAllergies(raw) {
   return { ok: true, value: cleaned, error: null }
 }
 
+// one answer from a fixed list, with the neutral answer when it is missing
+function normalizeEnum(raw, allowed, fallback, error) {
+  if (raw == null) return { ok: true, value: fallback, error: null }
+  const value = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
+  if (!allowed.includes(value)) return { ok: false, value: null, error }
+  return { ok: true, value, error: null }
+}
+
 // returns { ok, value, error } where value is the exact row to write
 export function normalizePetProfile(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
@@ -152,6 +171,24 @@ export function normalizePetProfile(raw) {
   }
   if (!MAMMALS.includes(species)) neutered = 'unknown'
 
+  // Daily life. The form asks a dog about activity and breed size, and a cat
+  // about activity and where it lives. A missing answer is the neutral one; a
+  // value we do not know is refused with a readable message, never stored.
+  const activity = normalizeEnum(raw.activity, ACTIVITIES, 'normal', MSG.activityInvalid)
+  if (!activity.ok) return activity
+  const environment = normalizeEnum(raw.environment, ENVIRONMENTS, 'both', MSG.environmentInvalid)
+  if (!environment.ok) return environment
+  const breedSize = normalizeEnum(raw.breedSize, BREED_SIZES, 'unknown', MSG.breedSizeInvalid)
+  if (!breedSize.ok) return breedSize
+
+  // a question that is not asked about this species gets the neutral answer, so
+  // a bird can never be stored as an indoor pet or a cat as a large breed
+  const dailyLife = {
+    activity: MAMMALS.includes(species) ? activity.value : 'normal',
+    environment: species === 'cat' ? environment.value : 'both',
+    breed_size: species === 'dog' ? breedSize.value : 'unknown',
+  }
+
   // a date of birth is the source of truth when it is present; the form marks
   // an override as "manual" and keeps the stage the owner chose
   const stageSource =
@@ -173,6 +210,7 @@ export function normalizePetProfile(raw) {
       neutered,
       health_condition: condition,
       allergies: allergies.value,
+      ...dailyLife,
     },
     error: null,
   }
@@ -195,6 +233,11 @@ export function petRowToClient(row) {
     neutered: row.neutered || 'unknown',
     healthCondition: row.health_condition || 'healthy',
     allergies: Array.isArray(row.allergies) && row.allergies.length > 0 ? row.allergies : ['none'],
+    // an older row that predates the daily-life questions reads as the neutral
+    // answers, so the engine treats it exactly as it did before
+    activity: row.activity || 'normal',
+    environment: row.environment || 'both',
+    breedSize: row.breed_size || 'unknown',
     createdAt: row.created_at || null,
   }
 }
