@@ -14,7 +14,8 @@ import RecoveryGate from './RecoveryGate.jsx'
 import AnnouncementBar from './AnnouncementBar.jsx'
 import PromoStrip from './PromoStrip.jsx'
 import { initAnalyticsSession, trackEvent } from '../lib/appEvents.js'
-import { fetchSiteContent, contentSettings } from '../lib/siteContent.js'
+import { contentSettings } from '../lib/siteContent.js'
+import { useSiteContent } from '../lib/siteContentLive.js'
 import supabase from '../lib/supabase'
 
 // maintenance mode (Phase 6): shoppers see a closed message instead of the
@@ -39,7 +40,7 @@ async function fetchIsAdmin() {
 
 function Layout() {
   const location = useLocation()
-  const [maintenance, setMaintenance] = useState(null) // null = not loaded yet
+  const { content, loaded } = useSiteContent() // live content; updates without a refresh
   const [isAdmin, setIsAdmin] = useState(false)
 
   // establish the anonymous analytics session once on first load
@@ -50,17 +51,17 @@ function Layout() {
     trackEvent('page_view', { path: location.pathname })
   }, [location.pathname])
 
-  // maintenance flag + admin bypass; re-checked on route change so a sign-in
-  // during maintenance unlocks the shop without a manual refresh
+  // admin bypass; re-checked on route change so a sign-in during maintenance
+  // unlocks the shop without a manual refresh
   useEffect(() => {
     let cancelled = false
-    Promise.all([fetchSiteContent(), fetchIsAdmin()]).then(([content, admin]) => {
-      if (cancelled) return
-      setMaintenance(contentSettings(content).maintenance || { enabled: false, message: '' })
-      setIsAdmin(admin)
-    })
+    fetchIsAdmin().then((admin) => { if (!cancelled) setIsAdmin(admin) })
     return () => { cancelled = true }
   }, [location.pathname])
+
+  const maintenance = loaded
+    ? contentSettings(content).maintenance || { enabled: false, message: '' }
+    : null
 
   const showNavLinks = !['/profile', '/orders', '/addresses', '/pets'].some(
     (p) => location.pathname === p || location.pathname.startsWith(`${p}/`)

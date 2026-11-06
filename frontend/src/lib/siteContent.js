@@ -21,6 +21,7 @@ const PREVIEW_TTL_MS = 10 * 60 * 1000
 
 let cache = null
 let inflight = null
+let requestSeq = 0
 let previewActive = false
 let previewCache = null
 let previewInflight = null
@@ -81,7 +82,11 @@ async function previewToken() {
 // next visit instead of only after a hard refresh. Concurrent callers still
 // share one in-flight request. Preview responses are cached separately so a
 // draft payload can never be served to a public request.
-export async function fetchSiteContent(force = false) {
+//
+// version>0 comes from the live content counter (siteContentLive.js). It is
+// forwarded as ?v=N so the API rebuilds its own cache when that copy is older
+// than the edit the browser was told about.
+export async function fetchSiteContent(force = false, version = 0) {
   if (previewActive) {
     if (force) previewCache = null
     if (previewCache) return previewCache
@@ -110,22 +115,32 @@ export async function fetchSiteContent(force = false) {
   }
   if (force) cache = null
   if (cache) return cache
-  if (inflight) return inflight
-  inflight = fetch(`${API_BASE}/site-content`, { headers: { Accept: 'application/json' } })
+  // A forced live refresh must not piggyback on a request that started before
+  // the edit; ordinary concurrent callers still share one request.
+  if (inflight && !(Number(version) > 0)) return inflight
+  const liveQuery = Number(version) > 0 ? `?v=${encodeURIComponent(version)}` : ''
+  const seq = ++requestSeq
+  const request = fetch(`${API_BASE}/site-content${liveQuery}`, { headers: { Accept: 'application/json' } })
     .then((res) => (res.ok ? res.json() : null))
     .then((data) => {
-      cache = data && data.seeded ? data : null
-      inflight = null
-      return cache
+      const payload = data && data.seeded ? data : null
+      // an older request finishing late must not overwrite a newer live one
+      if (seq === requestSeq) {
+        cache = payload
+        inflight = null
+      }
+      return payload
     })
     .catch(() => {
-      inflight = null
+      if (seq === requestSeq) inflight = null
       return null
     })
-  return inflight
+  inflight = request
+  return request
 }
 
 export function resetSiteContentCache() {
+  requestSeq += 1
   cache = null
   inflight = null
   previewCache = null

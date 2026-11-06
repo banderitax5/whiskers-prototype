@@ -1,23 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { BsChatDotsFill, BsX, BsInstagram, BsFacebook, BsTelephone, BsEnvelope } from 'react-icons/bs'
-import { fetchSiteContent, contentSettings } from '../lib/siteContent.js'
+import { contentSettings } from '../lib/siteContent.js'
+import { useSiteContent } from '../lib/siteContentLive.js'
 
 export default function FloatingContact() {
   const [open, setOpen] = useState(false)
-  const [phone, setPhone] = useState('+63 912 345 6789')
 
-  // phone number comes from site settings once saved; the built-in value
-  // matches what this button showed before Phase 6
-  useEffect(() => {
-    let cancelled = false
-    fetchSiteContent().then((content) => {
-      if (cancelled) return
-      const p = contentSettings(content).contact_phone
-      if (p) setPhone(p)
-    })
-    return () => { cancelled = true }
-  }, [])
+  // phone number comes from site settings once saved and updates live; the
+  // built-in value matches what this button showed before Phase 6
+  const { content } = useSiteContent()
+  const phone = contentSettings(content).contact_phone || '+63 912 345 6789'
 
   return (
     <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-[9997]">

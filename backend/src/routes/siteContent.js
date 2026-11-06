@@ -51,7 +51,7 @@ function navGroup(rows, section) {
 }
 
 async function loadContent({ preview = false } = {}) {
-  const [bannersRes, sectionsRes, navRes, promosRes, catsRes, settingsRes, faqsRes, policiesRes] = await Promise.all([
+  const [bannersRes, sectionsRes, navRes, promosRes, catsRes, settingsRes, faqsRes, policiesRes, versionRes] = await Promise.all([
     supabaseAdmin.from('site_banners').select('*').is('archived_at', null),
     supabaseAdmin.from('site_home_sections').select('*').is('archived_at', null),
     supabaseAdmin.from('site_nav_items').select('*').is('archived_at', null),
@@ -69,6 +69,9 @@ async function loadContent({ preview = false } = {}) {
     supabaseAdmin.from('site_settings').select('data').eq('id', 1).maybeSingle(),
     supabaseAdmin.from('site_faqs').select('*').is('archived_at', null),
     supabaseAdmin.from('site_policies').select('*').is('archived_at', null),
+    // live-update counter (2026-11-06 migration). Missing table -> 0, so the
+    // storefront still works on a database that has not run it yet.
+    supabaseAdmin.from('site_content_version').select('version').eq('id', 1).maybeSingle(),
   ])
   const schemaError = bannersRes.error || sectionsRes.error || navRes.error || catsRes.error
   if (schemaError) throw schemaError
@@ -99,6 +102,7 @@ async function loadContent({ preview = false } = {}) {
   return {
     seeded: true,
     preview,
+    content_version: versionRes.error ? 0 : Number(versionRes.data?.version) || 0,
     banners: bannerPick('home_hero').map((b) => pick(b, BANNER_FIELDS)),
     brand_strip: bannerPick('brand_strip').map((b) => pick(b, BANNER_FIELDS)),
     strip_banners: bannerPick(['promo_strip', 'category_top']).map((b) => pick(b, BANNER_FIELDS)),
@@ -146,6 +150,24 @@ router.get('/', contentLimiter, async (req, res) => {
     // same session, and mixing draft payloads into the public cache would leak
     if (await isAdminPreview(req)) {
       return res.json(await loadContent({ preview: true }))
+    }
+    // A live event carries the counter value from the database. When the
+    // browser sends it (?v=N) the cached copy is only usable if it is already
+    // at least that new; otherwise rebuild now instead of waiting out the TTL.
+    // This also keeps multiple server instances honest: an instance whose
+    // cache predates the edit must read the database again.
+    const liveVersion = Number.parseInt(String(req.query.v ?? ''), 10)
+    const wantsLive = Number.isFinite(liveVersion) && liveVersion > 0
+    if (wantsLive) {
+      const cachedVersion = Number(cache.payload?.content_version) || 0
+      if (cache.payload && cachedVersion >= liveVersion) return res.json(cache.payload)
+      try {
+        cache = { at: Date.now(), payload: await loadContent() }
+      } catch (err) {
+        if (!isSchemaPendingError(err)) throw err
+        cache = { at: Date.now(), payload: { seeded: false } }
+      }
+      return res.json(cache.payload)
     }
     if (Date.now() - cache.at >= CACHE_TTL_MS) {
       try {

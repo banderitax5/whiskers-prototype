@@ -5,7 +5,8 @@ import ProductQuickViewDialog from '../components/ProductQuickViewDialog.jsx'
 import { apiGet } from '../lib/api.js'
 import { attachSizeVariants } from '../lib/productUtils.js'
 import { formatPesos } from '../lib/cartLogic'
-import { fetchSiteContent, applyCategoryOverrides } from '../lib/siteContent'
+import { applyCategoryOverrides } from '../lib/siteContent'
+import { useSiteContent } from '../lib/siteContentLive.js'
 import { trackSearch } from '../lib/appEvents'
 import { looksLikeSentence, parseSearch, smartSearchProducts } from '../lib/smartSearch'
 import { priceCeilingFor, sliderValueFor, maxPriceFromSlider, matchesMaxPrice, PRICE_STEP } from '../lib/priceFilter'
@@ -38,8 +39,9 @@ function Menu() {
   const [attempt, setAttempt] = useState(0)
   const [categories, setCategories] = useState([])
   const [brands, setBrands] = useState([])
-  // owner's category overrides (label/order/visibility) from site-content
-  const [siteContent, setSiteContent] = useState(null)
+  // owner's category overrides (label/order/visibility); live, so a rename
+  // in the admin reaches open menus without a refresh
+  const { content: siteContent } = useSiteContent({ force: true })
 
   // category, brand, and search filters can arrive via URL (nav links, brand tiles)
   // lists are comma-separated in the URL so multi-select survives refresh and Back
@@ -216,18 +218,14 @@ function Menu() {
       setLoading(true)
       setLoadFailed(false)
       try {
-        const [prodRes, catRes, brandRes, contentRes] = await Promise.all([
+        const [prodRes, catRes, brandRes] = await Promise.all([
           apiGet('/products?pageSize=500'),
           apiGet('/products/categories'),
           apiGet('/products/brands'),
-          // force=true: an admin edit to category labels/order shows on the
-          // next visit; fetchSiteContent never rejects, so this cannot fail load
-          fetchSiteContent(true),
         ])
         setProducts(prodRes.items || [])
         setCategories(catRes.items || [])
         setBrands(brandRes.items || [])
-        setSiteContent(contentRes)
       } catch (err) {
         console.error('Failed to load products:', err)
         setLoadFailed(true)

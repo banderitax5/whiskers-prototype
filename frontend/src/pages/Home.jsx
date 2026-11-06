@@ -7,7 +7,6 @@ import { apiGet } from '../lib/api.js'
 import { attachSizeVariants } from '../lib/productUtils.js'
 import { formatPesos } from '../lib/cartLogic'
 import {
-  fetchSiteContent,
   contentBanners,
   contentSections,
   resolveRowProducts,
@@ -15,6 +14,7 @@ import {
   isPreviewMode,
   exitPreview,
 } from '../lib/siteContent.js'
+import { useSiteContent } from '../lib/siteContentLive.js'
 import { contentPromos, saleFor } from '../lib/promoDisplay.js'
 
 // built-in defaults: used whenever the content endpoint is not seeded yet
@@ -47,16 +47,10 @@ function Home() {
   const [attempt, setAttempt] = useState(0)
   const [currentSlide, setCurrentSlide] = useState(0)
   const [heroPaused, setHeroPaused] = useState(false)
-  const [content, setContent] = useState(null)
 
-  // storefront content (banners, home sections): forced so an admin edit
-  // shows on the next visit to the home page, not only after a hard
-  // refresh; concurrent mounts share one request
-  useEffect(() => {
-    let cancelled = false
-    fetchSiteContent(true).then((data) => { if (!cancelled) setContent(data) })
-    return () => { cancelled = true }
-  }, [])
+  // storefront content (banners, home sections): live - an admin edit lands
+  // here without a refresh. Forced so a navigation also re-checks.
+  const { content } = useSiteContent({ force: true })
 
   // hero slides: the banner table is the source of truth once content has
   // loaded. The built-in carousel only renders when content is not available

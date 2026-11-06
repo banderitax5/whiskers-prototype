@@ -16,7 +16,7 @@ import {
   toCentavos,
   lineTotalCents,
 } from '../lib/cartLogic.js'
-import { fetchSiteContent } from '../lib/siteContent.js'
+import { useSiteContent } from '../lib/siteContentLive.js'
 import { LOW_STOCK_THRESHOLD } from '../lib/productDisplay.js'
 
 // selection survives a trip to /checkout and back
@@ -71,7 +71,9 @@ function Cart() {
   const [qtyErrors, setQtyErrors] = useState({})
   const [announce, setAnnounce] = useState('')
   // shipping rules from site settings (Phase 6); null until loaded, in which
-  // case cartTotals falls back to the built-in flat fee
+  // case cartTotals falls back to the built-in flat fee. Live content keeps
+  // an owner's fee/threshold change current without a refresh.
+  const { content } = useSiteContent()
   const [shippingOpts, setShippingOpts] = useState(null)
   // owner-editable low-stock threshold; built-in default until settings load
   const [lowStockThreshold, setLowStockThreshold] = useState(LOW_STOCK_THRESHOLD)
@@ -79,18 +81,14 @@ function Cart() {
   const storedSelection = useMemo(readStoredSelection, [])
 
   useEffect(() => {
-    let cancelled = false
-    fetchSiteContent().then((content) => {
-      if (cancelled || !content?.settings) return
-      setShippingOpts({
-        fee: content.settings.shipping_fee,
-        freeThreshold: content.settings.free_shipping_threshold,
-      })
-      const t = Number(content.settings.low_stock_threshold)
-      if (Number.isFinite(t) && t >= 0) setLowStockThreshold(t)
+    if (!content?.settings) return
+    setShippingOpts({
+      fee: content.settings.shipping_fee,
+      freeThreshold: content.settings.free_shipping_threshold,
     })
-    return () => { cancelled = true }
-  }, [])
+    const t = Number(content.settings.low_stock_threshold)
+    if (Number.isFinite(t) && t >= 0) setLowStockThreshold(t)
+  }, [content])
 
   // live product rows for the price/stock check (U6) — read-only
   const { liveById, checkedIds, availability } = useLiveProductRows(cartItems)

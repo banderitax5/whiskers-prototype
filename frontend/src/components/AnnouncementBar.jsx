@@ -1,25 +1,20 @@
-import { useEffect, useState } from 'react'
-import { fetchSiteContent, contentBanners, trackBannerEvent } from '../lib/siteContent.js'
+import { useEffect } from 'react'
+import { contentBanners, trackBannerEvent } from '../lib/siteContent.js'
+import { useSiteContent } from '../lib/siteContentLive.js'
 import { bannerHref } from '../lib/bannerLink.js'
 
 // Thin message bar above the site header (all pages). Shows the first
 // published announcement_bar banner as text; when the admin sets no
 // announcement, nothing renders and the header stays exactly as it was.
+// Live: an admin edit appears here without a refresh.
 export default function AnnouncementBar() {
-  const [banner, setBanner] = useState(null)
+  const { content } = useSiteContent()
+  const banner = contentBanners(content, 'announcement')?.[0] || null
 
+  // one impression per displayed banner, including when a live edit swaps it
   useEffect(() => {
-    let cancelled = false
-    fetchSiteContent().then((data) => {
-      if (cancelled) return
-      const b = contentBanners(data, 'announcement')?.[0] || null
-      setBanner(b)
-      if (b?.id) trackBannerEvent(b.id, 'impression')
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+    if (banner?.id) trackBannerEvent(banner.id, 'impression')
+  }, [banner?.id])
 
   if (!banner) return null
 

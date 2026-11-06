@@ -2,8 +2,8 @@
 // detail page, and the related-products strip so stock/price logic stays in
 // one place instead of being copied around.
 
-import { useEffect, useState } from 'react'
-import { fetchSiteContent, contentSettings } from './siteContent.js'
+import { contentSettings } from './siteContent.js'
+import { useSiteContent } from './siteContentLive.js'
 
 // fallback for the "low stock" warning before site settings load (and for a
 // fresh install with no content endpoint). The owner-editable value in site
@@ -52,20 +52,12 @@ export function getStockStatus(stock_quantity, threshold = LOW_STOCK_THRESHOLD) 
 }
 
 // the owner's low-stock threshold from site settings, or the built-in
-// default while loading / when the endpoint is unavailable. One cached
-// fetch per page load (same snapshot the storefront content uses).
+// default while loading / when the endpoint is unavailable. Live, so an
+// owner edit updates product chips without a refresh.
 export function useLowStockThreshold() {
-  const [threshold, setThreshold] = useState(LOW_STOCK_THRESHOLD)
-  useEffect(() => {
-    let cancelled = false
-    fetchSiteContent().then((content) => {
-      if (cancelled || !content) return
-      const t = Number(contentSettings(content).low_stock_threshold)
-      if (Number.isFinite(t) && t >= 0) setThreshold(t)
-    })
-    return () => { cancelled = true }
-  }, [])
-  return threshold
+  const { content } = useSiteContent()
+  const t = Number(contentSettings(content).low_stock_threshold)
+  return Number.isFinite(t) && t >= 0 ? t : LOW_STOCK_THRESHOLD
 }
 
 // a product can be added to cart only when it has a real price and stock

@@ -1,19 +1,14 @@
-import React, { useEffect, useState } from "react"
+import React from "react"
 import { Link } from "react-router-dom"
-import { fetchSiteContent, contentNav, contentSettings } from "../lib/siteContent.js"
+import { contentNav, contentSettings } from "../lib/siteContent.js"
+import { useSiteContent } from "../lib/siteContentLive.js"
 
 const LINK_CLASS = "text-gray-600 hover:text-[#0b2e59] dark:text-gray-400 dark:hover:text-white transition-colors duration-200 cursor-pointer"
 
 function Footer() {
-  const [content, setContent] = useState(null)
-
-  // footer link groups come from the content tables when seeded; the
-  // built-in groups below render on a fresh install until then
-  useEffect(() => {
-    let cancelled = false
-    fetchSiteContent().then((data) => { if (!cancelled) setContent(data) })
-    return () => { cancelled = true }
-  }, [])
+  // footer link groups and contact details, live from the content endpoint;
+  // the built-in groups below render on a fresh install until seeded
+  const { content } = useSiteContent()
 
   const shopLinks = contentNav(content, "footer_shop") || [
     { id: "dogs", label: "Dog", href: "/menu?category=Dogs" },

@@ -18,7 +18,8 @@ import {
   formatPesos,
   toCentavos,
 } from '../lib/cartLogic.js'
-import { fetchSiteContent, contentSettings } from '../lib/siteContent.js'
+import { contentSettings } from '../lib/siteContent.js'
+import { useSiteContent } from '../lib/siteContentLive.js'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -107,7 +108,9 @@ function Checkout() {
 
   // site settings (Phase 6): payment methods on/off + labels/instructions,
   // shipping fee + free-shipping threshold. Falls back to the built-in
-  // methods and flat fee until the owner saves settings.
+  // methods and flat fee until the owner saves settings. Live, so a change
+  // made while the checkout tab is open is picked up without a refresh.
+  const { content } = useSiteContent()
   const [shopSettings, setShopSettings] = useState(null)
   const [shippingOpts, setShippingOpts] = useState(null)
   const paymentOptions = useMemo(() => {
@@ -120,15 +123,11 @@ function Checkout() {
   const totals = useMemo(() => cartTotals(checkoutItems, availability, shippingOpts), [checkoutItems, availability, shippingOpts])
 
   useEffect(() => {
-    let cancelled = false
-    fetchSiteContent().then((content) => {
-      if (cancelled) return
-      const s = contentSettings(content)
-      setShopSettings(s)
-      setShippingOpts({ fee: s.shipping_fee, freeThreshold: s.free_shipping_threshold })
-    })
-    return () => { cancelled = true }
-  }, [])
+    if (!content) return
+    const s = contentSettings(content)
+    setShopSettings(s)
+    setShippingOpts({ fee: s.shipping_fee, freeThreshold: s.free_shipping_threshold })
+  }, [content])
 
   const [form, setForm] = useState({
     fullName: '',

@@ -46,6 +46,11 @@ describe('fetchSiteContent caching', () => {
     await fetchSiteContent(true)
     expect(fetch).toHaveBeenCalledTimes(2)
   })
+
+  test('a live version is forwarded so the API can rebuild a stale cache', async () => {
+    await fetchSiteContent(true, 42)
+    expect(fetch).toHaveBeenCalledWith('/api/site-content?v=42', expect.anything())
+  })
 })
 
 describe('applyCategoryOverrides', () => {

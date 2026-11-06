@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { fetchSiteContent, contentBanners, contentNav, trackBannerEvent } from '../lib/siteContent.js'
+import { contentBanners, contentNav, trackBannerEvent } from '../lib/siteContent.js'
+import { useSiteContent } from '../lib/siteContentLive.js'
 import { bannerHref } from '../lib/bannerLink.js'
 
 // label a brand-strip row by whichever field shape it has: banner rows from
@@ -53,16 +54,11 @@ function BrandTile({ brand, active }) {
 function NavLinks() {
   const [searchParams] = useSearchParams()
   const activeBrand = searchParams.get('brand') || ''
-  const [content, setContent] = useState(null)
 
   // content-backed navigation and brand tiles; forced so banner edits are
-  // visible on the next navigation, not only after a hard refresh. The
-  // built-in arrays render until the tables are seeded.
-  useEffect(() => {
-    let cancelled = false
-    fetchSiteContent(true).then((data) => { if (!cancelled) setContent(data) })
-    return () => { cancelled = true }
-  }, [])
+  // visible on the next navigation, not only after a hard refresh. Live
+  // updates arrive through the shared site-content channel.
+  const { content } = useSiteContent({ force: true })
 
   const placeholderLinks = [
     { label: 'Menu', href: '/menu' },

@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { BsChevronDown } from 'react-icons/bs'
-import { fetchSiteContent, contentFaqs, contentPolicies } from '../lib/siteContent.js'
+import { contentFaqs, contentPolicies } from '../lib/siteContent.js'
+import { useSiteContent } from '../lib/siteContentLive.js'
 
 // built-in FAQs render on a fresh install; the owner's FAQ list (Site
 // Settings) replaces them once any FAQ row is saved
@@ -59,18 +60,9 @@ function FaqItem({ item }) {
 }
 
 function About() {
-  const [faqs, setFaqs] = useState(FAQ_ITEMS)
-  const [policies, setPolicies] = useState([])
-
-  useEffect(() => {
-    let cancelled = false
-    fetchSiteContent().then((content) => {
-      if (cancelled || !content) return
-      setFaqs(contentFaqs(content) || FAQ_ITEMS)
-      setPolicies(contentPolicies(content) || [])
-    })
-    return () => { cancelled = true }
-  }, [])
+  const { content } = useSiteContent()
+  const faqs = contentFaqs(content) || FAQ_ITEMS
+  const policies = contentPolicies(content) || []
 
   return (
     <div className="space-y-8 lg:mx-auto lg:max-w-7xl">
