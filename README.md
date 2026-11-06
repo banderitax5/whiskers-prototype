@@ -119,6 +119,27 @@ How to install:
 
 The service worker precaches the app shell, answers offline navigations with the SPA, and caches images after their first view. API calls always go to the network so prices, stock, and orders stay live.
 
+## Order notifications (optional — Web Push)
+
+Staff and admins can get a real system notification when a customer places an order: the phone lock screen and notification shade on mobile, Action Center on Windows, Notification Center on macOS. It works with the site closed — the browser's push service wakes the service worker.
+
+1. Run `backend/migrations/2026-11-07_push_subscriptions.sql` in Supabase.
+2. Generate a key pair once and put both lines in `backend/.env` (production included):
+
+   ```bash
+   node -e "console.log(require('web-push').generateVAPIDKeys())"
+   ```
+
+   ```env
+   VAPID_PUBLIC_KEY=...
+   VAPID_PRIVATE_KEY=...
+   PUSH_SUBJECT=mailto:shop@whiskerspet.me
+   ```
+
+3. Sign in to the admin panel and press the **bell** in the top bar. Each device opts in separately, and the button sends one test alert so you can see it land.
+
+Without the keys the bell hides itself and no push is ever sent. **iPhone note:** iOS only allows web push for a site added to the Home Screen (iOS 16.4+); in a normal Safari tab it cannot work, and the button tells the user that instead of failing silently.
+
 ## Demo accounts
 
 Pre-seeded in Supabase for demos and panel review:
