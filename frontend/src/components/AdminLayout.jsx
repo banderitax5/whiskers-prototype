@@ -3,6 +3,7 @@ import { useState, useEffect } from "react"
 import supabase from "../lib/supabase"
 import RecoveryGate from "./RecoveryGate.jsx"
 import StepUpModal from "./StepUpModal.jsx"
+import AdminPushToggle from "./AdminPushToggle.jsx"
 import { clearStepUp } from "../lib/stepUp"
 import { useThemeDetection } from "./adminTheme"
 import { useRole } from "../context/RoleContext"
@@ -280,6 +281,9 @@ function AdminLayout() {
           <h1 className="min-w-0 truncate text-lg font-semibold text-gray-800 dark:text-slate-100 sm:text-xl">
             {currentNav ? currentNav.label : role === 'staff' ? 'Staff Dashboard' : 'Admin Dashboard'}
           </h1>
+
+          {/* order notifications for this device (hidden when unsupported) */}
+          <AdminPushToggle />
 
           {/* theme toggle: shows the mode it will switch to */}
           <button

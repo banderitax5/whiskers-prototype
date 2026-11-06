@@ -77,6 +77,10 @@ export default defineConfig(({ mode }) => {
         // full page load (email links, typed URLs, reopen) show "You're offline".
         workbox: {
           navigateFallback: '/index.html',
+          // push-sw.js (in public/) adds the `push` and `notificationclick`
+          // handlers to this generated worker. Imported rather than merged so
+          // it stays readable and can be reasoned about on its own.
+          importScripts: ['push-sw.js'],
           navigateFallbackDenylist: [/^\/api\//, /^\/health$/, /^\/sw\.js$/, /^\/registerSW\.js$/],
           cleanupOutdatedCaches: true,
           // Precache only the app shell; images are cached lazily after the

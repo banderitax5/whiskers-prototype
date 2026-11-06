@@ -19,6 +19,7 @@ import eventsRoutes from './src/routes/events.js'
 import feedbackRoutes from './src/routes/feedback.js'
 import supportRoutes from './src/routes/support.js'
 import siteContentRoutes from './src/routes/siteContent.js'
+import pushRoutes from './src/routes/push.js'
 import paymentsRoutes from './src/routes/payments.js'
 
 const app = express()
@@ -88,6 +89,7 @@ app.use('/api/events', eventsRoutes)
 app.use('/api/feedback', feedbackRoutes)
 app.use('/api/support', supportRoutes)
 app.use('/api/site-content', siteContentRoutes)
+app.use('/api/push', pushRoutes)
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', uptime: process.uptime() })

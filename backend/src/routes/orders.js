@@ -4,6 +4,7 @@ import { orderLimiter, payLimiter } from '../middleware/rateLimiter.js'
 import { supabaseAdmin } from '../config/supabase.js'
 import { getShippingRules } from '../utils/shopSettings.js'
 import { sendOrderReceipt, maskEmail } from '../utils/mailer.js'
+import { notifyStaffNewOrder } from '../utils/webPush.js'
 import { isSchemaPendingError } from '../utils/pgErrors.js'
 import { validatePromo, buildDiscountAmounts, pickBestPromo } from '../utils/promoEngine.js'
 import { normalizeMobilePhone, sanitizeAddressLine, buildOrderAddress } from '../utils/addressRules.js'
@@ -635,6 +636,16 @@ router.post('/', orderLimiter, async (req, res) => {
         })
       }
     }
+
+    // Tell the back office. Fire-and-forget on purpose: the order is already
+    // committed, so a push service being slow or down must not delay the
+    // shopper's confirmation screen. Never throws (see utils/webPush.js).
+    void notifyStaffNewOrder({
+      orderId,
+      customerName,
+      itemCount: validatedItems.reduce((sum, item) => sum + item.quantity, 0),
+      totalAmount,
+    })
 
     return res.status(201).json(response)
   } catch (err) {
