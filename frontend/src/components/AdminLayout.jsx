@@ -91,9 +91,6 @@ function AdminLayout() {
     })
   }
 
-  // top-bar title follows the active route (single source: ADMIN_NAV labels)
-  const currentNav = ADMIN_NAV.find((n) => (n.end ? pathname === n.to : pathname.startsWith(n.to)))
-
   // grab the current user on mount so we can show their name/initial
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -227,22 +224,25 @@ function AdminLayout() {
           })}
         </nav>
 
-        {/* sign out and back to user view at the bottom of the sidebar */}
-        <div className="mt-auto space-y-3">
+        {/* sign out and back to user view at the bottom of the sidebar.
+            Both rows use the same padding, icon size and gap as the nav links
+            above, so the icons and labels line up in both the expanded
+            sidebar and the collapsed icon rail. */}
+        <div className="mt-auto space-y-1">
           <button
             onClick={handleLogout}
             title={sidebarCollapsed ? "Sign Out" : undefined}
-            className={`flex w-full items-center gap-2 text-left text-sm text-red-400 hover:text-red-300 ${sidebarCollapsed ? "md:justify-center" : ""}`}
+            className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-red-400 transition hover:bg-white/10 hover:text-red-300 ${sidebarCollapsed ? "md:justify-center md:px-0" : ""}`}
           >
+            <BsBoxArrowRight className="h-4 w-4 shrink-0" />
             <span className={sidebarCollapsed ? "md:hidden" : ""}>Sign Out</span>
-            <BsBoxArrowRight className={`h-4 w-4 ${sidebarCollapsed ? "hidden md:block" : "hidden"}`} />
           </button>
           <button
             onClick={() => navigate("/")}
             title={sidebarCollapsed ? "Back to User View" : undefined}
-            className={`flex items-center gap-2 text-xs text-white/70 hover:text-white ${sidebarCollapsed ? "md:justify-center" : ""}`}
+            className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-white/70 transition hover:bg-white/10 hover:text-white ${sidebarCollapsed ? "md:justify-center md:px-0" : ""}`}
           >
-            <BsArrowLeft />
+            <BsArrowLeft className="h-4 w-4 shrink-0" />
             <span className={sidebarCollapsed ? "md:hidden" : ""}>Back to User View</span>
           </button>
         </div>
@@ -254,8 +254,11 @@ function AdminLayout() {
             and extend the whole document, producing a second (window) scrollbar */}
         <main className="relative flex-1 p-4 sm:p-6 overflow-y-auto dark:bg-[#0b1929]">
 
-        {/* top bar with hamburger menu (mobile), rail toggle (desktop) and title */}
-        <div className="flex items-center gap-3 mb-6">
+        {/* top bar: hamburger on mobile, rail toggle on desktop, then the
+            device actions on the right. The page itself owns the title, so
+            this bar stays a pure toolbar. Its padding matches the page padding
+            below so the buttons line up with the cards and the help button. */}
+        <div className="mb-6 flex items-center gap-3 px-3 sm:px-4 lg:px-6">
           {/* hamburger button to open the sidebar on mobile */}
           <button
             type="button"
@@ -278,23 +281,21 @@ function AdminLayout() {
             <BsLayoutSidebar className="h-5 w-5" />
           </button>
 
-          <h1 className="min-w-0 truncate text-lg font-semibold text-gray-800 dark:text-slate-100 sm:text-xl">
-            {currentNav ? currentNav.label : role === 'staff' ? 'Staff Dashboard' : 'Admin Dashboard'}
-          </h1>
+          <div className="ml-auto flex items-center gap-3">
+            {/* order notifications for this device (hidden when unsupported) */}
+            <AdminPushToggle />
 
-          {/* order notifications for this device (hidden when unsupported) */}
-          <AdminPushToggle />
-
-          {/* theme toggle: shows the mode it will switch to */}
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="ml-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 dark:border-[#1e3a5f] dark:text-slate-300 dark:hover:bg-[#162d4a]"
-            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          >
-            {theme === "dark" ? <BsSunFill className="h-4 w-4" /> : <BsMoonStarsFill className="h-4 w-4" />}
-          </button>
+            {/* theme toggle: shows the mode it will switch to */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 dark:border-[#1e3a5f] dark:text-slate-300 dark:hover:bg-[#162d4a]"
+              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {theme === "dark" ? <BsSunFill className="h-4 w-4" /> : <BsMoonStarsFill className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
 
         <Outlet />
