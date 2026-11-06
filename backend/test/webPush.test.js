@@ -8,10 +8,12 @@ process.env.SUPABASE_URL ||= 'http://localhost:54321'
 process.env.SUPABASE_SERVICE_KEY ||= 'test-service-key'
 process.env.SUPABASE_ANON_KEY ||= 'test-anon-key'
 
-const { buildOrderPushPayload, isPushConfigured } = await import('../src/utils/webPush.js')
+const { buildOrderPushPayload, buildOrderStatusPushPayload, isPushConfigured } = await import(
+  '../src/utils/webPush.js'
+)
 
-// The payload is what a staff member reads on a lock screen, so the wording
-// and the plural handling are worth pinning.
+// The payload is what a person reads on a lock screen, so the wording and the
+// plural handling are worth pinning.
 
 test('order push names the customer, the item count and the total', () => {
   const payload = buildOrderPushPayload({
@@ -34,6 +36,26 @@ test('order push uses the singular for one item', () => {
 test('order push survives a missing customer name and total', () => {
   const payload = buildOrderPushPayload({ customerName: '   ', itemCount: 0, totalAmount: null })
   assert.match(payload.body, /^A customer ordered 0 items - PHP 0\.00$/)
+})
+
+test('status push tells the customer what changed and links to their orders', () => {
+  const payload = buildOrderStatusPushPayload({
+    orderId: 'abcdef12-3456-7890-abcd-ef1234567890',
+    status: 'Shipped',
+    itemsCount: 2,
+  })
+  assert.equal(payload.title, 'Order Shipped')
+  assert.match(payload.body, /^Your order #ABCDEF12 is now shipped\. 2 items\. Tap to see it\.$/)
+  assert.equal(payload.url, '/orders')
+  assert.equal(payload.tag, 'order-status-abcdef12-3456-7890-abcd-ef1234567890')
+})
+
+test('status push uses the singular and copes with no items or status', () => {
+  const one = buildOrderStatusPushPayload({ orderId: 'abcdef12', status: 'Delivered', itemsCount: 1 })
+  assert.match(one.body, /1 item\. Tap/)
+  const bare = buildOrderStatusPushPayload({ orderId: null, status: null, itemsCount: 0 })
+  assert.equal(bare.title, 'Order Updated')
+  assert.match(bare.body, /is now updated\./)
 })
 
 test('isPushConfigured is false without VAPID keys', () => {

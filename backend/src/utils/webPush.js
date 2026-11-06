@@ -64,6 +64,21 @@ export function buildOrderPushPayload({ customerName, itemCount, totalAmount, or
   }
 }
 
+// The customer-facing alert: their own order changed status. Kept in the same
+// module so both directions of the channel share the wording rules.
+export function buildOrderStatusPushPayload({ orderId, status, itemsCount }) {
+  const label = (status || 'Updated').trim()
+  const items = Number(itemsCount) || 0
+  const short = String(orderId || '').slice(0, 8).toUpperCase()
+  const suffix = items ? ` ${items} item${items === 1 ? '' : 's'}.` : ''
+  return {
+    title: `Order ${label}`,
+    body: `Your order${short ? ` #${short}` : ''} is now ${label.toLowerCase()}.${suffix} Tap to see it.`,
+    url: '/orders',
+    tag: `order-status-${orderId || 'update'}`,
+  }
+}
+
 // Staff and admin accounts only. A shopper account never gets order alerts.
 async function staffUserIds() {
   const { data, error } = await supabaseAdmin
@@ -94,37 +109,60 @@ export async function notifyStaffNewOrder(order) {
     if (error) return { sent: 0, skipped: 'no_table' }
     if (!subs?.length) return { sent: 0, skipped: 'no_subscribers' }
 
-    const payload = JSON.stringify(buildOrderPushPayload(order))
-    const gone = []
-    let sent = 0
-
-    await Promise.all(
-      subs.map(async (sub) => {
-        try {
-          await webpush.sendNotification(
-            { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-            payload,
-            { TTL: 60 * 60 }
-          )
-          sent += 1
-        } catch (err) {
-          // 404/410 means the browser dropped the subscription (uninstalled,
-          // permission revoked, profile deleted). Forget it so the table does
-          // not grow forever.
-          if (err?.statusCode === 404 || err?.statusCode === 410) gone.push(sub.id)
-          else logger.warn({ statusCode: err?.statusCode }, 'Push send failed')
-        }
-      })
-    )
-
-    if (gone.length) {
-      await supabaseAdmin.from('push_subscriptions').delete().in('id', gone)
-    }
-    return { sent, gone: gone.length }
+    return await sendToSubscriptions(subs, JSON.stringify(buildOrderPushPayload(order)))
   } catch (err) {
     logger.warn({ err }, 'Push: notifyStaffNewOrder failed')
     return { sent: 0, skipped: 'error' }
   }
+}
+
+// One account's devices. Used for "your order shipped", which is the customer
+// side of the same channel. Never throws.
+export async function notifyUser(userId, payload) {
+  if (!configure() || !userId) return { sent: 0, skipped: 'not_configured' }
+  try {
+    const { data: subs, error } = await supabaseAdmin
+      .from('push_subscriptions')
+      .select('id, endpoint, p256dh, auth')
+      .eq('user_id', userId)
+    if (error) return { sent: 0, skipped: 'no_table' }
+    if (!subs?.length) return { sent: 0, skipped: 'no_subscribers' }
+    return await sendToSubscriptions(subs, JSON.stringify(payload))
+  } catch (err) {
+    logger.warn({ err }, 'Push: notifyUser failed')
+    return { sent: 0, skipped: 'error' }
+  }
+}
+
+// The one place a push actually leaves the server, so the pruning rule and the
+// error handling exist once.
+async function sendToSubscriptions(subs, payload) {
+  const gone = []
+  let sent = 0
+
+  await Promise.all(
+    subs.map(async (sub) => {
+      try {
+        await webpush.sendNotification(
+          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+          payload,
+          { TTL: 60 * 60 }
+        )
+        sent += 1
+      } catch (err) {
+        // 404/410 means the browser dropped the subscription (uninstalled,
+        // permission revoked, profile deleted). Forget it so the table does
+        // not grow forever.
+        if (err?.statusCode === 404 || err?.statusCode === 410) gone.push(sub.id)
+        else logger.warn({ statusCode: err?.statusCode }, 'Push send failed')
+      }
+    })
+  )
+
+  if (gone.length) {
+    await supabaseAdmin.from('push_subscriptions').delete().in('id', gone)
+  }
+  return { sent, gone: gone.length }
 }
 
 // Used by the "Send a test notification" button so a staff member can prove

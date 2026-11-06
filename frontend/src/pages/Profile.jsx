@@ -6,6 +6,7 @@ import { philippinesData } from '../data/philippinesData.js'
 import { phoneError, addressLineError, postalError } from '../lib/addressValidation.js'
 import { errorFromResponse, friendlyMessage } from '../lib/errors'
 import MfaEnrollmentModal from '../components/MfaEnrollmentModal'
+import OrderNotificationToggle from '../components/OrderNotificationToggle'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -502,6 +503,9 @@ function Profile() {
             </div>
 
           </section>
+
+          {/* ORDER NOTIFICATIONS */}
+          <OrderNotificationToggle />
 
           {/* MFA */}
           <section className="space-y-3 sm:space-y-4 pt-2 border-t border-gray-100 dark:border-gray-700">

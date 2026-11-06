@@ -37,6 +37,7 @@ import { sanitizeChanges } from '../utils/auditChanges.js'
 import { withActorNames } from '../utils/actorNames.js'
 import { effectiveUnitPrice, lineMargin } from '../utils/orderCosting.js'
 import { sendOrderStatusEmail, sendSupportReplyEmail, maskEmail } from '../utils/mailer.js'
+import { buildOrderStatusPushPayload, notifyUser } from '../utils/webPush.js'
 import { recordContentHistory, diffChanges, historyLabel } from '../utils/contentHistory.js'
 import { defaultRowsFor, RESTORE_SCOPES } from '../utils/siteContentDefaults.js'
 import {
@@ -1364,6 +1365,13 @@ router.patch('/orders/:id', async (req, res) => {
           })),
         }),
         'order status update'
+      )
+
+      // The customer's own devices, same channel the staff bell uses. Only
+      // fires on a real status change, and never blocks the admin's save.
+      void notifyUser(
+        current.id,
+        buildOrderStatusPushPayload({ orderId: req.params.id, status, itemsCount })
       )
     }
   } catch (err) {

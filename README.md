@@ -123,6 +123,8 @@ The service worker precaches the app shell, answers offline navigations with the
 
 Staff and admins can get a real system notification when a customer places an order: the phone lock screen and notification shade on mobile, Action Center on Windows, Notification Center on macOS. It works with the site closed — the browser's push service wakes the service worker.
 
+Customers get the other direction from the same channel: turn on **Order notifications** on the Profile page and their own device alerts them when the order is processing, shipped, delivered or cancelled. Staff alerts and customer alerts never cross — a subscription only ever receives its own account's messages.
+
 1. Run `backend/migrations/2026-11-07_push_subscriptions.sql` in Supabase.
 2. Generate a key pair once and put both lines in `backend/.env` (production included):
 

@@ -4,11 +4,12 @@
 // and hands the resulting endpoint + keys back here. The server stores them so
 // it can notify that device later, even when the site is closed.
 //
-// Only staff and admin accounts may subscribe: this channel is for "a customer
-// placed an order", not for shoppers.
+// Only a signed-in account may subscribe, and a subscription only ever receives
+// that account's own alerts: staff/admin devices get "a customer placed an
+// order", shoppers get "your order shipped". The two never cross.
 import { Router } from 'express'
 import { supabaseAdmin } from '../config/supabase.js'
-import { authMiddleware, requireStaff } from '../middleware/auth.js'
+import { authMiddleware } from '../middleware/auth.js'
 import { isSchemaPendingError } from '../utils/pgErrors.js'
 import { MIGRATION_REQUIRED } from '../utils/messages.js'
 import { isPushConfigured, sendTestPush, vapidPublicKey } from '../utils/webPush.js'
@@ -30,7 +31,7 @@ router.get('/public-key', (_req, res) => {
   res.json({ enabled: Boolean(publicKey && isPushConfigured()), publicKey: publicKey || null })
 })
 
-router.use(authMiddleware, requireStaff)
+router.use(authMiddleware)
 
 const MAX_ENDPOINT = 1000
 const MAX_KEY = 200
